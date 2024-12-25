@@ -5,6 +5,7 @@ mod device;
 mod kernel;
 mod memory;
 mod vcpu;
+mod vm;
 pub mod vmm;
 
 // use std::sync::{

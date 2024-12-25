@@ -2,7 +2,10 @@ use util::result::Result;
 use vm_allocator::AddressAllocator;
 use vm_memory::{GuestAddress, GuestMemoryMmap};
 
-use crate::{config::MemoryConfig, constants::{MMIO_SIZE, MMIO_START}};
+use crate::{
+    config::MemoryConfig,
+    constants::{MMIO_SIZE, MMIO_START},
+};
 
 pub struct Memory {
     config: MemoryConfig,
@@ -34,5 +37,13 @@ impl Memory {
         let alloc = AddressAllocator::new(MMIO_START, MMIO_SIZE)?;
 
         Ok(alloc)
+    }
+
+    pub fn guest_memory(&self) -> &GuestMemoryMmap {
+        &self.guest_memory
+    }
+
+    pub fn mmio_allocator(&self) -> &AddressAllocator {
+        &self.mmio_allocator
     }
 }

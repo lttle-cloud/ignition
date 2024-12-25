@@ -16,7 +16,13 @@ async fn spark() -> Result<()> {
         },
     };
 
+    let start_time = std::time::Instant::now();
     let vm = Vmm::new(config)?;
+    let elapsed_us = start_time.elapsed().as_micros();
+
+    println!("VM created in {}us", elapsed_us);
+
+    println!("Sparkled!");
 
     Ok(())
 }

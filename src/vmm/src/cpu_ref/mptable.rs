@@ -12,6 +12,9 @@ use std::slice;
 
 use crate::cpu_ref::mpspec;
 use libc::c_char;
+use util::result::anyhow;
+use util::result::bail;
+use util::result::Result;
 use vm_memory::{Address, ByteValued, Bytes, GuestAddress, GuestMemory};
 // This is a workaround to the Rust enforcement specifying that any implementation of a foreign
 // trait (in this case `ByteValued`) where:
@@ -47,38 +50,6 @@ unsafe impl ByteValued for MpfIntel {}
 const MPTABLE_START: u64 = 0x9fc00;
 /// Last usable IRQ ID for virtio device interrupts on x86_64.
 pub const IRQ_MAX: u8 = 23;
-
-#[derive(Debug, PartialEq, Eq)]
-/// Errors associated with creating and operating with the MP Table.
-pub enum Error {
-    /// There was too little guest memory to store the entire MP table.
-    NotEnoughMemory,
-    /// The MP table has too little address space to be stored.
-    AddressOverflow,
-    /// Failure while zeroing out the memory for the MP table.
-    Clear,
-    /// Number of CPUs exceeds the maximum supported CPUs
-    TooManyCpus,
-    /// Failure to write the MP floating pointer.
-    WriteMpfIntel,
-    /// Failure to write MP CPU entry.
-    WriteMpcCpu,
-    /// Failure to write MP ioapic entry.
-    WriteMpcIoapic,
-    /// Failure to write MP bus entry.
-    WriteMpcBus,
-    /// Failure to write MP interrupt source entry.
-    WriteMpcIntsrc,
-    /// Failure to write MP local interrupt source entry.
-    WriteMpcLintsrc,
-    /// Failure to write MP table header.
-    WriteMpcTable,
-    /// IRQ num overflow.
-    IRQOverflowed,
-}
-
-/// Specialized `Result` type for operations on the MP Table.
-pub type Result<T> = result::Result<T, Error>;
 
 /// The maximum number of CPUs as dictated by using APIC.
 // With APIC/xAPIC, there are only 255 APIC IDs available. And IOAPIC occupies
@@ -152,9 +123,11 @@ impl MpTable {
     /// Creates a new MP Table that can hold `cpu_num`.
     pub fn new(cpu_num: u8, max_irq: u8) -> Result<MpTable> {
         if cpu_num > MAX_SUPPORTED_CPUS {
-            return Err(Error::TooManyCpus);
+            bail!("too many CPUs requested");
         }
-        let irq_num = max_irq.checked_add(1).ok_or(Error::IRQOverflowed)?;
+        let irq_num = max_irq
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("failed to compute irq num"))?;
         Ok(MpTable { irq_num, cpu_num })
     }
 
@@ -181,18 +154,16 @@ impl MpTable {
         // are provided by the Linux kernel, and they're used as intended.
         if let Some(end_mp) = base_mp.checked_add((mp_size - 1) as u64) {
             if !mem.address_in_range(end_mp) {
-                return Err(Error::NotEnoughMemory);
+                bail!("MP table does not fit in memory");
             }
         } else {
-            return Err(Error::AddressOverflow);
+            bail!("MP table does not fit in memory");
         }
 
         let mut checksum: u8 = 0;
         let max_ioapic_id = self.cpu_num + 1;
 
-        mem.read_from(base_mp, &mut io::repeat(0), mp_size)
-            .map_err(|_| Error::Clear)?;
-
+        mem.read_from(base_mp, &mut io::repeat(0), mp_size)?;
         {
             let size = mem::size_of::<MpfIntel>() as u64;
             let mut mpf_intel = MpfIntel(mpspec::mpf_intel {
@@ -206,8 +177,7 @@ impl MpTable {
                 ..Default::default()
             });
             mpf_intel.0.checksum = mpf_intel_compute_checksum(&mpf_intel.0);
-            mem.write_obj(mpf_intel, base_mp)
-                .map_err(|_| Error::WriteMpfIntel)?;
+            mem.write_obj(mpf_intel, base_mp)?;
             base_mp = base_mp.unchecked_add(size);
         }
 
@@ -233,8 +203,7 @@ impl MpTable {
                     featureflag: CPU_FEATURE_APIC | CPU_FEATURE_FPU,
                     ..Default::default()
                 });
-                mem.write_obj(mpc_cpu, base_mp)
-                    .map_err(|_| Error::WriteMpcCpu)?;
+                mem.write_obj(mpc_cpu, base_mp)?;
                 base_mp = base_mp.unchecked_add(size);
                 checksum = checksum.wrapping_add(compute_checksum(&mpc_cpu.0));
             }
@@ -246,8 +215,7 @@ impl MpTable {
                 busid: 0,
                 bustype: BUS_TYPE_ISA,
             });
-            mem.write_obj(mpc_bus, base_mp)
-                .map_err(|_| Error::WriteMpcBus)?;
+            mem.write_obj(mpc_bus, base_mp)?;
             base_mp = base_mp.unchecked_add(size);
             checksum = checksum.wrapping_add(compute_checksum(&mpc_bus.0));
         }
@@ -260,8 +228,7 @@ impl MpTable {
                 flags: mpspec::MPC_APIC_USABLE as u8,
                 apicaddr: IO_APIC_DEFAULT_PHYS_BASE,
             });
-            mem.write_obj(mpc_ioapic, base_mp)
-                .map_err(|_| Error::WriteMpcIoapic)?;
+            mem.write_obj(mpc_ioapic, base_mp)?;
             base_mp = base_mp.unchecked_add(size);
             checksum = checksum.wrapping_add(compute_checksum(&mpc_ioapic.0));
         }
@@ -277,8 +244,7 @@ impl MpTable {
                 dstapic: max_ioapic_id,
                 dstirq: i,
             });
-            mem.write_obj(mpc_intsrc, base_mp)
-                .map_err(|_| Error::WriteMpcIntsrc)?;
+            mem.write_obj(mpc_intsrc, base_mp)?;
             base_mp = base_mp.unchecked_add(size);
             checksum = checksum.wrapping_add(compute_checksum(&mpc_intsrc.0));
         }
@@ -294,8 +260,7 @@ impl MpTable {
                 destapiclint: 0,
             });
 
-            mem.write_obj(mpc_lintsrc, base_mp)
-                .map_err(|_| Error::WriteMpcLintsrc)?;
+            mem.write_obj(mpc_lintsrc, base_mp)?;
             base_mp = base_mp.unchecked_add(size);
             checksum = checksum.wrapping_add(compute_checksum(&mpc_lintsrc.0));
         }
@@ -311,8 +276,7 @@ impl MpTable {
                 destapiclint: 1,
             });
 
-            mem.write_obj(mpc_lintsrc, base_mp)
-                .map_err(|_| Error::WriteMpcLintsrc)?;
+            mem.write_obj(mpc_lintsrc, base_mp)?;
             base_mp = base_mp.unchecked_add(size);
             checksum = checksum.wrapping_add(compute_checksum(&mpc_lintsrc.0));
         }
@@ -337,8 +301,7 @@ impl MpTable {
             });
             checksum = checksum.wrapping_add(compute_checksum(&mpc_table.0));
             mpc_table.0.checksum = (!checksum).wrapping_add(1) as i8;
-            mem.write_obj(mpc_table, table_base)
-                .map_err(|_| Error::WriteMpcTable)?;
+            mem.write_obj(mpc_table, table_base)?;
         }
 
         Ok(())
@@ -372,7 +335,7 @@ mod tests {
         // Test mptable does not fit in guest memory.
         let num_cpus = 5;
         let mptable = MpTable::new(num_cpus, IRQ_MAX).unwrap();
-        assert_eq!(mptable.write(&mem).unwrap_err(), Error::NotEnoughMemory);
+        assert!(mptable.write(&mem).is_err());
     }
 
     #[test]
@@ -461,8 +424,7 @@ mod tests {
     fn test_cpu_entry_count_max() {
         let cpus = MAX_SUPPORTED_CPUS + 1;
 
-        let result = MpTable::new(cpus, IRQ_MAX).unwrap_err();
-        assert_eq!(result, Error::TooManyCpus);
+        MpTable::new(cpus, IRQ_MAX).unwrap_err();
     }
     #[test]
     fn test_irq_num() {
@@ -472,6 +434,6 @@ mod tests {
     #[test]
     fn test_max_irq_overflow() {
         let result = MpTable::new(MAX_SUPPORTED_CPUS, u8::MAX);
-        assert_eq!(result.unwrap_err(), Error::IRQOverflowed)
+        assert!(result.is_err());
     }
 }

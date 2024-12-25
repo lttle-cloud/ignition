@@ -11,6 +11,7 @@
 //! [Intel Manual](https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-3a-part-1-manual.pdf).
 
 use kvm_bindings::kvm_segment;
+use util::result::{bail, Result};
 use vm_memory::{ByteValued, Bytes, GuestAddress, GuestMemory, GuestMemoryError};
 
 use std::mem;
@@ -21,24 +22,6 @@ pub const BOOT_GDT_OFFSET: u64 = 0x500;
 pub const BOOT_IDT_OFFSET: u64 = 0x520;
 /// Maximum number of GDT entries as defined in the Intel Specification.
 pub const MAX_GDT_SIZE: usize = 1 << 13;
-
-/// Errors associated with operations on the GDT.
-#[derive(Debug)]
-pub enum Error {
-    /// Invalid memory access.
-    GuestMemory(GuestMemoryError),
-    /// Too many entries in the GDT.
-    TooManyEntries,
-}
-
-impl From<GuestMemoryError> for Error {
-    fn from(inner: GuestMemoryError) -> Self {
-        Error::GuestMemory(inner)
-    }
-}
-
-/// Results corresponding to operations on the GDT.
-pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Copy, Clone, Default, Debug)]
 /// A segment descriptor is a data structure in a GDT (Global Descriptor Table)
@@ -214,7 +197,7 @@ impl Gdt {
     /// Returns an error when there is no more space available.
     pub fn try_push(&mut self, entry: SegmentDescriptor) -> Result<()> {
         if self.0.len() >= MAX_GDT_SIZE {
-            return Err(Error::TooManyEntries);
+            bail!("Too many entries in the GDT");
         }
         self.0.push(entry);
         Ok(())
@@ -269,9 +252,8 @@ impl Default for Gdt {
 /// IDT offset.
 pub fn write_idt_value<Memory: GuestMemory>(val: u64, guest_mem: &Memory) -> Result<()> {
     let boot_idt_addr = GuestAddress(BOOT_IDT_OFFSET);
-    guest_mem
-        .write_obj(val, boot_idt_addr)
-        .map_err(Error::GuestMemory)
+    guest_mem.write_obj(val, boot_idt_addr)?;
+    Ok(())
 }
 
 #[cfg(test)]
