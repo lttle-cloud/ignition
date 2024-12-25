@@ -1,0 +1,16 @@
+[package]
+name = "spark"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+resolver = "2"
+members = [".", "src/util", "src/takeoff", "src/vmm"]
+
+[[bin]]
+name = "sparkd"
+path = "src/spark.rs"
+
+[dependencies]
+util = { path = "src/util" }
+vmm = { path = "src/vmm" }
