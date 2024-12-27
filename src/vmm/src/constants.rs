@@ -8,6 +8,11 @@ pub const ZERO_PAGE_START: u64 = 0x7000;
 pub const CMDLINE_START: u64 = 0x0002_0000;
 pub const HIGH_RAM_START: u64 = 0x0010_0000;
 
+pub const BOOT_STACK_POINTER: u64 = 0x8ff0;
+pub const ZEROPG_START: u64 = 0x7000;
+
+pub const CMDLINE_CAPACITY: usize = 4096;
+
 pub const X86_CR0_PE: u64 = 0x1;
 pub const X86_CR0_PG: u64 = 0x8000_0000;
 pub const X86_CR4_PAE: u64 = 0x20;

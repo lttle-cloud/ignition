@@ -10,17 +10,18 @@ async fn spark() -> Result<()> {
     let config = Config {
         memory: MemoryConfig { size_mib: 128 },
         vcpu: VcpuConfig { num: 1 },
-        kernel: KernelConfig {
-            path: "../linux/vmlinux".into(),
-            cmdline: "".into(),
-        },
+        kernel: KernelConfig::new("../linux/vmlinux", "i8042.nokbd reboot=t panic=1 pci=off")?,
     };
 
     let start_time = std::time::Instant::now();
-    let vm = Vmm::new(config)?;
+    let mut vm = Vmm::new(config)?;
     let elapsed_us = start_time.elapsed().as_micros();
+    println!("VM creation took {}us", elapsed_us);
 
-    println!("VM created in {}us", elapsed_us);
+    let start_time = std::time::Instant::now();
+    vm.run()?;
+    let elapsed_us = start_time.elapsed().as_micros();
+    println!("VM run took {}us", elapsed_us);
 
     println!("Sparkled!");
 

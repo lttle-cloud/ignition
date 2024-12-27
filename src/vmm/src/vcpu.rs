@@ -1,7 +1,8 @@
-use std::sync::{Arc, Barrier, Condvar, Mutex};
-
 use crate::{
-    constants::{PDE_START, PDPTE_START, PML4_START, X86_CR0_PE, X86_CR0_PG, X86_CR4_PAE},
+    constants::{
+        BOOT_STACK_POINTER, PDE_START, PDPTE_START, PML4_START, X86_CR0_PE, X86_CR0_PG,
+        X86_CR4_PAE, ZEROPG_START,
+    },
     cpu_ref::{
         self,
         gdt::{Gdt, BOOT_GDT_OFFSET},
@@ -14,10 +15,21 @@ use crate::{
     memory::{self, Memory},
     vm::VmRunState,
 };
-use kvm_bindings::{kvm_fpu, CpuId, Msrs};
-use kvm_ioctls::{Kvm, VcpuFd, VmFd};
+use kvm_bindings::{kvm_fpu, kvm_regs, CpuId, Msrs};
+use kvm_ioctls::{Kvm, VcpuExit, VcpuFd, VmFd};
+use libc::{c_int, siginfo_t, SIGRTMIN};
+use std::{cell::RefCell, io::stdin};
+use std::{
+    io,
+    sync::{Arc, Barrier, Condvar, Mutex},
+};
 use util::result::{bail, Result};
+use vm_device::{
+    bus::{MmioAddress, PioAddress},
+    device_manager::{MmioManager, PioManager},
+};
 use vm_memory::{Address, Bytes, GuestAddress};
+use vmm_sys_util::{signal::register_signal_handler, terminal::Terminal};
 
 #[derive(Clone)]
 pub struct VcpuConfig {
@@ -82,6 +94,8 @@ pub struct Vcpu {
     run_barrier: Arc<Barrier>,
     pub run_state: Arc<VcpuRunState>,
 }
+
+thread_local!(static TLS_VCPU_PTR: RefCell<Option<*mut Vcpu>> = RefCell::new(None));
 
 impl Vcpu {
     pub fn new(
@@ -198,5 +212,169 @@ impl Vcpu {
         self.vcpu_fd.set_fpu(&fpu)?;
 
         Ok(())
+    }
+
+    fn setup_regs(&self, start_addr: GuestAddress) -> Result<()> {
+        let regs = kvm_regs {
+            rflags: 0x0000_0000_0000_0002u64,
+            rip: start_addr.raw_value(),
+            rsp: BOOT_STACK_POINTER,
+            rbp: BOOT_STACK_POINTER,
+            rsi: ZEROPG_START,
+            ..Default::default()
+        };
+
+        self.vcpu_fd.set_regs(&regs)?;
+
+        Ok(())
+    }
+
+    pub fn run(&mut self, start_addr: GuestAddress) -> Result<()> {
+        self.setup_regs(start_addr)?;
+        self.init_tls()?;
+
+        self.run_barrier.wait();
+        'vcpu_loop: loop {
+            let mut interrupt_by_signal = false;
+
+            match self.vcpu_fd.run() {
+                Ok(exist_reason) => match exist_reason {
+                    VcpuExit::Shutdown | VcpuExit::Hlt => {
+                        println!("Guest shutdown: {:?}.", exist_reason);
+
+                        if stdin().lock().set_canon_mode().is_err() {
+                            eprintln!("Failed to set canonical mode on terminal.");
+                        };
+
+                        self.run_state.set_and_notify(VmRunState::Exiting);
+                        break;
+                    }
+                    VcpuExit::IoOut(addr, data) => {
+                        if (0x3f8..(0x3f8 + 8)).contains(&addr) {
+                            // write to serial port
+
+                            let io_manager = self.device_manager.io_manager.lock().unwrap();
+                            if io_manager.pio_write(PioAddress(addr), data).is_err() {
+                                eprintln!("Failed to write to serial port.");
+                            }
+                        } else if addr == 0x060 || addr == 0x061 || addr == 0x064 {
+                            // write to i8042
+                            let io_manager = self.device_manager.io_manager.lock().unwrap();
+                            if io_manager.pio_write(PioAddress(addr), data).is_err() {
+                                eprintln!("Failed to write to i8042.");
+                            }
+                        } else if (0x070..=0x07f).contains(&addr) {
+                            // rtc port write
+                        } else {
+                            // unhandled io port write
+                        }
+                    }
+                    VcpuExit::IoIn(addr, data) => {
+                        if (0x3f8..(0x3f8 + 8)).contains(&addr) {
+                            // read from serial port
+
+                            let io_manager = self.device_manager.io_manager.lock().unwrap();
+                            if io_manager.pio_read(PioAddress(addr), data).is_err() {
+                                eprintln!("Failed to read from serial port.");
+                            }
+                        } else {
+                            // unhandled io port read
+                        }
+                    }
+                    VcpuExit::MmioRead(addr, data) => {
+                        let io_manager = self.device_manager.io_manager.lock().unwrap();
+                        if io_manager.mmio_read(MmioAddress(addr), data).is_err() {
+                            eprintln!("Failed to read from mmio.");
+                        }
+                    }
+                    VcpuExit::MmioWrite(addr, data) => {
+                        let io_manager = self.device_manager.io_manager.lock().unwrap();
+                        if io_manager.mmio_write(MmioAddress(addr), data).is_err() {
+                            eprintln!("Failed to write to mmio.");
+                        }
+                    }
+                    _other => {
+                        println!("Unhandled exit reason: {:?}", _other);
+                    }
+                },
+                Err(e) => match e.errno() {
+                    libc::EAGAIN => {}
+                    libc::EINTR => {
+                        interrupt_by_signal = true;
+                    }
+                    _ => {
+                        println!("Vcpu run failed: {:?}", e);
+                        break;
+                    }
+                },
+            }
+
+            if interrupt_by_signal {
+                self.vcpu_fd.set_kvm_immediate_exit(0);
+                let mut run_state_locked = self.run_state.vm_state.lock().unwrap();
+
+                loop {
+                    match *run_state_locked {
+                        VmRunState::Running => {
+                            break;
+                        }
+                        VmRunState::Suspending => {}
+                        VmRunState::Exiting => {
+                            break 'vcpu_loop;
+                        }
+                    }
+
+                    run_state_locked = self.run_state.condvar.wait(run_state_locked).unwrap();
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn init_tls(&mut self) -> Result<()> {
+        TLS_VCPU_PTR.with(|vcpu| {
+            if vcpu.borrow().is_none() {
+                *vcpu.borrow_mut() = Some(self as *mut Vcpu);
+                Ok(())
+            } else {
+                bail!("TLS already initialized");
+            }
+        })?;
+
+        Ok(())
+    }
+
+    pub fn setup_signal_handler() -> Result<()> {
+        extern "C" fn handle_signal(_: c_int, _: *mut siginfo_t, _: *mut libc::c_void) {
+            Vcpu::set_local_exit(1);
+        }
+
+        register_signal_handler(SIGRTMIN() + 0, handle_signal)?;
+
+        Ok(())
+    }
+
+    fn set_local_exit(value: u8) {
+        TLS_VCPU_PTR.with(|v| {
+            if let Some(vcpu) = *v.borrow_mut() {
+                // The block below modifies a mmaped memory region (`kvm_run` struct) which is valid
+                // as long as the `VMM` is still in scope. This function is called in response to
+                // SIGRTMIN(), while the vCPU threads are still active. Their termination are
+                // strictly bound to the lifespan of the `VMM` and it precedes the `VMM` dropping.
+                unsafe {
+                    let vcpu_ref: &mut Vcpu = &mut *vcpu;
+                    vcpu_ref.vcpu_fd.set_kvm_immediate_exit(value);
+                };
+            }
+        });
+    }
+}
+
+impl Drop for Vcpu {
+    fn drop(&mut self) {
+        TLS_VCPU_PTR.with(|v| {
+            *v.borrow_mut() = None;
+        });
     }
 }

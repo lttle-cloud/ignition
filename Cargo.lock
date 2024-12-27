@@ -281,7 +281,7 @@ dependencies = [
 name = "takeoff"
 version = "0.1.0"
 dependencies = [
- "libc",
+ "util",
 ]
 
 [[package]]
@@ -395,6 +395,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "vm-superio"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3428ee25acbfc75ed14600f2043876e0889cbd57c39dd441191417377cdceda0"
+
+[[package]]
 name = "vmm"
 version = "0.1.0"
 dependencies = [
@@ -408,6 +414,7 @@ dependencies = [
  "vm-allocator",
  "vm-device",
  "vm-memory",
+ "vm-superio",
  "vmm-sys-util",
 ]
 

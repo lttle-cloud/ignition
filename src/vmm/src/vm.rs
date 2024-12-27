@@ -1,32 +1,33 @@
 use std::{
     sync::{Arc, Barrier},
-    thread::JoinHandle,
+    thread::{self, JoinHandle},
 };
 
 use kvm_bindings::{kvm_pit_config, kvm_userspace_memory_region, KVM_PIT_SPEAKER_DUMMY};
 use kvm_ioctls::{Kvm, VmFd};
+use libc::SIGRTMIN;
 use util::result::{bail, Result};
-use vm_memory::{guest_memory, Address, GuestMemory, GuestMemoryRegion};
+use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryRegion};
+use vmm_sys_util::{eventfd::EventFd, signal::Killable};
 
 use crate::{
+    constants::MAX_IRQ,
     cpu_ref::mptable::MpTable,
     device::SharedDeviceManager,
     memory::Memory,
-    vcpu::{self, ExitHandler, Vcpu, VcpuRunState, VcpusConfigList},
+    vcpu::{ExitHandler, Vcpu, VcpuRunState, VcpusConfigList},
 };
 
 pub struct VmConfig {
     pub vcpus_count: u8,
     pub vcpus_config: VcpusConfigList,
-    pub max_irq: u32,
 }
 
 impl VmConfig {
-    pub fn new(kvm: &Kvm, vcpus_count: u8, max_irq: u32) -> Result<Self> {
+    pub fn new(kvm: &Kvm, vcpus_count: u8) -> Result<Self> {
         Ok(VmConfig {
             vcpus_count,
             vcpus_config: VcpusConfigList::new(kvm, vcpus_count)?,
-            max_irq,
         })
     }
 }
@@ -91,17 +92,12 @@ impl<EH: ExitHandler + Send + 'static> Vm<EH> {
         let vcpus_config = config.vcpus_config.clone();
         let mut vm = Self::create_instance(kvm, memory, config, exit_handler)?;
 
-        let max_irq: u8 = vm.config.max_irq.try_into()?;
-        MpTable::new(vm.config.vcpus_count, max_irq)?.write(memory.guest_memory())?;
+        MpTable::new(vm.config.vcpus_count, MAX_IRQ as u8)?.write(memory.guest_memory())?;
 
         vm.setup_irq_controller()?;
         vm.setup_vcpus(device_manager, vcpus_config, memory)?;
 
         Ok(vm)
-    }
-
-    pub fn max_irq(&self) -> u32 {
-        self.config.max_irq
     }
 
     fn configure_memory_regions(&self, kvm: &Kvm, memory: &Memory) -> Result<()> {
@@ -160,5 +156,37 @@ impl<EH: ExitHandler + Send + 'static> Vm<EH> {
         }
 
         Ok(())
+    }
+
+    pub fn register_irqfd(&self, fd: &EventFd, irq: u32) -> Result<()> {
+        Ok(self.fd.register_irqfd(fd, irq)?)
+    }
+
+    pub fn run(&mut self, start_addr: GuestAddress) -> Result<()> {
+        Vcpu::setup_signal_handler()?;
+
+        for (id, mut vcpu) in self.vcpus.drain(..).enumerate() {
+            let exit_handler = self.exit_handler.clone();
+            let handle = thread::Builder::new()
+                .name(format!("vcpu_{}", id))
+                .spawn(move || {
+                    vcpu.run(start_addr).unwrap();
+                    let _ = exit_handler.kick();
+
+                    vcpu.run_state.set_and_notify(VmRunState::Exiting);
+                })?;
+            self.vcpu_handles.push(handle);
+        }
+
+        Ok(())
+    }
+
+    pub fn shutdown(&mut self) {
+        self.vcpu_run_state.set_and_notify(VmRunState::Exiting);
+        self.vcpu_handles.drain(..).for_each(|handle| {
+            #[allow(clippy::identity_op)]
+            let _ = handle.kill(SIGRTMIN() + 0);
+            let _ = handle.join();
+        })
     }
 }
