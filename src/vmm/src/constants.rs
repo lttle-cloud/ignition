@@ -10,6 +10,7 @@ pub const HIGH_RAM_START: u64 = 0x0010_0000;
 
 pub const BOOT_STACK_POINTER: u64 = 0x8ff0;
 pub const ZEROPG_START: u64 = 0x7000;
+pub const PAGE_SIZE: usize = 4096;
 
 pub const CMDLINE_CAPACITY: usize = 4096;
 

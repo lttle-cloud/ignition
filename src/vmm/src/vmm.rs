@@ -20,18 +20,20 @@ use linux_loader::{
     loader::{bootparam, KernelLoader, KernelLoaderResult},
 };
 use std::{
-    io::{stdin, stdout},
+    io::{stdin, stdout, Seek, SeekFrom},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
 };
-use util::result::{bail, Result};
+use util::result::{anyhow, bail, Result};
 use vm_device::{
     bus::{PioAddress, PioRange},
     device_manager::PioManager,
 };
-use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap};
+use vm_memory::{
+    Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion, ReadVolatile,
+};
 use vm_superio::{I8042Device, Serial};
 use vmm_sys_util::{eventfd::EventFd, terminal::Terminal};
 
@@ -83,6 +85,7 @@ impl Vmm {
 
     pub fn run(&mut self) -> Result<()> {
         let kernel_load = self.load_kernel()?;
+
         let Some(kernel_load_addr) = self
             .memory
             .guest_memory()
@@ -204,6 +207,13 @@ impl Vmm {
         boot_params.e820_table[boot_params.e820_entries as usize].type_ = E820_RAM;
         boot_params.e820_entries += 1;
 
+        if let Some(initrd_path) = self.config.kernel.initrd_path.as_ref() {
+            let (size, addr) = self.load_initrd(initrd_path.clone())?;
+
+            boot_params.hdr.ramdisk_image = addr.raw_value() as u32;
+            boot_params.hdr.ramdisk_size = size as u32;
+        }
+
         boot_params.hdr.cmd_line_ptr = CMDLINE_START as u32;
         boot_params.hdr.cmdline_size =
             self.config.kernel.cmdline.as_cstring()?.as_bytes().len() as u32;
@@ -220,6 +230,46 @@ impl Vmm {
         )?;
 
         Ok(kernel_load)
+    }
+
+    fn load_initrd(&mut self, initrd_path: String) -> Result<(usize, GuestAddress)> {
+        let mut initrd_image = std::fs::File::open(&initrd_path)?;
+
+        let size = match initrd_image.seek(SeekFrom::End(0)) {
+            Err(err) => bail!("Initrd image seek failed: {}", err),
+            Ok(0) => {
+                bail!("Initrd image is empty");
+            }
+            Ok(s) => s as usize,
+        };
+
+        initrd_image.seek(SeekFrom::Start(0))?;
+
+        let first_region = self
+            .memory
+            .guest_memory()
+            .find_region(GuestAddress(0))
+            .ok_or(anyhow!(
+                "Failed to find a suitable region for the initrd image"
+            ))?;
+
+        let first_region_size = first_region.len() as usize;
+
+        if first_region_size < size {
+            bail!("First memory region is too small for the initrd image");
+        }
+
+        let address = first_region_size - size;
+        let aligned_address = (address & !(constants::PAGE_SIZE - 1)) as u64;
+
+        let mut mem = self
+            .memory
+            .guest_memory()
+            .get_slice(GuestAddress(aligned_address), size)?;
+
+        initrd_image.read_exact_volatile(&mut mem)?;
+
+        Ok((size, GuestAddress(aligned_address)))
     }
 }
 

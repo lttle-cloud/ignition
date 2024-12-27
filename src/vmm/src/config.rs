@@ -17,17 +17,42 @@ pub struct VcpuConfig {
 pub struct KernelConfig {
     pub path: String,
     pub cmdline: Cmdline,
+    pub initrd_path: Option<String>,
 }
 
 impl KernelConfig {
-    pub fn new(path: impl AsRef<str>, cmd: impl AsRef<str>) -> Result<Self> {
-        let mut cmdline = Cmdline::new(CMDLINE_CAPACITY)?;
-        cmdline.insert_str(cmd)?;
-
-        Ok(KernelConfig {
-            path: path.as_ref().to_string(),
-            cmdline,
+    pub fn builder(kernel_path: impl AsRef<str>) -> Result<KernelConfigBuilder> {
+        Ok(KernelConfigBuilder {
+            path: kernel_path.as_ref().to_string(),
+            cmdline: Cmdline::new(CMDLINE_CAPACITY)?,
+            initrd_path: None,
         })
+    }
+}
+
+pub struct KernelConfigBuilder {
+    path: String,
+    cmdline: Cmdline,
+    initrd_path: Option<String>,
+}
+
+impl KernelConfigBuilder {
+    pub fn with_cmdline(&mut self, cmd: impl AsRef<str>) -> Result<&mut Self> {
+        self.cmdline.insert_str(cmd)?;
+        Ok(self)
+    }
+
+    pub fn with_initrd(&mut self, initrd_path: impl AsRef<str>) -> &mut Self {
+        self.initrd_path = Some(initrd_path.as_ref().to_string());
+        self
+    }
+
+    pub fn build(&self) -> KernelConfig {
+        KernelConfig {
+            path: self.path.clone(),
+            cmdline: self.cmdline.clone(),
+            initrd_path: self.initrd_path.clone(),
+        }
     }
 }
 

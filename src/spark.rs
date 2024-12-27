@@ -10,7 +10,10 @@ async fn spark() -> Result<()> {
     let config = Config {
         memory: MemoryConfig { size_mib: 128 },
         vcpu: VcpuConfig { num: 1 },
-        kernel: KernelConfig::new("../linux/vmlinux", "i8042.nokbd reboot=t panic=1 pci=off")?,
+        kernel: KernelConfig::builder("../linux/vmlinux")?
+            .with_initrd("./target/takeoff.cpio")
+            .with_cmdline("i8042.nokbd reboot=t panic=1 pci=off")?
+            .build(),
     };
 
     let start_time = std::time::Instant::now();
