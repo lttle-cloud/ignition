@@ -2,11 +2,12 @@ use crate::{
     config::Config,
     constants::{
         self, CMDLINE_START, E820_RAM, EBDA_START, HIGH_RAM_START, KERNEL_BOOT_FLAG_MAGIC,
-        KERNEL_HDR_MAGIC, KERNEL_LOADER_OTHER, KERNEL_MIN_ALIGNMENT_BYTES, SERIAL_IRQ,
+        KERNEL_HDR_MAGIC, KERNEL_LOADER_OTHER, KERNEL_MIN_ALIGNMENT_BYTES, MMIO_LEN, SERIAL_IRQ,
         ZERO_PAGE_START,
     },
     device::{
         legacy::{i8042::I8042Wrapper, serial::SerialWrapper, trigger::EventFdTrigger},
+        meta::guest_manager::GuestManagerDevice,
         SharedDeviceManager,
     },
     memory::Memory,
@@ -27,9 +28,10 @@ use std::{
     },
 };
 use util::result::{anyhow, bail, Result};
+use vm_allocator::AllocPolicy;
 use vm_device::{
-    bus::{PioAddress, PioRange},
-    device_manager::PioManager,
+    bus::{MmioAddress, MmioRange, PioAddress, PioRange},
+    device_manager::{MmioManager, PioManager},
 };
 use vm_memory::{
     Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion, ReadVolatile,
@@ -39,7 +41,7 @@ use vmm_sys_util::{eventfd::EventFd, terminal::Terminal};
 
 pub struct Vmm {
     config: Config,
-    memory: Memory,
+    memory: Arc<Memory>,
     device_manager: SharedDeviceManager,
     event_manager: EventManager<Arc<Mutex<dyn MutEventSubscriber + Send>>>,
     exit_handler: SharedExitEventHandler,
@@ -51,7 +53,7 @@ impl Vmm {
         let kvm = Kvm::new()?;
         Vmm::check_kvm_caps(&kvm)?;
 
-        let memory = Memory::new(config.memory.clone())?;
+        let memory = Arc::new(Memory::new(config.memory.clone())?);
         let device_manager = SharedDeviceManager::new(SERIAL_IRQ)?;
 
         let vm_config = VmConfig::new(&kvm, config.vcpu.num)?;
@@ -79,6 +81,7 @@ impl Vmm {
 
         vmm.add_serial_console()?;
         vmm.add_i8042_device()?;
+        vmm.add_guest_manager_device()?;
 
         Ok(vmm)
     }
@@ -171,6 +174,25 @@ impl Vmm {
 
         let mut io_manager = self.device_manager.io_manager.lock().unwrap();
         io_manager.register_pio(range, i8042)?;
+
+        Ok(())
+    }
+
+    fn add_guest_manager_device(&mut self) -> Result<()> {
+        let mut io_manager = self.device_manager.io_manager.lock().unwrap();
+
+        let address = {
+            let mut mmio_allocator = self.memory.lock_mmio_allocator();
+            mmio_allocator.allocate(MMIO_LEN, MMIO_LEN, AllocPolicy::FirstMatch)?
+        };
+
+        let device = GuestManagerDevice::new(self.memory.clone(), self.exit_handler.clone());
+        let device = Arc::new(Mutex::new(device));
+
+        io_manager.register_mmio(
+            MmioRange::new(MmioAddress(address.start()), address.len())?,
+            device,
+        )?;
 
         Ok(())
     }
@@ -279,7 +301,7 @@ struct ExitEventHandler {
 }
 
 #[derive(Clone)]
-struct SharedExitEventHandler(Arc<Mutex<ExitEventHandler>>);
+pub struct SharedExitEventHandler(Arc<Mutex<ExitEventHandler>>);
 
 impl SharedExitEventHandler {
     pub fn new() -> Result<Self> {
@@ -296,6 +318,11 @@ impl SharedExitEventHandler {
 
     fn keep_running(&self) -> bool {
         self.0.lock().unwrap().keep_running.load(Ordering::Acquire)
+    }
+
+    pub fn trigger_exit(&self) -> Result<()> {
+        self.0.lock().unwrap().exit_event.write(1)?;
+        Ok(())
     }
 }
 

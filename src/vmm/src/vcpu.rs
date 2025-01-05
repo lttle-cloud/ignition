@@ -12,17 +12,14 @@ use crate::{
         msr_index,
     },
     device::SharedDeviceManager,
-    memory::{self, Memory},
+    memory::Memory,
     vm::VmRunState,
 };
 use kvm_bindings::{kvm_fpu, kvm_regs, CpuId, Msrs};
 use kvm_ioctls::{Kvm, VcpuExit, VcpuFd, VmFd};
 use libc::{c_int, siginfo_t, SIGRTMIN};
+use std::sync::{Arc, Barrier, Condvar, Mutex};
 use std::{cell::RefCell, io::stdin};
-use std::{
-    io,
-    sync::{Arc, Barrier, Condvar, Mutex},
-};
 use util::result::{bail, Result};
 use vm_device::{
     bus::{MmioAddress, PioAddress},

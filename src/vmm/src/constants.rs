@@ -3,6 +3,7 @@ use crate::cpu_ref;
 pub const MMIO_END: u64 = 1 << 32;
 pub const MMIO_SIZE: u64 = 768 << 20; // 768 mib
 pub const MMIO_START: u64 = MMIO_END - MMIO_SIZE;
+pub const MMIO_LEN: u64 = 0x1000; // 4096 bytes (1 page)
 
 pub const ZERO_PAGE_START: u64 = 0x7000;
 pub const CMDLINE_START: u64 = 0x0002_0000;

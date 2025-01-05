@@ -1,4 +1,5 @@
 pub mod legacy;
+pub mod meta;
 
 use std::sync::{Arc, Mutex};
 use util::result::{anyhow, bail, Result};

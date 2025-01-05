@@ -1,3 +1,5 @@
+use std::sync::{Mutex, MutexGuard};
+
 use util::result::Result;
 use vm_allocator::AddressAllocator;
 use vm_memory::{GuestAddress, GuestMemoryMmap};
@@ -10,7 +12,7 @@ use crate::{
 pub struct Memory {
     config: MemoryConfig,
     guest_memory: GuestMemoryMmap,
-    mmio_allocator: AddressAllocator,
+    mmio_allocator: Mutex<AddressAllocator>,
 }
 
 impl Memory {
@@ -21,7 +23,7 @@ impl Memory {
         Ok(Memory {
             config,
             guest_memory,
-            mmio_allocator,
+            mmio_allocator: Mutex::new(mmio_allocator),
         })
     }
 
@@ -43,7 +45,7 @@ impl Memory {
         &self.guest_memory
     }
 
-    pub fn mmio_allocator(&self) -> &AddressAllocator {
-        &self.mmio_allocator
+    pub fn lock_mmio_allocator(&self) -> MutexGuard<AddressAllocator> {
+        self.mmio_allocator.lock().unwrap()
     }
 }
