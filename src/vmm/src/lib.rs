@@ -4,6 +4,7 @@ mod cpu_ref;
 mod device;
 mod kernel;
 mod memory;
+mod state;
 mod vcpu;
 mod vm;
 pub mod vmm;

@@ -11,8 +11,12 @@ use crate::{
         },
         msr_index,
     },
-    device::SharedDeviceManager,
+    device::{
+        meta::guest_manager::{GuestManagerDevice, GUEST_MANAGER_MMIO_START},
+        SharedDeviceManager,
+    },
     memory::Memory,
+    state::VcpuState,
     vm::VmRunState,
 };
 use kvm_bindings::{kvm_fpu, kvm_regs, CpuId, Msrs};
@@ -28,14 +32,14 @@ use vm_device::{
 use vm_memory::{Address, Bytes, GuestAddress};
 use vmm_sys_util::{signal::register_signal_handler, terminal::Terminal};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VcpuConfig {
     pub id: u8,
     pub cpuid: CpuId,
     pub msrs: Msrs,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VcpusConfigList {
     pub configs: Vec<VcpuConfig>,
 }
@@ -87,6 +91,7 @@ impl VcpuRunState {
 pub struct Vcpu {
     pub vcpu_fd: VcpuFd,
     device_manager: SharedDeviceManager,
+    guest_manager: Arc<Mutex<GuestManagerDevice>>,
     config: VcpuConfig,
     run_barrier: Arc<Barrier>,
     pub run_state: Arc<VcpuRunState>,
@@ -98,6 +103,7 @@ impl Vcpu {
     pub fn new(
         vm_fd: &VmFd,
         device_manager: SharedDeviceManager,
+        guest_manager: Arc<Mutex<GuestManagerDevice>>,
         config: VcpuConfig,
         run_barrier: Arc<Barrier>,
         run_state: Arc<VcpuRunState>,
@@ -106,6 +112,7 @@ impl Vcpu {
         let vcpu = Vcpu {
             vcpu_fd: vm_fd.create_vcpu(config.id.into())?,
             device_manager,
+            guest_manager,
             config,
             run_barrier,
             run_state,
@@ -116,6 +123,28 @@ impl Vcpu {
         vcpu.configure_sregs(memory)?;
         vcpu.configure_lapic()?;
         vcpu.configure_fpu()?;
+
+        Ok(vcpu)
+    }
+
+    pub fn from_state(
+        vm_fd: &VmFd,
+        device_manager: SharedDeviceManager,
+        guest_manager: Arc<Mutex<GuestManagerDevice>>,
+        state: &VcpuState,
+        run_barrier: Arc<Barrier>,
+        run_state: Arc<VcpuRunState>,
+    ) -> Result<Self> {
+        let mut vcpu = Vcpu {
+            vcpu_fd: vm_fd.create_vcpu(state.config.id.into())?,
+            device_manager,
+            guest_manager,
+            config: state.config.clone(),
+            run_barrier,
+            run_state,
+        };
+
+        vcpu.set_state(&state)?;
 
         Ok(vcpu)
     }
@@ -226,8 +255,11 @@ impl Vcpu {
         Ok(())
     }
 
-    pub fn run(&mut self, start_addr: GuestAddress) -> Result<()> {
-        self.setup_regs(start_addr)?;
+    pub fn run(&mut self, start_addr: Option<GuestAddress>) -> Result<()> {
+        if let Some(start_addr) = start_addr {
+            self.setup_regs(start_addr)?;
+        }
+
         self.init_tls()?;
 
         self.run_barrier.wait();
@@ -279,15 +311,40 @@ impl Vcpu {
                         }
                     }
                     VcpuExit::MmioRead(addr, data) => {
+                        if GuestManagerDevice::should_handle_read(addr) {
+                            let mut guest_manager = self.guest_manager.lock().unwrap();
+                            guest_manager.mmio_read(addr - GUEST_MANAGER_MMIO_START, data);
+
+                            if guest_manager.should_exit_immediately() {
+                                break 'vcpu_loop;
+                            }
+
+                            continue;
+                        }
+
                         let io_manager = self.device_manager.io_manager.lock().unwrap();
                         if io_manager.mmio_read(MmioAddress(addr), data).is_err() {
                             eprintln!("Failed to read from mmio.");
                         }
                     }
                     VcpuExit::MmioWrite(addr, data) => {
+                        if GuestManagerDevice::should_handle_write(addr) {
+                            let mut guest_manager = self.guest_manager.lock().unwrap();
+                            guest_manager.mmio_write(addr - GUEST_MANAGER_MMIO_START, data);
+
+                            if guest_manager.should_exit_immediately() {
+                                break 'vcpu_loop;
+                            }
+
+                            continue;
+                        }
+
                         let io_manager = self.device_manager.io_manager.lock().unwrap();
-                        if io_manager.mmio_write(MmioAddress(addr), data).is_err() {
-                            eprintln!("Failed to write to mmio.");
+                        match io_manager.mmio_write(MmioAddress(addr), data) {
+                            Err(e) => {
+                                eprintln!("Failed to write to mmio: {:?} {}", addr, e);
+                            }
+                            _ => {}
                         }
                     }
                     _other => {
@@ -365,6 +422,60 @@ impl Vcpu {
                 };
             }
         });
+    }
+
+    pub fn save_state(&mut self) -> Result<VcpuState> {
+        let mp_state = self.vcpu_fd.get_mp_state()?;
+        let regs = self.vcpu_fd.get_regs()?;
+        let sregs = self.vcpu_fd.get_sregs()?;
+        let xsave = self.vcpu_fd.get_xsave()?;
+        let xcrs = self.vcpu_fd.get_xcrs()?;
+        let debug_regs = self.vcpu_fd.get_debug_regs()?;
+        let lapic = self.vcpu_fd.get_lapic()?;
+
+        let mut msrs = self.config.msrs.clone();
+        let num_msrs = self.config.msrs.as_fam_struct_ref().nmsrs as usize;
+        let nmsrs = self.vcpu_fd.get_msrs(&mut msrs)?;
+        if nmsrs != num_msrs {
+            bail!(
+                "Failed to get all MSRs. Expected {}, got {}",
+                num_msrs,
+                nmsrs
+            );
+        }
+        let vcpu_events = self.vcpu_fd.get_vcpu_events()?;
+
+        let cpuid = self
+            .vcpu_fd
+            .get_cpuid2(kvm_bindings::KVM_MAX_CPUID_ENTRIES)?;
+
+        Ok(VcpuState {
+            cpuid,
+            msrs,
+            debug_regs,
+            lapic,
+            mp_state,
+            regs,
+            sregs,
+            vcpu_events,
+            xcrs,
+            xsave,
+            config: self.config.clone(),
+        })
+    }
+
+    fn set_state(&mut self, state: &VcpuState) -> Result<()> {
+        self.vcpu_fd.set_cpuid2(&state.cpuid)?;
+        self.vcpu_fd.set_mp_state(state.mp_state)?;
+        self.vcpu_fd.set_regs(&state.regs)?;
+        self.vcpu_fd.set_sregs(&state.sregs)?;
+        self.vcpu_fd.set_xsave(&state.xsave)?;
+        self.vcpu_fd.set_xcrs(&state.xcrs)?;
+        self.vcpu_fd.set_debug_regs(&state.debug_regs)?;
+        self.vcpu_fd.set_lapic(&state.lapic)?;
+        self.vcpu_fd.set_msrs(&state.msrs)?;
+        self.vcpu_fd.set_vcpu_events(&state.vcpu_events)?;
+        Ok(())
     }
 }
 

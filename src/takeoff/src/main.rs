@@ -1,4 +1,4 @@
-use std::{fs, os::fd::FromRawFd};
+use std::{ffi::c_void, fs, os::fd::FromRawFd};
 
 use nix::{
     fcntl::{open, OFlag},
@@ -22,35 +22,53 @@ fn test_kernel_mmio_write() -> Result<()> {
     Ok(())
 }
 
-fn test_user_mmio_wirte() -> Result<()> {
-    let fd = open(
-        "/dev/mem",
-        OFlag::O_RDWR | OFlag::O_SYNC | OFlag::O_CLOEXEC,
-        Mode::empty(),
-    )?;
+struct GuestManager {
+    map_base: ::core::ptr::NonNull<c_void>,
+}
 
-    let fd = unsafe { fs::File::from_raw_fd(fd) };
+impl GuestManager {
+    pub fn new() -> Result<GuestManager> {
+        let fd = open(
+            "/dev/mem",
+            OFlag::O_RDWR | OFlag::O_SYNC | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )?;
 
-    let map_base = unsafe {
-        mmap(
-            None,
-            PAGE_SIZE.try_into()?,
-            ProtFlags::PROT_WRITE,
-            MapFlags::MAP_SHARED,
-            fd,
-            MAGIC_MMIO_ADDR,
-        )?
-    };
+        let fd = unsafe { fs::File::from_raw_fd(fd) };
 
-    unsafe {
-        let ptr = map_base.as_ptr() as *mut u8;
-        *ptr = 123u8;
+        let map_base = unsafe {
+            mmap(
+                None,
+                PAGE_SIZE.try_into()?,
+                ProtFlags::PROT_WRITE,
+                MapFlags::MAP_SHARED,
+                fd,
+                MAGIC_MMIO_ADDR,
+            )?
+        };
+
+        Ok(GuestManager { map_base })
     }
 
-    Ok(())
+    pub fn trigger_snapshot(&self) {
+        unsafe {
+            let ptr: *mut u64 = self.map_base.as_ptr() as *mut u64;
+            ptr.write_volatile(0x00_00_00_00_00_00_00_01);
+        }
+    }
+
+    pub fn mark_boot_ready(&self) {
+        unsafe {
+            let ptr = self.map_base.as_ptr() as *mut u64;
+            ptr.write_volatile(0x00_00_00_00_00_00_00_0a);
+        }
+    }
 }
 
 async fn takeoff() {
+    let guest_manager = GuestManager::new().unwrap();
+    guest_manager.mark_boot_ready();
+
     for i in 0..5 {
         println!("{}...", 5 - i);
         time::sleep(time::Duration::from_secs(1)).await;
@@ -58,13 +76,15 @@ async fn takeoff() {
 
     println!("takeoff");
 
-    time::sleep(time::Duration::from_secs(1)).await;
-    test_kernel_mmio_write().unwrap();
+    guest_manager.trigger_snapshot(); // here the guest is suspended. will comtinue from here.
 
-    time::sleep(time::Duration::from_secs(1)).await;
-    test_user_mmio_wirte().unwrap();
+    guest_manager.mark_boot_ready();
+    println!("guess who's back");
 
-    time::sleep(time::Duration::from_secs(5)).await;
+    test_kernel_mmio_write().unwrap(); // here the guest is suspended by the kernel. will comtinue from here.
+
+    guest_manager.mark_boot_ready();
+    println!("back again");
 }
 
 fn main() -> Result<()> {

@@ -6,7 +6,7 @@ use vm_memory::{GuestAddress, GuestMemoryMmap};
 
 use crate::{
     config::MemoryConfig,
-    constants::{MMIO_SIZE, MMIO_START},
+    constants::{MMIO_LEN, MMIO_SIZE, MMIO_START},
 };
 
 pub struct Memory {
@@ -36,7 +36,9 @@ impl Memory {
     }
 
     fn create_mmio_allocator() -> Result<AddressAllocator> {
-        let alloc = AddressAllocator::new(MMIO_START, MMIO_SIZE)?;
+        // We reserve the first MMIO_SIZE bytes for the GuestManager meta device;
+        let allocable_memory_start = MMIO_START + MMIO_LEN;
+        let alloc = AddressAllocator::new(allocable_memory_start, MMIO_SIZE)?;
 
         Ok(alloc)
     }
@@ -47,5 +49,11 @@ impl Memory {
 
     pub fn lock_mmio_allocator(&self) -> MutexGuard<AddressAllocator> {
         self.mmio_allocator.lock().unwrap()
+    }
+
+    pub fn reset_mmio_allocator(&self) -> Result<()> {
+        let mut alloc = self.mmio_allocator.lock().unwrap();
+        *alloc = Memory::create_mmio_allocator()?;
+        Ok(())
     }
 }

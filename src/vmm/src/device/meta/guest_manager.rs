@@ -1,13 +1,17 @@
-use std::sync::Arc;
+use crate::{
+    constants::{MMIO_LEN, MMIO_START},
+    vmm::{ExitHandlerReason, SharedExitEventHandler},
+};
 
-use vm_device::MutDeviceMmio;
-
-use crate::{memory::Memory, vmm::SharedExitEventHandler};
+pub const GUEST_MANAGER_MMIO_START: u64 = MMIO_START;
+pub const GUEST_MANAGER_MMIO_SIZE: u64 = MMIO_LEN;
+pub const GUEST_MANAGER_MMIO_END: u64 = GUEST_MANAGER_MMIO_START + GUEST_MANAGER_MMIO_SIZE;
 
 #[derive(Debug, Clone, Copy)]
 enum TriggerCode {
     Write,
     Listen,
+    BootReadyMarker,
 }
 
 impl TriggerCode {
@@ -15,6 +19,7 @@ impl TriggerCode {
         match byte {
             1 => Some(TriggerCode::Write),
             2 => Some(TriggerCode::Listen),
+            0xa => Some(TriggerCode::BootReadyMarker),
             _ => None,
         }
     }
@@ -38,54 +43,68 @@ impl TriggerData {
 }
 
 pub struct GuestManagerDevice {
-    memory: Arc<Memory>,
     exit_handler: SharedExitEventHandler,
+    start_time: std::time::Instant,
+    should_exit_immediately: bool,
 }
 
 impl GuestManagerDevice {
-    pub fn new(memory: Arc<Memory>, exit_handler: SharedExitEventHandler) -> Self {
+    pub fn should_handle_read(addr: u64) -> bool {
+        addr >= GUEST_MANAGER_MMIO_START && addr < GUEST_MANAGER_MMIO_END
+    }
+
+    pub fn should_handle_write(addr: u64) -> bool {
+        addr >= GUEST_MANAGER_MMIO_START && addr < GUEST_MANAGER_MMIO_END
+    }
+
+    pub fn new(exit_handler: SharedExitEventHandler) -> Self {
         Self {
-            memory,
             exit_handler,
+            start_time: std::time::Instant::now(),
+            should_exit_immediately: false,
         }
     }
-}
 
-impl MutDeviceMmio for GuestManagerDevice {
-    fn mmio_read(
-        &mut self,
-        _base: vm_device::bus::MmioAddress,
-        offset: vm_device::bus::MmioAddressOffset,
-        data: &mut [u8],
-    ) {
-        println!(
-            "GuestManagerDevice::mmio_read offset: {}, size: {:?}",
-            offset,
-            data.len()
-        );
+    pub fn should_exit_immediately(&self) -> bool {
+        self.should_exit_immediately
     }
 
-    fn mmio_write(
-        &mut self,
-        _base: vm_device::bus::MmioAddress,
-        offset: vm_device::bus::MmioAddressOffset,
-        data: &[u8],
-    ) {
-        println!(
-            "GuestManagerDevice::mmio_write offset: {}, data: {:?}",
-            offset, data
-        );
+    pub fn mmio_read(&mut self, _offset: vm_device::bus::MmioAddressOffset, _data: &mut [u8]) {}
 
+    pub fn mmio_write(&mut self, _offset: vm_device::bus::MmioAddressOffset, data: &[u8]) {
         let Some(trigger_data) = TriggerData::from_bytes(data) else {
             println!("Failed to parse trigger data");
             return;
         };
 
-        println!("Trigger data: {:?}", trigger_data);
+        println!("Guest manager recv trigger: {:?}", trigger_data);
 
-        if matches!(trigger_data.code, TriggerCode::Write) {
-            println!("Trigger exit");
-            self.exit_handler.trigger_exit().unwrap();
+        match trigger_data.code {
+            TriggerCode::Write => {
+                println!("Guest manager trigger exit");
+                self.exit_handler
+                    .trigger_exit(ExitHandlerReason::Snapshot)
+                    .unwrap();
+
+                self.should_exit_immediately = true;
+            }
+            TriggerCode::BootReadyMarker => {
+                let ms = self.start_time.elapsed().as_millis();
+                if ms > 2 {
+                    println!("Guest manager boot ready {ms}ms");
+                } else {
+                    println!(
+                        "Guest manager boot ready {}us",
+                        self.start_time.elapsed().as_micros()
+                    );
+                }
+            }
+            _ => {
+                println!(
+                    "Guest manager unhandled trigger code {:?}",
+                    trigger_data.code
+                );
+            }
         }
     }
 }

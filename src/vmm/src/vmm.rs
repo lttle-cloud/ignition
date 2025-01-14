@@ -2,7 +2,7 @@ use crate::{
     config::Config,
     constants::{
         self, CMDLINE_START, E820_RAM, EBDA_START, HIGH_RAM_START, KERNEL_BOOT_FLAG_MAGIC,
-        KERNEL_HDR_MAGIC, KERNEL_LOADER_OTHER, KERNEL_MIN_ALIGNMENT_BYTES, MMIO_LEN, SERIAL_IRQ,
+        KERNEL_HDR_MAGIC, KERNEL_LOADER_OTHER, KERNEL_MIN_ALIGNMENT_BYTES, SERIAL_IRQ,
         ZERO_PAGE_START,
     },
     device::{
@@ -11,6 +11,7 @@ use crate::{
         SharedDeviceManager,
     },
     memory::Memory,
+    state::VmmState,
     vcpu::ExitHandler,
     vm::{Vm, VmConfig},
 };
@@ -28,10 +29,9 @@ use std::{
     },
 };
 use util::result::{anyhow, bail, Result};
-use vm_allocator::AllocPolicy;
 use vm_device::{
-    bus::{MmioAddress, MmioRange, PioAddress, PioRange},
-    device_manager::{MmioManager, PioManager},
+    bus::{PioAddress, PioRange},
+    device_manager::PioManager,
 };
 use vm_memory::{
     Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion, ReadVolatile,
@@ -46,6 +46,7 @@ pub struct Vmm {
     event_manager: EventManager<Arc<Mutex<dyn MutEventSubscriber + Send>>>,
     exit_handler: SharedExitEventHandler,
     vm: Vm<SharedExitEventHandler>,
+    state: Option<VmmState>,
 }
 
 impl Vmm {
@@ -59,12 +60,15 @@ impl Vmm {
         let vm_config = VmConfig::new(&kvm, config.vcpu.num)?;
         let exit_handler = SharedExitEventHandler::new()?;
 
+        let guest_manger = Arc::new(Mutex::new(GuestManagerDevice::new(exit_handler.clone())));
+
         let vm = Vm::new(
             &kvm,
             &memory,
             vm_config,
             exit_handler.clone(),
             device_manager.clone(),
+            guest_manger,
         )?;
 
         let mut event_manager = EventManager::<Arc<Mutex<dyn MutEventSubscriber + Send>>>::new()?;
@@ -77,33 +81,81 @@ impl Vmm {
             event_manager,
             exit_handler,
             vm,
+            state: None,
         };
 
         vmm.add_serial_console()?;
         vmm.add_i8042_device()?;
-        vmm.add_guest_manager_device()?;
 
         Ok(vmm)
     }
 
-    pub fn run(&mut self) -> Result<()> {
-        let kernel_load = self.load_kernel()?;
+    pub fn from_state(state: VmmState, memory: Arc<Memory>) -> Result<Self> {
+        let kvm = Kvm::new()?;
+        Vmm::check_kvm_caps(&kvm)?;
 
-        let Some(kernel_load_addr) = self
-            .memory
-            .guest_memory()
-            .check_address(kernel_load.kernel_load)
-        else {
-            bail!("Invalid kernel load address");
+        let device_manager = SharedDeviceManager::new(SERIAL_IRQ)?;
+        let exit_handler = SharedExitEventHandler::new()?;
+
+        let guest_manger = Arc::new(Mutex::new(GuestManagerDevice::new(exit_handler.clone())));
+
+        let vm = Vm::from_state(
+            &kvm,
+            &memory,
+            &state.vm_state,
+            exit_handler.clone(),
+            device_manager.clone(),
+            guest_manger,
+        )?;
+
+        let mut event_manager = EventManager::<Arc<Mutex<dyn MutEventSubscriber + Send>>>::new()?;
+        event_manager.add_subscriber(exit_handler.0.clone());
+
+        let mut vmm = Vmm {
+            config: state.config.clone(),
+            memory,
+            device_manager,
+            event_manager,
+            exit_handler,
+            vm,
+            state: Some(state),
         };
 
-        println!("Kernel loaded at: {:?}", kernel_load_addr);
+        vmm.add_serial_console()?;
+        vmm.add_i8042_device()?;
+
+        Ok(vmm)
+    }
+
+    pub fn run(&mut self) -> Result<(VmmState, Arc<Memory>)> {
+        let kernel_load_addr = match &self.state {
+            Some(state) => state.kernel_load_addr.clone(),
+            None => {
+                let kernel_load = self.load_kernel()?;
+
+                let Some(kernel_load_addr) = self
+                    .memory
+                    .guest_memory()
+                    .check_address(kernel_load.kernel_load)
+                else {
+                    bail!("Invalid kernel load address");
+                };
+
+                kernel_load_addr
+            }
+        };
 
         if stdin().lock().set_raw_mode().is_err() {
             eprintln!("Failed to set raw mode on terminal. Stdin will echo.");
         }
 
-        self.vm.run(kernel_load_addr)?;
+        let start_address = if self.state.is_some() {
+            None
+        } else {
+            Some(kernel_load_addr)
+        };
+
+        self.vm.run(start_address)?;
 
         loop {
             match self.event_manager.run() {
@@ -119,9 +171,17 @@ impl Vmm {
             }
         }
 
-        self.vm.shutdown();
+        let state = self.vm.shutdown()?;
+        self.memory.reset_mmio_allocator()?;
 
-        Ok(())
+        Ok((
+            VmmState {
+                config: self.config.clone(),
+                vm_state: state,
+                kernel_load_addr,
+            },
+            self.memory.clone(),
+        ))
     }
 
     fn check_kvm_caps(kvm: &Kvm) -> Result<()> {
@@ -174,25 +234,6 @@ impl Vmm {
 
         let mut io_manager = self.device_manager.io_manager.lock().unwrap();
         io_manager.register_pio(range, i8042)?;
-
-        Ok(())
-    }
-
-    fn add_guest_manager_device(&mut self) -> Result<()> {
-        let mut io_manager = self.device_manager.io_manager.lock().unwrap();
-
-        let address = {
-            let mut mmio_allocator = self.memory.lock_mmio_allocator();
-            mmio_allocator.allocate(MMIO_LEN, MMIO_LEN, AllocPolicy::FirstMatch)?
-        };
-
-        let device = GuestManagerDevice::new(self.memory.clone(), self.exit_handler.clone());
-        let device = Arc::new(Mutex::new(device));
-
-        io_manager.register_mmio(
-            MmioRange::new(MmioAddress(address.start()), address.len())?,
-            device,
-        )?;
 
         Ok(())
     }
@@ -295,8 +336,14 @@ impl Vmm {
     }
 }
 
+pub enum ExitHandlerReason {
+    Exit,
+    Snapshot,
+}
+
 struct ExitEventHandler {
     exit_event: EventFd,
+    exit_reason: Option<ExitHandlerReason>,
     keep_running: AtomicBool,
 }
 
@@ -311,6 +358,7 @@ impl SharedExitEventHandler {
         let exit_handler = ExitEventHandler {
             exit_event,
             keep_running,
+            exit_reason: None,
         };
 
         Ok(SharedExitEventHandler(Arc::new(Mutex::new(exit_handler))))
@@ -320,8 +368,12 @@ impl SharedExitEventHandler {
         self.0.lock().unwrap().keep_running.load(Ordering::Acquire)
     }
 
-    pub fn trigger_exit(&self) -> Result<()> {
-        self.0.lock().unwrap().exit_event.write(1)?;
+    pub fn trigger_exit(&self, reason: ExitHandlerReason) -> Result<()> {
+        let mut handler = self.0.lock().unwrap();
+
+        handler.exit_reason = Some(reason);
+        handler.exit_event.write(1)?;
+
         Ok(())
     }
 }

@@ -5,14 +5,14 @@ use vmm::{
 };
 
 async fn spark() -> Result<()> {
-    println!("Sparkling...");
-
     let config = Config {
         memory: MemoryConfig { size_mib: 128 },
         vcpu: VcpuConfig { num: 1 },
         kernel: KernelConfig::builder("../linux/vmlinux")?
             .with_initrd("./target/takeoff.cpio")
-            .with_cmdline("i8042.nokbd reboot=t panic=1 pci=off")?
+            .with_cmdline(
+                "i8042.nokbd reboot=t panic=1 pci=off noapic clocksource=kvm-clock tsc=reliable",
+            )?
             .build(),
     };
 
@@ -22,11 +22,35 @@ async fn spark() -> Result<()> {
     println!("VM creation took {}us", elapsed_us);
 
     let start_time = std::time::Instant::now();
-    vm.run()?;
-    let elapsed_us = start_time.elapsed().as_micros();
-    println!("VM run took {}us", elapsed_us);
+    let (state, memory) = vm.run()?;
+    let elapsed_ms = start_time.elapsed().as_millis();
+    println!("VM run took {}ms", elapsed_ms);
 
-    println!("Sparkled!");
+    println!();
+
+    let start_time = std::time::Instant::now();
+    let mut new_vm = Vmm::from_state(state, memory)?;
+    let elapsed_us = start_time.elapsed().as_micros();
+    println!("VM from state took {}us", elapsed_us);
+
+    let start_time = std::time::Instant::now();
+    let (state, memory) = new_vm.run()?;
+    let elapsed_ms = start_time.elapsed().as_millis();
+    println!("VM run took {}ms", elapsed_ms);
+
+    println!();
+
+    let start_time = std::time::Instant::now();
+    let mut new_vm = Vmm::from_state(state, memory)?;
+    let elapsed_us = start_time.elapsed().as_micros();
+    println!("VM from state took {}us", elapsed_us);
+
+    let start_time = std::time::Instant::now();
+    new_vm.run()?;
+    let elapsed_ms = start_time.elapsed().as_millis();
+    println!("VM run took {}ms", elapsed_ms);
+
+    println!();
 
     Ok(())
 }
