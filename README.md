@@ -28,3 +28,7 @@ Depending on your configuration, Ignition can capture the snapshot:
 - Or at a custom-defined trigger within the application.
 
 The modified Linux kernel detects these triggers automatically, so you don’t have to alter your application’s code. As a result, you can enjoy rapid startup times without any extra development overhead.
+
+## State of the Project
+
+Ignition is in its early stages of development. We’re actively working on the core functionality and tuning performance to achieve our primary goals. That said, we already have a working prototype that showcases the snapshot-based approach and near-instant startup times.
