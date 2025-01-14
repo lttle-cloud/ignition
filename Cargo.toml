@@ -1,5 +1,5 @@
 [package]
-name = "spark"
+name = "ignition"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,8 +8,8 @@ resolver = "2"
 members = [".", "src/util", "src/takeoff", "src/vmm"]
 
 [[bin]]
-name = "sparkd"
-path = "src/spark.rs"
+name = "ignition"
+path = "src/ignition.rs"
 
 [dependencies]
 util = { path = "src/util" }

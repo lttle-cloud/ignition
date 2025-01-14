@@ -4,7 +4,7 @@ use vmm::{
     vmm::Vmm,
 };
 
-async fn spark() -> Result<()> {
+async fn ignition() -> Result<()> {
     let config = Config {
         memory: MemoryConfig { size_mib: 128 },
         vcpu: VcpuConfig { num: 1 },
@@ -59,7 +59,7 @@ fn main() -> Result<()> {
     util::async_runtime::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
-        .block_on(spark())?;
+        .block_on(ignition())?;
 
     Ok(())
 }
