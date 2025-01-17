@@ -7,7 +7,6 @@
 
 use std::io;
 use std::mem;
-use std::result;
 use std::slice;
 
 use crate::cpu_ref::mpspec;
@@ -163,6 +162,7 @@ impl MpTable {
         let mut checksum: u8 = 0;
         let max_ioapic_id = self.cpu_num + 1;
 
+        #[allow(deprecated)]
         mem.read_from(base_mp, &mut io::repeat(0), mp_size)?;
         {
             let size = mem::size_of::<MpfIntel>() as u64;
@@ -382,6 +382,7 @@ mod tests {
         }
 
         let mut sum = Sum(0);
+        #[allow(deprecated)]
         mem.write_to(mpc_offset, &mut sum, mpc_table.0.length as usize)
             .unwrap();
         assert_eq!(sum.0, 0);

@@ -10,6 +10,8 @@
 //! These abstractions are built to resemble the structures defined in the
 //! [Intel Manual](https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-3a-part-1-manual.pdf).
 
+#![allow(unused)]
+
 use kvm_bindings::kvm_segment;
 use util::result::{bail, Result};
 use vm_memory::{ByteValued, Bytes, GuestAddress, GuestMemory, GuestMemoryError};

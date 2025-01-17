@@ -10,7 +10,6 @@ use crate::{
 };
 
 pub struct Memory {
-    config: MemoryConfig,
     guest_memory: GuestMemoryMmap,
     mmio_allocator: Mutex<AddressAllocator>,
 }
@@ -21,7 +20,6 @@ impl Memory {
         let mmio_allocator = Memory::create_mmio_allocator()?;
 
         Ok(Memory {
-            config,
             guest_memory,
             mmio_allocator: Mutex::new(mmio_allocator),
         })

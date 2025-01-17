@@ -40,6 +40,7 @@ impl VmConfig {
 #[derive(Debug, PartialEq, Eq)]
 pub enum VmRunState {
     Running,
+    #[allow(unused)]
     Suspending,
     Exiting,
 }
