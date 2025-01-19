@@ -20,6 +20,23 @@ pub struct KernelConfig {
     pub initrd_path: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct NetConfig {
+    pub tap_name: String,
+    pub ip_addr: String,
+    pub netmask: String,
+    pub gateway: String,
+    pub mac_addr: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub memory: MemoryConfig,
+    pub vcpu: VcpuConfig,
+    pub kernel: KernelConfig,
+    pub net: Option<NetConfig>,
+}
+
 impl KernelConfig {
     pub fn builder(kernel_path: impl AsRef<str>) -> Result<KernelConfigBuilder> {
         Ok(KernelConfigBuilder {
@@ -54,11 +71,4 @@ impl KernelConfigBuilder {
             initrd_path: self.initrd_path.clone(),
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct Config {
-    pub memory: MemoryConfig,
-    pub vcpu: VcpuConfig,
-    pub kernel: KernelConfig,
 }

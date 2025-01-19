@@ -12,6 +12,9 @@ takeoff:
 	sudo mknod -m 666 target/cpio/dev/zero c 1 5
 	sudo mknod -m 666 target/cpio/dev/console c 5 1
 
+	mkdir -p target/cpio/etc
+	echo "nameserver 8.8.8.8" > target/cpio/etc/resolv.conf
+
 	sudo chown -R root:root target/cpio
 
 	cd target/cpio && find . | cpio -o --format=newc > ../takeoff.cpio

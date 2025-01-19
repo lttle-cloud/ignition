@@ -8,6 +8,7 @@ use crate::{
     device::{
         legacy::{i8042::I8042Wrapper, serial::SerialWrapper, trigger::EventFdTrigger},
         meta::guest_manager::GuestManagerDevice,
+        virtio::{mmio::MmioConfig, net::device::Net, Env},
         SharedDeviceManager,
     },
     memory::Memory,
@@ -22,22 +23,23 @@ use linux_loader::{
     loader::{bootparam, KernelLoader, KernelLoaderResult},
 };
 use std::{
-    io::{stdin, stdout, Seek, SeekFrom},
+    io::{stdout, Seek, SeekFrom},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
 };
 use util::result::{anyhow, bail, Result};
+use vm_allocator::AllocPolicy;
 use vm_device::{
-    bus::{PioAddress, PioRange},
+    bus::{BusRange, MmioAddress, PioAddress, PioRange},
     device_manager::PioManager,
 };
 use vm_memory::{
     Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion, ReadVolatile,
 };
 use vm_superio::{I8042Device, Serial};
-use vmm_sys_util::{eventfd::EventFd, terminal::Terminal};
+use vmm_sys_util::eventfd::EventFd;
 
 pub struct Vmm {
     config: Config,
@@ -47,6 +49,7 @@ pub struct Vmm {
     exit_handler: SharedExitEventHandler,
     vm: Vm<SharedExitEventHandler>,
     state: Option<VmmState>,
+    net_device: Option<Arc<Mutex<Net>>>,
 }
 
 impl Vmm {
@@ -82,10 +85,12 @@ impl Vmm {
             exit_handler,
             vm,
             state: None,
+            net_device: None,
         };
 
         vmm.add_serial_console()?;
         vmm.add_i8042_device()?;
+        vmm.add_net_device()?;
 
         Ok(vmm)
     }
@@ -119,10 +124,12 @@ impl Vmm {
             exit_handler,
             vm,
             state: Some(state),
+            net_device: None,
         };
 
         vmm.add_serial_console()?;
         vmm.add_i8042_device()?;
+        vmm.add_net_device()?;
 
         Ok(vmm)
     }
@@ -144,10 +151,6 @@ impl Vmm {
                 kernel_load_addr
             }
         };
-
-        if stdin().lock().set_raw_mode().is_err() {
-            eprintln!("Failed to set raw mode on terminal. Stdin will echo.");
-        }
 
         let start_address = if self.state.is_some() {
             None
@@ -172,13 +175,22 @@ impl Vmm {
         }
 
         let state = self.vm.shutdown()?;
+        let net_state = if let Some(net_device) = &self.net_device {
+            let mut net = net_device.lock().unwrap();
+            Some(net.get_state()?)
+        } else {
+            None
+        };
+
         self.memory.reset_mmio_allocator()?;
+        self.device_manager.reset_irq();
 
         Ok((
             VmmState {
                 config: self.config.clone(),
                 vm_state: state,
                 kernel_load_addr,
+                net_state,
             },
             self.memory.clone(),
         ))
@@ -216,8 +228,6 @@ impl Vmm {
         let mut io_manager = self.device_manager.io_manager.lock().unwrap();
         io_manager.register_pio(range, serial.clone())?;
 
-        self.event_manager.add_subscriber(serial);
-
         Ok(())
     }
 
@@ -234,6 +244,43 @@ impl Vmm {
 
         let mut io_manager = self.device_manager.io_manager.lock().unwrap();
         io_manager.register_pio(range, i8042)?;
+
+        Ok(())
+    }
+
+    fn add_net_device(&mut self) -> Result<()> {
+        let mmio_range = {
+            let mut alloc = self.memory.lock_mmio_allocator();
+            let range = alloc.allocate(0x1000, 4, AllocPolicy::FirstMatch)?;
+            BusRange::new(MmioAddress(range.start()), range.len())?
+        };
+
+        let irq = self.device_manager.next_irq()?;
+
+        let mmio_config = MmioConfig {
+            range: mmio_range,
+            irq,
+        };
+
+        let mut env = Env {
+            mem: self.memory.clone(),
+            vm_fd: self.vm.fd(),
+            device_manager: self.device_manager.clone(),
+            event_mgr: &mut self.event_manager,
+            mmio_cfg: mmio_config,
+            kernel_cmdline: &mut self.config.kernel.cmdline,
+        };
+
+        let net_state = self.state.as_ref().and_then(|s| s.net_state.clone());
+        let net_config = self.config.net.clone();
+
+        let net = match (net_state, net_config) {
+            (Some(state), _) => Net::from_state(&mut env, &state)?,
+            (None, Some(config)) => Net::new(&mut env, config)?,
+            _ => bail!("Invliad net device configuration"),
+        };
+
+        self.net_device = Some(net);
 
         Ok(())
     }

@@ -124,6 +124,10 @@ impl<EH: ExitHandler + Send + 'static> Vm<EH> {
         Ok(vm)
     }
 
+    pub fn fd(&self) -> Arc<VmFd> {
+        self.fd.clone()
+    }
+
     fn configure_memory_regions(&self, kvm: &Kvm, memory: &Memory) -> Result<()> {
         let guest_memory = memory.guest_memory();
 

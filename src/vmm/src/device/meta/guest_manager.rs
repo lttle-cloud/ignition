@@ -7,19 +7,39 @@ pub const GUEST_MANAGER_MMIO_START: u64 = MMIO_START;
 pub const GUEST_MANAGER_MMIO_SIZE: u64 = MMIO_LEN;
 pub const GUEST_MANAGER_MMIO_END: u64 = GUEST_MANAGER_MMIO_START + GUEST_MANAGER_MMIO_SIZE;
 
+const TRIGGER_AFTER_OFFSET: u8 = 127;
+
+const TRIGGER_SYS_LISTEN: u8 = 1;
+const TRIGGER_SYS_SOCK: u8 = 2;
+const TRIGGER_SYS_BIND: u8 = 3;
+
+const TRIGGER_SYS_LISTEN_AFTER: u8 = TRIGGER_AFTER_OFFSET + TRIGGER_SYS_LISTEN;
+const TRIGGER_SYS_SOCK_AFTER: u8 = TRIGGER_AFTER_OFFSET + TRIGGER_SYS_SOCK;
+const TRIGGER_SYS_BIND_AFTER: u8 = TRIGGER_AFTER_OFFSET + TRIGGER_SYS_BIND;
+
+const TRIGGER_BOOT_READY: u8 = 0xa;
+
 #[derive(Debug, Clone, Copy)]
 enum TriggerCode {
-    Write,
-    Listen,
+    BeforeListen,
+    BeforeSock,
+    BeforeBind,
+    AfterListen,
+    AfterSock,
+    AfterBind,
     BootReadyMarker,
 }
 
 impl TriggerCode {
     fn from_byte(byte: u8) -> Option<Self> {
         match byte {
-            1 => Some(TriggerCode::Write),
-            2 => Some(TriggerCode::Listen),
-            0xa => Some(TriggerCode::BootReadyMarker),
+            TRIGGER_SYS_LISTEN => Some(TriggerCode::BeforeListen),
+            TRIGGER_SYS_SOCK => Some(TriggerCode::BeforeSock),
+            TRIGGER_SYS_BIND => Some(TriggerCode::BeforeBind),
+            TRIGGER_SYS_LISTEN_AFTER => Some(TriggerCode::AfterListen),
+            TRIGGER_SYS_SOCK_AFTER => Some(TriggerCode::AfterSock),
+            TRIGGER_SYS_BIND_AFTER => Some(TriggerCode::AfterBind),
+            TRIGGER_BOOT_READY => Some(TriggerCode::BootReadyMarker),
             _ => None,
         }
     }
@@ -77,10 +97,8 @@ impl GuestManagerDevice {
             return;
         };
 
-        println!("Guest manager recv trigger: {:?}", trigger_data);
-
         match trigger_data.code {
-            TriggerCode::Write => {
+            TriggerCode::AfterListen => {
                 println!("Guest manager trigger exit");
                 self.exit_handler
                     .trigger_exit(ExitHandlerReason::Snapshot)

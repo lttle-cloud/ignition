@@ -1,5 +1,6 @@
 pub mod legacy;
 pub mod meta;
+pub mod virtio;
 
 use std::sync::{Arc, Mutex};
 use util::result::{anyhow, bail, Result};
@@ -27,10 +28,15 @@ impl SharedDeviceManager {
     pub fn next_irq(&self) -> Result<u32> {
         return self.irq_allocator.next_irq();
     }
+
+    pub fn reset_irq(&self) {
+        self.irq_allocator.reset();
+    }
 }
 
 #[derive(Clone)]
 pub struct IrqAllocator {
+    initial_irq: u32,
     last_irq: Arc<Mutex<u32>>,
 }
 
@@ -41,6 +47,7 @@ impl IrqAllocator {
         }
 
         Ok(IrqAllocator {
+            initial_irq: last_irq,
             last_irq: Arc::new(Mutex::new(last_irq)),
         })
     }
@@ -57,5 +64,11 @@ impl IrqAllocator {
 
         *last_irq += 1;
         Ok(*last_irq)
+    }
+
+    fn reset(&self) {
+        let mut last_irq = self.last_irq.lock().expect("Failed to lock last IRQ");
+
+        *last_irq = self.initial_irq;
     }
 }
