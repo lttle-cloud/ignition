@@ -22,15 +22,15 @@ use crate::{
 use kvm_bindings::{kvm_fpu, kvm_regs, CpuId, Msrs};
 use kvm_ioctls::{Kvm, VcpuExit, VcpuFd, VmFd};
 use libc::{c_int, siginfo_t, SIGRTMIN};
+use std::cell::RefCell;
 use std::sync::{Arc, Barrier, Condvar, Mutex};
-use std::{cell::RefCell, io::stdin};
 use util::result::{bail, Result};
 use vm_device::{
     bus::{MmioAddress, PioAddress},
     device_manager::{MmioManager, PioManager},
 };
 use vm_memory::{Address, Bytes, GuestAddress};
-use vmm_sys_util::{signal::register_signal_handler, terminal::Terminal};
+use vmm_sys_util::signal::register_signal_handler;
 
 #[derive(Clone, Debug)]
 pub struct VcpuConfig {
@@ -270,10 +270,6 @@ impl Vcpu {
                 Ok(exist_reason) => match exist_reason {
                     VcpuExit::Shutdown | VcpuExit::Hlt => {
                         println!("Guest shutdown: {:?}.", exist_reason);
-
-                        if stdin().lock().set_canon_mode().is_err() {
-                            eprintln!("Failed to set canonical mode on terminal.");
-                        };
 
                         self.run_state.set_and_notify(VmRunState::Exiting);
                         break;

@@ -2,9 +2,14 @@ use kvm_bindings::{
     kvm_clock_data, kvm_debugregs, kvm_irqchip, kvm_lapic_state, kvm_mp_state, kvm_pit_state2,
     kvm_regs, kvm_sregs, kvm_vcpu_events, kvm_xcrs, kvm_xsave, CpuId, Msrs,
 };
+use virtio_queue::QueueState;
 use vm_memory::GuestAddress;
 
-use crate::{config::Config, vcpu::VcpuConfig, vm::VmConfig};
+use crate::{
+    config::{Config, NetConfig},
+    vcpu::VcpuConfig,
+    vm::VmConfig,
+};
 
 #[derive(Debug)]
 pub struct VcpuState {
@@ -19,6 +24,27 @@ pub struct VcpuState {
     pub xcrs: kvm_xcrs,
     pub xsave: kvm_xsave,
     pub config: VcpuConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct NetState {
+    pub config: NetConfig,
+    pub virtio_state: VirtioState,
+}
+
+#[derive(Debug, Clone)]
+pub struct VirtioState {
+    pub config_generation: u8,
+    pub conifg_space: Vec<u8>,
+    pub device_activated: bool,
+    pub device_features: u64,
+    pub device_features_sel: u32,
+    pub device_status: u8,
+    pub driver_features: u64,
+    pub driver_features_sel: u32,
+    pub interrupt_status: u8,
+    pub queue_sel: u16,
+    pub queues: Vec<QueueState>,
 }
 
 #[derive(Debug)]
@@ -37,4 +63,5 @@ pub struct VmmState {
     pub config: Config,
     pub vm_state: VmState,
     pub kernel_load_addr: GuestAddress,
+    pub net_state: Option<NetState>,
 }

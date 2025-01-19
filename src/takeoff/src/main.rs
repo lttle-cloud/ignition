@@ -1,26 +1,26 @@
-use std::{ffi::c_void, fs, os::fd::FromRawFd};
+mod print;
 
+use std::{
+    ffi::c_void,
+    fs,
+    net::{IpAddr, Ipv4Addr},
+    os::fd::FromRawFd,
+    time,
+};
+
+use axum::{routing::get, Router};
 use nix::{
     fcntl::{open, OFlag},
     sys::{
         mman::{mmap, MapFlags, ProtFlags},
         stat::Mode,
     },
-    unistd::write,
 };
-use util::{
-    async_runtime::{runtime, time},
-    result::Result,
-};
+use print::init_print;
+use util::{async_runtime, result::Result};
 
 const PAGE_SIZE: usize = 4096;
 const MAGIC_MMIO_ADDR: i64 = 0xd0000000;
-
-fn test_kernel_mmio_write() -> Result<()> {
-    let fd = unsafe { fs::File::from_raw_fd(100) };
-    write(fd, &[123u8])?;
-    Ok(())
-}
 
 struct GuestManager {
     map_base: ::core::ptr::NonNull<c_void>,
@@ -50,6 +50,7 @@ impl GuestManager {
         Ok(GuestManager { map_base })
     }
 
+    #[allow(unused)]
     pub fn trigger_snapshot(&self) {
         unsafe {
             let ptr: *mut u64 = self.map_base.as_ptr() as *mut u64;
@@ -65,30 +66,54 @@ impl GuestManager {
     }
 }
 
+fn check_internet() {
+    let Err(res) = ping::ping(
+        IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+        // IpAddr::V4(Ipv4Addr::new(192, 168, 1, 16)),
+        Some(time::Duration::from_secs(10)),
+        None,
+        None,
+        None,
+        None,
+    ) else {
+        rprintln!("internet check ok");
+        return;
+    };
+
+    rprintln!("internet check failed: {:?}", res);
+}
+
+async fn start_server() {
+    let app = Router::new().route("/", get(|| async { "Hello, World!" }));
+    let listener = async_runtime::net::TcpListener::bind("0.0.0.0:3000")
+        .await // the guest will be suspended here
+        .unwrap();
+
+    rprintln!("listening on {}", listener.local_addr().unwrap());
+
+    axum::serve(listener, app).await.unwrap();
+}
+
 async fn takeoff() {
+    init_print();
+
     let guest_manager = GuestManager::new().unwrap();
     guest_manager.mark_boot_ready();
 
-    for i in 0..5 {
-        println!("{}...", 5 - i);
-        time::sleep(time::Duration::from_secs(1)).await;
-    }
+    rprintln!("takeoff");
 
-    println!("takeoff");
+    check_internet();
 
-    guest_manager.trigger_snapshot(); // here the guest is suspended. will comtinue from here.
+    start_server().await;
 
-    guest_manager.mark_boot_ready();
-    println!("guess who's back");
+    // guest_manager.trigger_snapshot(); // here the guest is suspended. will comtinue from here.
 
-    test_kernel_mmio_write().unwrap(); // here the guest is suspended by the kernel. will comtinue from here.
-
-    guest_manager.mark_boot_ready();
-    println!("back again");
+    // guest_manager.mark_boot_ready();
+    // rprintln!("takeoff is back");
 }
 
 fn main() -> Result<()> {
-    runtime::Builder::new_multi_thread()
+    async_runtime::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
         .block_on(takeoff());
