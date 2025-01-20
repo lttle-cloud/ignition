@@ -16,7 +16,7 @@ use crate::{
         SharedDeviceManager,
     },
     memory::Memory,
-    state::VcpuState,
+    state::{KvmXsave, VcpuState},
     vm::VmRunState,
 };
 use kvm_bindings::{kvm_fpu, kvm_regs, CpuId, Msrs};
@@ -24,6 +24,7 @@ use kvm_ioctls::{Kvm, VcpuExit, VcpuFd, VmFd};
 use libc::{c_int, siginfo_t, SIGRTMIN};
 use std::cell::RefCell;
 use std::sync::{Arc, Barrier, Condvar, Mutex};
+use tracing::{info, warn};
 use util::result::{bail, Result};
 use vm_device::{
     bus::{MmioAddress, PioAddress},
@@ -269,7 +270,7 @@ impl Vcpu {
             match self.vcpu_fd.run() {
                 Ok(exist_reason) => match exist_reason {
                     VcpuExit::Shutdown | VcpuExit::Hlt => {
-                        println!("Guest shutdown: {:?}.", exist_reason);
+                        info!("Guest shutdown: {:?}.", exist_reason);
 
                         self.run_state.set_and_notify(VmRunState::Exiting);
                         break;
@@ -280,13 +281,13 @@ impl Vcpu {
 
                             let io_manager = self.device_manager.io_manager.lock().unwrap();
                             if io_manager.pio_write(PioAddress(addr), data).is_err() {
-                                eprintln!("Failed to write to serial port.");
+                                warn!("Failed to write to serial port.");
                             }
                         } else if addr == 0x060 || addr == 0x061 || addr == 0x064 {
                             // write to i8042
                             let io_manager = self.device_manager.io_manager.lock().unwrap();
                             if io_manager.pio_write(PioAddress(addr), data).is_err() {
-                                eprintln!("Failed to write to i8042.");
+                                warn!("Failed to write to i8042.");
                             }
                         } else if (0x070..=0x07f).contains(&addr) {
                             // rtc port write
@@ -300,7 +301,7 @@ impl Vcpu {
 
                             let io_manager = self.device_manager.io_manager.lock().unwrap();
                             if io_manager.pio_read(PioAddress(addr), data).is_err() {
-                                eprintln!("Failed to read from serial port.");
+                                warn!("Failed to read from serial port.");
                             }
                         } else {
                             // unhandled io port read
@@ -320,7 +321,7 @@ impl Vcpu {
 
                         let io_manager = self.device_manager.io_manager.lock().unwrap();
                         if io_manager.mmio_read(MmioAddress(addr), data).is_err() {
-                            eprintln!("Failed to read from mmio.");
+                            warn!("Failed to read from mmio.");
                         }
                     }
                     VcpuExit::MmioWrite(addr, data) => {
@@ -338,13 +339,13 @@ impl Vcpu {
                         let io_manager = self.device_manager.io_manager.lock().unwrap();
                         match io_manager.mmio_write(MmioAddress(addr), data) {
                             Err(e) => {
-                                eprintln!("Failed to write to mmio: {:?} {}", addr, e);
+                                warn!("Failed to write to mmio: {:?} {}", addr, e);
                             }
                             _ => {}
                         }
                     }
                     _other => {
-                        println!("Unhandled exit reason: {:?}", _other);
+                        warn!("Unhandled exit reason: {:?}", _other);
                     }
                 },
                 Err(e) => match e.errno() {
@@ -353,7 +354,7 @@ impl Vcpu {
                         interrupt_by_signal = true;
                     }
                     _ => {
-                        println!("Vcpu run failed: {:?}", e);
+                        warn!("Vcpu run failed: {:?}", e);
                         break;
                     }
                 },
@@ -455,7 +456,7 @@ impl Vcpu {
             sregs,
             vcpu_events,
             xcrs,
-            xsave,
+            xsave: KvmXsave(xsave),
             config: self.config.clone(),
         })
     }
@@ -465,7 +466,7 @@ impl Vcpu {
         self.vcpu_fd.set_mp_state(state.mp_state)?;
         self.vcpu_fd.set_regs(&state.regs)?;
         self.vcpu_fd.set_sregs(&state.sregs)?;
-        self.vcpu_fd.set_xsave(&state.xsave)?;
+        self.vcpu_fd.set_xsave(&state.xsave.0)?;
         self.vcpu_fd.set_xcrs(&state.xcrs)?;
         self.vcpu_fd.set_debug_regs(&state.debug_regs)?;
         self.vcpu_fd.set_lapic(&state.lapic)?;

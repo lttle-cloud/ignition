@@ -1,3 +1,5 @@
+use tracing::{info, warn};
+
 use crate::{
     constants::{MMIO_LEN, MMIO_START},
     vmm::{ExitHandlerReason, SharedExitEventHandler},
@@ -66,6 +68,7 @@ pub struct GuestManagerDevice {
     exit_handler: SharedExitEventHandler,
     start_time: std::time::Instant,
     should_exit_immediately: bool,
+    boot_ready_time: Option<std::time::Duration>,
 }
 
 impl GuestManagerDevice {
@@ -82,6 +85,7 @@ impl GuestManagerDevice {
             exit_handler,
             start_time: std::time::Instant::now(),
             should_exit_immediately: false,
+            boot_ready_time: None,
         }
     }
 
@@ -89,17 +93,46 @@ impl GuestManagerDevice {
         self.should_exit_immediately
     }
 
-    pub fn mmio_read(&mut self, _offset: vm_device::bus::MmioAddressOffset, _data: &mut [u8]) {}
+    pub fn set_boot_ready(&mut self) {
+        let boot_ready_time = self.start_time.elapsed();
+        self.boot_ready_time = Some(boot_ready_time);
+
+        let ms = boot_ready_time.as_millis();
+        if ms > 2 {
+            info!("boot ready {ms}ms");
+        } else {
+            info!("boot ready {}us", boot_ready_time.as_micros());
+        }
+    }
+
+    pub fn mmio_read(&mut self, offset: vm_device::bus::MmioAddressOffset, data: &mut [u8]) {
+        if offset != 0 {
+            warn!("unhandled read offset {}", offset);
+            return;
+        }
+
+        if data.len() != 8 {
+            warn!("invalid read data length {}", data.len());
+            return;
+        }
+
+        let mut boot_ready_time = 0u64;
+        if let Some(duration) = self.boot_ready_time {
+            boot_ready_time = duration.as_micros() as u64;
+        }
+
+        data.copy_from_slice(&boot_ready_time.to_le_bytes());
+    }
 
     pub fn mmio_write(&mut self, _offset: vm_device::bus::MmioAddressOffset, data: &[u8]) {
         let Some(trigger_data) = TriggerData::from_bytes(data) else {
-            println!("Failed to parse trigger data");
+            warn!("Failed to parse trigger data");
             return;
         };
 
         match trigger_data.code {
             TriggerCode::AfterListen => {
-                println!("Guest manager trigger exit");
+                warn!("trigger exit");
                 self.exit_handler
                     .trigger_exit(ExitHandlerReason::Snapshot)
                     .unwrap();
@@ -107,18 +140,10 @@ impl GuestManagerDevice {
                 self.should_exit_immediately = true;
             }
             TriggerCode::BootReadyMarker => {
-                let ms = self.start_time.elapsed().as_millis();
-                if ms > 2 {
-                    println!("Guest manager boot ready {ms}ms");
-                } else {
-                    println!(
-                        "Guest manager boot ready {}us",
-                        self.start_time.elapsed().as_micros()
-                    );
-                }
+                self.set_boot_ready();
             }
             _ => {
-                println!(
+                warn!(
                     "Guest manager unhandled trigger code {:?}",
                     trigger_data.code
                 );

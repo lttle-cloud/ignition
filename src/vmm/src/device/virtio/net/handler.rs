@@ -5,6 +5,7 @@ use std::{
 };
 
 use event_manager::{EventOps, EventSet, Events, MutEventSubscriber};
+use tracing::warn;
 use util::result::Result;
 use virtio_queue::{Queue, QueueOwnedT, QueueState, QueueT};
 use vm_memory::Bytes;
@@ -96,7 +97,7 @@ impl<S: SignalUsedQueue> NetHandler<S> {
                     let len = desc.len() as usize;
 
                     if len > left {
-                        eprintln!("tx frame too large");
+                        warn!("tx frame too large");
                         break;
                     }
 
@@ -193,7 +194,7 @@ pub struct QueueHandler {
 
 impl QueueHandler {
     fn handle_error<S: AsRef<str>>(&self, s: S, ops: &mut EventOps) {
-        eprintln!("{}", s.as_ref());
+        warn!("{}", s.as_ref());
 
         ops.remove(Events::empty(&self.rx_ioevent))
             .expect("Failed to remove rx ioevent");

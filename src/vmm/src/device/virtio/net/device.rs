@@ -1,13 +1,14 @@
 use std::{
     borrow::{Borrow, BorrowMut},
     ops::Deref,
-    sync::{Arc, Mutex},
+    sync::{self, mpsc::Sender, Arc, Mutex},
     thread,
 };
 
 use event_manager::{MutEventSubscriber, RemoteEndpoint, SubscriberId};
 use kvm_ioctls::{IoEventAddress, VmFd};
 use libc::EFD_NONBLOCK;
+use tracing::warn;
 use util::result::{anyhow, bail, Error, Result};
 use virtio_device::{VirtioConfig, VirtioDeviceActions, VirtioDeviceType, VirtioMmioDevice};
 use virtio_queue::{Queue, QueueT};
@@ -19,16 +20,19 @@ use vmm_sys_util::eventfd::EventFd;
 
 use crate::{
     config::NetConfig,
-    device::virtio::{
-        features::{
-            self, VIRTIO_F_IN_ORDER, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_VERSION_1,
-            VIRTIO_NET_F_CSUM, VIRTIO_NET_F_GUEST_CSUM, VIRTIO_NET_F_GUEST_TSO4,
-            VIRTIO_NET_F_GUEST_TSO6, VIRTIO_NET_F_GUEST_UFO, VIRTIO_NET_F_HOST_TSO4,
-            VIRTIO_NET_F_HOST_TSO6, VIRTIO_NET_F_HOST_UFO, VIRTIO_NET_F_MAC,
+    device::{
+        meta::guest_manager::GuestManagerDevice,
+        virtio::{
+            features::{
+                self, VIRTIO_F_IN_ORDER, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_VERSION_1,
+                VIRTIO_NET_F_CSUM, VIRTIO_NET_F_GUEST_CSUM, VIRTIO_NET_F_GUEST_TSO4,
+                VIRTIO_NET_F_GUEST_TSO6, VIRTIO_NET_F_GUEST_UFO, VIRTIO_NET_F_HOST_TSO4,
+                VIRTIO_NET_F_HOST_TSO6, VIRTIO_NET_F_HOST_UFO, VIRTIO_NET_F_MAC,
+            },
+            mmio::MmioConfig,
+            virtio_config_from_state, virtio_state_from_config, Env, SingleFdSignalQueue,
+            VIRTIO_MMIO_QUEUE_NOTIFY_OFFSET,
         },
-        mmio::MmioConfig,
-        virtio_config_from_state, virtio_state_from_config, Env, SingleFdSignalQueue,
-        VIRTIO_MMIO_QUEUE_NOTIFY_OFFSET,
     },
     memory::Memory,
     state::NetState,
@@ -58,6 +62,8 @@ pub struct Net {
     irqfd: Arc<EventFd>,
     endpoint: RemoteEndpoint<Arc<Mutex<dyn MutEventSubscriber + Send>>>,
     handler: Option<Arc<Mutex<QueueHandler>>>,
+    ready_tx: Option<Sender<()>>,
+    guest_manager: Arc<Mutex<GuestManagerDevice>>,
 }
 
 #[repr(C, packed)]
@@ -88,7 +94,12 @@ fn mac_to_hw_addr(mac: &str) -> [u8; 6] {
 }
 
 impl Net {
-    pub fn new(env: &mut Env, config: NetConfig) -> Result<Arc<Mutex<Self>>> {
+    pub fn new(
+        env: &mut Env,
+        config: NetConfig,
+        net_ready_tx: Option<sync::mpsc::Sender<()>>,
+        guest_manager: Arc<Mutex<GuestManagerDevice>>,
+    ) -> Result<Arc<Mutex<Self>>> {
         let device_features: u64 = (1 << VIRTIO_F_VERSION_1)
             | (1 << VIRTIO_F_RING_EVENT_IDX)
             | (1 << VIRTIO_F_IN_ORDER)
@@ -131,6 +142,8 @@ impl Net {
             irqfd,
             endpoint: env.event_mgr.remote_endpoint(),
             handler: None,
+            ready_tx: net_ready_tx,
+            guest_manager,
         };
         let net = Arc::new(Mutex::new(net));
 
@@ -139,7 +152,12 @@ impl Net {
         Ok(net)
     }
 
-    pub fn from_state(env: &mut Env, state: &NetState) -> Result<Arc<Mutex<Self>>> {
+    pub fn from_state(
+        env: &mut Env,
+        state: &NetState,
+        net_ready_tx: Option<sync::mpsc::Sender<()>>,
+        guest_manager: Arc<Mutex<GuestManagerDevice>>,
+    ) -> Result<Arc<Mutex<Self>>> {
         let config = state.config.clone();
 
         let mut virtio_cfg = virtio_config_from_state(&state.virtio_state);
@@ -159,6 +177,8 @@ impl Net {
             irqfd,
             endpoint: env.event_mgr.remote_endpoint(),
             handler: None,
+            ready_tx: net_ready_tx,
+            guest_manager,
         };
         let net = Arc::new(Mutex::new(net));
 
@@ -219,6 +239,18 @@ impl Net {
 
         self.virtio.device_activated = true;
         self.handler = Some(handler);
+
+        if let Some(ready_tx) = self.ready_tx.as_ref() {
+            if let Err(e) = ready_tx.send(()) {
+                warn!("Failed to send net ready signal: {}", e);
+            }
+        }
+
+        // TODO: this is a hack, we need a cental event bus
+        {
+            let mut gm = self.guest_manager.lock().unwrap();
+            gm.set_boot_ready();
+        }
 
         Ok(())
     }

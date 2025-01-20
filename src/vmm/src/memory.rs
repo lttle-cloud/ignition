@@ -2,7 +2,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use util::result::Result;
 use vm_allocator::AddressAllocator;
-use vm_memory::{GuestAddress, GuestMemoryMmap};
+use vm_memory::{FileOffset, GuestAddress, GuestMemoryMmap};
 
 use crate::{
     config::MemoryConfig,
@@ -25,10 +25,35 @@ impl Memory {
         })
     }
 
+    pub fn new_backed_by_file(config: MemoryConfig, file: std::fs::File) -> Result<Self> {
+        let guest_memory = Memory::create_guest_memory_backed_by_file(&config, file)?;
+        let mmio_allocator = Memory::create_mmio_allocator()?;
+
+        Ok(Memory {
+            guest_memory,
+            mmio_allocator: Mutex::new(mmio_allocator),
+        })
+    }
+
     fn create_guest_memory(config: &MemoryConfig) -> Result<GuestMemoryMmap> {
         let mem_size = config.size_mib << 20;
 
         let memory = GuestMemoryMmap::from_ranges(&[(GuestAddress(0), mem_size)])?;
+
+        Ok(memory)
+    }
+
+    fn create_guest_memory_backed_by_file(
+        config: &MemoryConfig,
+        file: std::fs::File,
+    ) -> Result<GuestMemoryMmap> {
+        let mem_size = config.size_mib << 20;
+
+        let memory = GuestMemoryMmap::from_ranges_with_files(&[(
+            GuestAddress(0),
+            mem_size,
+            Some(FileOffset::new(file, 0)),
+        )])?;
 
         Ok(memory)
     }

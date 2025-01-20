@@ -1,5 +1,6 @@
 use std::io::Write;
 
+use tracing::warn;
 use util::result::Error;
 use vm_device::{
     bus::{PioAddress, PioAddressOffset},
@@ -15,12 +16,12 @@ pub struct SerialWrapper<T: Trigger, EV: SerialEvents, W: Write>(pub Serial<T, E
 impl<T: Trigger<E = Error>, W: Write> MutDevicePio for SerialWrapper<T, NoEvents, W> {
     fn pio_read(&mut self, _base: PioAddress, offset: PioAddressOffset, data: &mut [u8]) {
         if data.len() != 1 {
-            eprintln!("Serial console invalid data length on read: {}", data.len());
+            warn!("Serial console invalid data length on read: {}", data.len());
             return;
         }
 
         let Ok(offset) = offset.try_into() else {
-            eprintln!("Invalid serial console read offset.");
+            warn!("Invalid serial console read offset.");
             return;
         };
 
@@ -30,7 +31,7 @@ impl<T: Trigger<E = Error>, W: Write> MutDevicePio for SerialWrapper<T, NoEvents
 
     fn pio_write(&mut self, _base: PioAddress, offset: PioAddressOffset, data: &[u8]) {
         if data.len() != 1 {
-            eprintln!(
+            warn!(
                 "Serial console invalid data length on write: {}",
                 data.len()
             );
@@ -38,13 +39,13 @@ impl<T: Trigger<E = Error>, W: Write> MutDevicePio for SerialWrapper<T, NoEvents
         }
 
         let Ok(offset) = offset.try_into() else {
-            eprintln!("Invalid serial console write offset.");
+            warn!("Invalid serial console write offset.");
             return;
         };
 
         let res = self.0.write(offset, data[0]);
         if res.is_err() {
-            eprintln!("Error writing to serial console: {:#?}", res.unwrap_err());
+            warn!("Error writing to serial console: {:#?}", res.unwrap_err());
         }
     }
 }

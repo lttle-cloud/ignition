@@ -18,3 +18,4 @@ thiserror = "2.0.9"
 vm-superio = "0.8.0"
 virtio-device = { git = "https://github.com/rust-vmm/vm-virtio.git" }
 virtio-queue = { git = "https://github.com/rust-vmm/vm-virtio.git" }
+tracing = "0.1.41"

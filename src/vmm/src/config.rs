@@ -6,6 +6,7 @@ use crate::constants::CMDLINE_CAPACITY;
 #[derive(Debug, Clone)]
 pub struct MemoryConfig {
     pub size_mib: usize,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone)]

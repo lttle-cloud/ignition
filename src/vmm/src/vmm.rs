@@ -23,12 +23,15 @@ use linux_loader::{
     loader::{bootparam, KernelLoader, KernelLoaderResult},
 };
 use std::{
+    fs::OpenOptions,
     io::{stdout, Seek, SeekFrom},
     sync::{
+        self,
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
 };
+use tracing::warn;
 use util::result::{anyhow, bail, Result};
 use vm_allocator::AllocPolicy;
 use vm_device::{
@@ -53,11 +56,18 @@ pub struct Vmm {
 }
 
 impl Vmm {
-    pub fn new(config: Config) -> Result<Self> {
+    pub fn new(config: Config, net_ready_tx: Option<sync::mpsc::Sender<()>>) -> Result<Self> {
         let kvm = Kvm::new()?;
         Vmm::check_kvm_caps(&kvm)?;
 
-        let memory = Arc::new(Memory::new(config.memory.clone())?);
+        let memory = if let Some(path) = config.memory.path.as_ref() {
+            let file = OpenOptions::new().read(true).write(true).open(path)?;
+            Memory::new_backed_by_file(config.memory.clone(), file)?
+        } else {
+            Memory::new(config.memory.clone())?
+        };
+        let memory = Arc::new(memory);
+
         let device_manager = SharedDeviceManager::new(SERIAL_IRQ)?;
 
         let vm_config = VmConfig::new(&kvm, config.vcpu.num)?;
@@ -90,12 +100,16 @@ impl Vmm {
 
         vmm.add_serial_console()?;
         vmm.add_i8042_device()?;
-        vmm.add_net_device()?;
+        vmm.add_net_device(net_ready_tx)?;
 
         Ok(vmm)
     }
 
-    pub fn from_state(state: VmmState, memory: Arc<Memory>) -> Result<Self> {
+    pub fn from_state(
+        state: VmmState,
+        memory: Arc<Memory>,
+        net_ready_tx: Option<sync::mpsc::Sender<()>>,
+    ) -> Result<Self> {
         let kvm = Kvm::new()?;
         Vmm::check_kvm_caps(&kvm)?;
 
@@ -129,12 +143,15 @@ impl Vmm {
 
         vmm.add_serial_console()?;
         vmm.add_i8042_device()?;
-        vmm.add_net_device()?;
+        vmm.add_net_device(net_ready_tx)?;
 
         Ok(vmm)
     }
 
-    pub fn run(&mut self) -> Result<(VmmState, Arc<Memory>)> {
+    pub fn run(
+        &mut self,
+        mut stop_trigger: Option<std::sync::mpsc::Receiver<()>>,
+    ) -> Result<(VmmState, Arc<Memory>)> {
         let kernel_load_addr = match &self.state {
             Some(state) => state.kernel_load_addr.clone(),
             None => {
@@ -161,16 +178,23 @@ impl Vmm {
         self.vm.run(start_address)?;
 
         loop {
-            match self.event_manager.run() {
+            match self.event_manager.run_with_timeout(100) {
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("Error running event manager: {:?}", e);
+                    warn!("Error running event manager: {:?}", e);
                     break;
                 }
             }
 
             if !self.exit_handler.keep_running() {
                 break;
+            }
+
+            if let Some(stop_trigger) = stop_trigger.as_mut() {
+                if stop_trigger.try_recv().is_ok() {
+                    self.stop()?;
+                    break;
+                }
             }
         }
 
@@ -194,6 +218,12 @@ impl Vmm {
             },
             self.memory.clone(),
         ))
+    }
+
+    pub fn stop(&self) -> Result<()> {
+        self.exit_handler.trigger_exit(ExitHandlerReason::Exit)?;
+
+        Ok(())
     }
 
     fn check_kvm_caps(kvm: &Kvm) -> Result<()> {
@@ -248,7 +278,7 @@ impl Vmm {
         Ok(())
     }
 
-    fn add_net_device(&mut self) -> Result<()> {
+    fn add_net_device(&mut self, net_ready_tx: Option<sync::mpsc::Sender<()>>) -> Result<()> {
         let mmio_range = {
             let mut alloc = self.memory.lock_mmio_allocator();
             let range = alloc.allocate(0x1000, 4, AllocPolicy::FirstMatch)?;
@@ -275,8 +305,18 @@ impl Vmm {
         let net_config = self.config.net.clone();
 
         let net = match (net_state, net_config) {
-            (Some(state), _) => Net::from_state(&mut env, &state)?,
-            (None, Some(config)) => Net::new(&mut env, config)?,
+            (Some(state), _) => Net::from_state(
+                &mut env,
+                &state,
+                net_ready_tx,
+                self.vm.guest_manager.clone(),
+            )?,
+            (None, Some(config)) => Net::new(
+                &mut env,
+                config,
+                net_ready_tx,
+                self.vm.guest_manager.clone(),
+            )?,
             _ => bail!("Invliad net device configuration"),
         };
 

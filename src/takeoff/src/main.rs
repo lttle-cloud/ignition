@@ -1,14 +1,17 @@
-mod print;
+mod serial;
 
 use std::{
     ffi::c_void,
     fs,
     net::{IpAddr, Ipv4Addr},
     os::fd::FromRawFd,
+    sync::Arc,
     time,
 };
 
-use axum::{routing::get, Router};
+use tracing::info;
+
+use axum::{extract::State, routing::get, Router};
 use nix::{
     fcntl::{open, OFlag},
     sys::{
@@ -16,7 +19,7 @@ use nix::{
         stat::Mode,
     },
 };
-use print::init_print;
+use serial::SerialWriter;
 use util::{async_runtime, result::Result};
 
 const PAGE_SIZE: usize = 4096;
@@ -25,6 +28,8 @@ const MAGIC_MMIO_ADDR: i64 = 0xd0000000;
 struct GuestManager {
     map_base: ::core::ptr::NonNull<c_void>,
 }
+unsafe impl Send for GuestManager {}
+unsafe impl Sync for GuestManager {}
 
 impl GuestManager {
     pub fn new() -> Result<GuestManager> {
@@ -64,6 +69,15 @@ impl GuestManager {
             ptr.write_volatile(0x00_00_00_00_00_00_00_0a);
         }
     }
+
+    pub fn get_boot_ready_time_us(&self) -> u64 {
+        unsafe {
+            let ptr = self.map_base.as_ptr() as *mut u64;
+            let time_us = ptr.read_volatile();
+
+            time_us
+        }
+    }
 }
 
 fn check_internet() {
@@ -76,43 +90,58 @@ fn check_internet() {
         None,
         None,
     ) else {
-        rprintln!("internet check ok");
+        info!("internet check ok");
         return;
     };
 
-    rprintln!("internet check failed: {:?}", res);
+    info!("internet check failed: {:?}", res);
 }
 
-async fn start_server() {
-    let app = Router::new().route("/", get(|| async { "Hello, World!" }));
+async fn handle_get(State(guest_manager): State<Arc<GuestManager>>) -> String {
+    format!(
+        "Hello, World! in {}us",
+        guest_manager.get_boot_ready_time_us()
+    )
+}
+
+async fn start_server(guest_manager: Arc<GuestManager>) {
+    let app = Router::new()
+        .route("/", get(handle_get))
+        .with_state(guest_manager);
+
     let listener = async_runtime::net::TcpListener::bind("0.0.0.0:3000")
         .await // the guest will be suspended here
         .unwrap();
 
-    rprintln!("listening on {}", listener.local_addr().unwrap());
+    info!("listening on {}", listener.local_addr().unwrap());
 
     axum::serve(listener, app).await.unwrap();
 }
 
 async fn takeoff() {
-    init_print();
-
-    let guest_manager = GuestManager::new().unwrap();
+    let guest_manager = Arc::new(GuestManager::new().unwrap());
     guest_manager.mark_boot_ready();
 
-    rprintln!("takeoff");
+    info!("takeoff is ready");
 
     check_internet();
 
-    start_server().await;
+    start_server(guest_manager.clone()).await;
 
     // guest_manager.trigger_snapshot(); // here the guest is suspended. will comtinue from here.
 
     // guest_manager.mark_boot_ready();
-    // rprintln!("takeoff is back");
+    // info!("takeoff is back");
 }
 
 fn main() -> Result<()> {
+    SerialWriter::initialize_serial();
+
+    tracing_subscriber::FmtSubscriber::builder()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(SerialWriter)
+        .init();
+
     async_runtime::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?

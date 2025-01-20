@@ -1,6 +1,6 @@
 use kvm_bindings::{
     kvm_clock_data, kvm_debugregs, kvm_irqchip, kvm_lapic_state, kvm_mp_state, kvm_pit_state2,
-    kvm_regs, kvm_sregs, kvm_vcpu_events, kvm_xcrs, kvm_xsave, CpuId, Msrs,
+    kvm_regs, kvm_sregs, kvm_vcpu_events, kvm_xcrs, kvm_xsave, CpuId, Msrs, __IncompleteArrayField,
 };
 use virtio_queue::QueueState;
 use vm_memory::GuestAddress;
@@ -11,7 +11,7 @@ use crate::{
     vm::VmConfig,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VcpuState {
     pub cpuid: CpuId,
     pub msrs: Msrs,
@@ -22,8 +22,20 @@ pub struct VcpuState {
     pub sregs: kvm_sregs,
     pub vcpu_events: kvm_vcpu_events,
     pub xcrs: kvm_xcrs,
-    pub xsave: kvm_xsave,
+    pub xsave: KvmXsave,
     pub config: VcpuConfig,
+}
+
+#[derive(Debug)]
+pub struct KvmXsave(pub kvm_xsave);
+
+impl Clone for KvmXsave {
+    fn clone(&self) -> Self {
+        Self(kvm_xsave {
+            region: self.0.region.clone(),
+            extra: __IncompleteArrayField::default(),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +59,7 @@ pub struct VirtioState {
     pub queues: Vec<QueueState>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VmState {
     pub pitstate: kvm_pit_state2,
     pub clock: kvm_clock_data,
@@ -58,7 +70,7 @@ pub struct VmState {
     pub vcpus_state: Vec<VcpuState>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VmmState {
     pub config: Config,
     pub vm_state: VmState,
