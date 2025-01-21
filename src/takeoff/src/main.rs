@@ -97,11 +97,16 @@ fn check_internet() {
     info!("internet check failed: {:?}", res);
 }
 
+const HTML: &'static str = include_str!("../index.html");
+
 async fn handle_get(State(guest_manager): State<Arc<GuestManager>>) -> String {
-    format!(
-        "Hello, World! in {}us",
-        guest_manager.get_boot_ready_time_us()
-    )
+    let us = guest_manager.get_boot_ready_time_us();
+    let ms_int = us / 1000;
+    let ms_frac = us % 1000;
+
+    let ms = format!("{ms_int}<span class=\"frac\">.{ms_frac}</span>ms");
+
+    HTML.replace("{ms}", &ms)
 }
 
 async fn start_server(guest_manager: Arc<GuestManager>) {

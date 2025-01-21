@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use axum::{extract::State, routing::get, Router};
+use axum::{extract::State, http::HeaderValue, response::IntoResponse, routing::get, Router};
 use tracing::{error, info};
 use tracing_subscriber::FmtSubscriber;
 use util::{
@@ -267,12 +267,12 @@ impl VmController {
     }
 }
 
-async fn handle_vm_request(State(controller): State<Arc<VmController>>) -> String {
+async fn handle_vm_request(State(controller): State<Arc<VmController>>) -> impl IntoResponse {
     let start_time_total = Instant::now();
 
     if let Err(e) = controller.prepare_for_request().await {
         error!("Failed to prepare VM for request: {:?}", e);
-        return format!("Internal Server Error: {:?}", e);
+        return format!("Internal Server Error: {:?}", e).into_response();
     }
 
     let elapsed_ms = start_time_total.elapsed().as_millis();
@@ -301,7 +301,13 @@ async fn handle_vm_request(State(controller): State<Arc<VmController>>) -> Strin
     let total_elapsed = start_time_total.elapsed().as_millis();
     info!("Total time taken: {}ms", total_elapsed);
 
-    response_text
+    let mut res = response_text.into_response();
+    res.headers_mut()
+        .insert("content-type", HeaderValue::from_static("text/html"));
+    res.headers_mut()
+        .insert("x-powered-by", HeaderValue::from_static("ignition"));
+
+    res
 }
 
 async fn ignition() -> Result<()> {
@@ -338,7 +344,7 @@ async fn ignition() -> Result<()> {
     let controller = Arc::new(VmController::new(config).context("Failed to create VmController")?);
 
     let app = Router::new()
-        .route("/vm", get(handle_vm_request))
+        .route("/", get(handle_vm_request))
         .with_state(controller.clone());
 
     let listener = async_runtime::net::TcpListener::bind("0.0.0.0:9898")
