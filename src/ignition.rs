@@ -16,7 +16,7 @@ use util::{
 };
 
 use vmm::{
-    config::{Config, KernelConfig, MemoryConfig, NetConfig, VcpuConfig},
+    config::{BlockConfig, Config, KernelConfig, MemoryConfig, NetConfig, VcpuConfig},
     memory::Memory,
     state::VmmState,
     vmm::Vmm,
@@ -338,6 +338,11 @@ async fn ignition() -> Result<()> {
             mac_addr: "06:00:AC:10:00:02".into(),
         }
         .into(),
+        block: vec![BlockConfig {
+            file_path: "./tmp/test-fs".into(),
+            read_only: false,
+            root: false,
+        }],
     };
 
     info!("Initializing VM Controller.");

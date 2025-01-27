@@ -1,13 +1,9 @@
 use std::{
     borrow::{Borrow, BorrowMut},
-    ops::Deref,
     sync::{self, mpsc::Sender, Arc, Mutex},
     thread,
 };
 
-use event_manager::{MutEventSubscriber, RemoteEndpoint, SubscriberId};
-use kvm_ioctls::{IoEventAddress, VmFd};
-use libc::EFD_NONBLOCK;
 use tracing::warn;
 use util::result::{anyhow, bail, Error, Result};
 use virtio_device::{VirtioConfig, VirtioDeviceActions, VirtioDeviceType, VirtioMmioDevice};
@@ -16,7 +12,6 @@ use vm_device::{
     bus::{MmioAddress, MmioAddressOffset},
     MutDeviceMmio,
 };
-use vmm_sys_util::eventfd::EventFd;
 
 use crate::{
     config::NetConfig,
@@ -24,14 +19,13 @@ use crate::{
         meta::guest_manager::GuestManagerDevice,
         virtio::{
             features::{
-                self, VIRTIO_F_IN_ORDER, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_VERSION_1,
-                VIRTIO_NET_F_CSUM, VIRTIO_NET_F_GUEST_CSUM, VIRTIO_NET_F_GUEST_TSO4,
-                VIRTIO_NET_F_GUEST_TSO6, VIRTIO_NET_F_GUEST_UFO, VIRTIO_NET_F_HOST_TSO4,
-                VIRTIO_NET_F_HOST_TSO6, VIRTIO_NET_F_HOST_UFO, VIRTIO_NET_F_MAC,
+                VIRTIO_F_IN_ORDER, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_VERSION_1, VIRTIO_NET_F_CSUM,
+                VIRTIO_NET_F_GUEST_CSUM, VIRTIO_NET_F_GUEST_TSO4, VIRTIO_NET_F_GUEST_TSO6,
+                VIRTIO_NET_F_GUEST_UFO, VIRTIO_NET_F_HOST_TSO4, VIRTIO_NET_F_HOST_TSO6,
+                VIRTIO_NET_F_HOST_UFO, VIRTIO_NET_F_MAC,
             },
-            mmio::MmioConfig,
+            mmio::VirtioMmioDeviceConfig,
             virtio_config_from_state, virtio_state_from_config, Env, SingleFdSignalQueue,
-            VIRTIO_MMIO_QUEUE_NOTIFY_OFFSET,
         },
     },
     memory::Memory,
@@ -55,12 +49,8 @@ pub const TXQ_INDEX: u16 = 1;
 
 pub struct Net {
     config: NetConfig,
+    device: VirtioMmioDeviceConfig,
     memory: Arc<Memory>,
-    vm_fd: Arc<VmFd>,
-    mmio_conig: MmioConfig,
-    virtio: VirtioConfig<Queue>,
-    irqfd: Arc<EventFd>,
-    endpoint: RemoteEndpoint<Arc<Mutex<dyn MutEventSubscriber + Send>>>,
     handler: Option<Arc<Mutex<QueueHandler>>>,
     ready_tx: Option<Sender<()>>,
     guest_manager: Arc<Mutex<GuestManagerDevice>>,
@@ -121,11 +111,6 @@ impl Net {
 
         let virtio_cfg = VirtioConfig::new(device_features, queues, cfg.as_bytes().to_vec());
 
-        let irqfd =
-            Arc::new(EventFd::new(EFD_NONBLOCK).map_err(|_| anyhow!("Failed to create EventFd"))?);
-
-        env.vm_fd.register_irqfd(&irqfd, env.mmio_cfg.irq)?;
-
         env.kernel_cmdline.insert_str(format!(
             "ip={ip}::{gateway}:{netmask}::eth0:off",
             ip = config.ip_addr,
@@ -133,14 +118,12 @@ impl Net {
             netmask = config.netmask,
         ))?;
 
+        let device = VirtioMmioDeviceConfig::new(virtio_cfg, env)?;
+
         let net = Net {
             config,
             memory: env.mem.clone(),
-            vm_fd: env.vm_fd.clone(),
-            mmio_conig: env.mmio_cfg.clone(),
-            virtio: virtio_cfg,
-            irqfd,
-            endpoint: env.event_mgr.remote_endpoint(),
+            device,
             handler: None,
             ready_tx: net_ready_tx,
             guest_manager,
@@ -163,19 +146,12 @@ impl Net {
         let mut virtio_cfg = virtio_config_from_state(&state.virtio_state);
         virtio_cfg.device_activated = false;
 
-        let irqfd =
-            Arc::new(EventFd::new(EFD_NONBLOCK).map_err(|_| anyhow!("Failed to create EventFd"))?);
-
-        env.vm_fd.register_irqfd(&irqfd, env.mmio_cfg.irq)?;
+        let device = VirtioMmioDeviceConfig::new(virtio_cfg, env)?;
 
         let net = Net {
             config,
             memory: env.mem.clone(),
-            vm_fd: env.vm_fd.clone(),
-            mmio_conig: env.mmio_cfg.clone(),
-            virtio: virtio_cfg,
-            irqfd,
-            endpoint: env.event_mgr.remote_endpoint(),
+            device,
             handler: None,
             ready_tx: net_ready_tx,
             guest_manager,
@@ -194,50 +170,8 @@ impl Net {
         Ok(net)
     }
 
-    fn prepare_activate(&self) -> Result<Vec<EventFd>> {
-        for q in self.virtio.queues.iter() {
-            if !q.is_valid(self.memory.deref().guest_memory()) {
-                bail!("Queue is not valid");
-            }
-        }
-
-        if self.virtio.device_activated {
-            bail!("Device already activated");
-        }
-
-        if self.virtio.driver_features & (1 << features::VIRTIO_F_VERSION_1) == 0 {
-            bail!("Legacy drivers are not supported");
-        }
-
-        let mut ioevents = Vec::new();
-
-        for i in 0..self.virtio.queues.len() {
-            let fd = EventFd::new(EFD_NONBLOCK)?;
-
-            // Register the queue event fd.
-            self.vm_fd.register_ioevent(
-                &fd,
-                &IoEventAddress::Mmio(
-                    self.mmio_conig.range.base().0 + VIRTIO_MMIO_QUEUE_NOTIFY_OFFSET,
-                ),
-                u32::try_from(i).unwrap(),
-            )?;
-
-            ioevents.push(fd);
-        }
-
-        Ok(ioevents)
-    }
-
     pub fn finalize_activate(&mut self, handler: Arc<Mutex<QueueHandler>>) -> Result<()> {
-        let sub_handler = handler.clone();
-        let _sub_id = self
-            .endpoint
-            .call_blocking(move |mgr| -> Result<SubscriberId> {
-                Ok(mgr.add_subscriber(sub_handler))
-            })?;
-
-        self.virtio.device_activated = true;
+        self.device.finalize_activate(handler.clone())?;
         self.handler = Some(handler);
 
         if let Some(ready_tx) = self.ready_tx.as_ref() {
@@ -264,7 +198,7 @@ impl Net {
         let mut handler = handler.lock().unwrap();
         let (rxq_state, txq_state) = handler.inner.get_queue_states()?;
 
-        let mut virtio_state = virtio_state_from_config(&self.virtio);
+        let mut virtio_state = virtio_state_from_config(&self.device.virtio);
         virtio_state.queues = vec![rxq_state, txq_state];
 
         Ok(NetState {
@@ -282,12 +216,12 @@ impl VirtioDeviceType for Net {
 
 impl Borrow<VirtioConfig<Queue>> for Net {
     fn borrow(&self) -> &VirtioConfig<Queue> {
-        &self.virtio
+        &self.device.virtio
     }
 }
 impl BorrowMut<VirtioConfig<Queue>> for Net {
     fn borrow_mut(&mut self) -> &mut VirtioConfig<Queue> {
-        &mut self.virtio
+        &mut self.device.virtio
     }
 }
 
@@ -321,14 +255,14 @@ impl VirtioDeviceActions for Net {
             })?;
 
         let driver_notify = SingleFdSignalQueue {
-            irqfd: self.irqfd.clone(),
-            interrupt_status: self.virtio.interrupt_status.clone(),
+            irqfd: self.device.irqfd.clone(),
+            interrupt_status: self.device.virtio.interrupt_status.clone(),
         };
 
-        let mut ioevents = self.prepare_activate()?;
+        let mut ioevents = self.device.prepare_activate()?;
 
-        let rxq = self.virtio.queues.remove(0);
-        let txq = self.virtio.queues.remove(0);
+        let rxq = self.device.virtio.queues.remove(0);
+        let txq = self.device.virtio.queues.remove(0);
 
         let handler = NetHandler::new(self.memory.clone(), driver_notify, rxq, txq, tap);
 

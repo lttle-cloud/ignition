@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use linux_loader::loader::Cmdline;
 use util::result::Result;
 
@@ -31,11 +33,19 @@ pub struct NetConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct BlockConfig {
+    pub file_path: PathBuf,
+    pub read_only: bool,
+    pub root: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct Config {
     pub memory: MemoryConfig,
     pub vcpu: VcpuConfig,
     pub kernel: KernelConfig,
     pub net: Option<NetConfig>,
+    pub block: Vec<BlockConfig>,
 }
 
 impl KernelConfig {

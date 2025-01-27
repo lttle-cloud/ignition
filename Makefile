@@ -9,6 +9,8 @@ takeoff:
 	mkdir -p target/cpio/dev
 	sudo mknod -m 666 target/cpio/dev/mem c 1 1
 
+	mkdir -p target/cpio/mnt
+
 	mkdir -p target/cpio/etc
 	echo "nameserver 8.8.8.8" > target/cpio/etc/resolv.conf
 

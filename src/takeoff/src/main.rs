@@ -5,6 +5,7 @@ use std::{
     fs,
     net::{IpAddr, Ipv4Addr},
     os::fd::FromRawFd,
+    path::PathBuf,
     sync::Arc,
     time,
 };
@@ -14,6 +15,7 @@ use tracing::info;
 use axum::{extract::State, routing::get, Router};
 use nix::{
     fcntl::{open, OFlag},
+    mount::{self, MsFlags},
     sys::{
         mman::{mmap, MapFlags, ProtFlags},
         stat::Mode,
@@ -97,6 +99,40 @@ fn check_internet() {
     info!("internet check failed: {:?}", res);
 }
 
+fn check_block() {
+    if let Err(e) = mount::mount(
+        Some(&PathBuf::from("devtmpfs")),
+        "/dev",
+        Some("devtmpfs"),
+        MsFlags::empty(),
+        Some(&PathBuf::from("")),
+    ) {
+        info!("mount /dev failed: {:?}", e);
+    };
+
+    if let Err(e) = mount::mount(
+        Some(&PathBuf::from("/dev/vda")),
+        "/mnt",
+        Some("ext4"),
+        MsFlags::empty(),
+        Some(&PathBuf::from("")),
+    ) {
+        info!("mount /mnt failed: {:?}", e);
+    };
+
+    // create a file in /mnt
+    let entries = fs::read_dir("/mnt").unwrap();
+    for entry in entries {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        let path = path.to_str().unwrap();
+        info!("found: {}", path);
+    }
+
+    let content = fs::read_to_string("/mnt/hello.txt").unwrap();
+    info!("content /mnt/hello.txt: {}", content.trim());
+}
+
 const HTML: &'static str = include_str!("../index.html");
 
 async fn handle_get(State(guest_manager): State<Arc<GuestManager>>) -> String {
@@ -130,6 +166,7 @@ async fn takeoff() {
     info!("takeoff is ready");
 
     check_internet();
+    check_block();
 
     start_server(guest_manager.clone()).await;
 

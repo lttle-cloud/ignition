@@ -1256,6 +1256,19 @@ version = "0.2.4"
 source = "git+https://github.com/rust-vmm/vm-virtio.git#67d5be7201135e9f071bd350ec6f6238a2100a0d"
 
 [[package]]
+name = "virtio-blk"
+version = "0.1.0"
+source = "git+https://github.com/rust-vmm/vm-virtio.git#67d5be7201135e9f071bd350ec6f6238a2100a0d"
+dependencies = [
+ "log",
+ "virtio-bindings",
+ "virtio-device",
+ "virtio-queue",
+ "vm-memory",
+ "vmm-sys-util",
+]
+
+[[package]]
 name = "virtio-device"
 version = "0.1.0"
 source = "git+https://github.com/rust-vmm/vm-virtio.git#67d5be7201135e9f071bd350ec6f6238a2100a0d"
@@ -1322,6 +1335,7 @@ dependencies = [
  "thiserror 2.0.9",
  "tracing",
  "util",
+ "virtio-blk",
  "virtio-device",
  "virtio-queue",
  "vm-allocator",

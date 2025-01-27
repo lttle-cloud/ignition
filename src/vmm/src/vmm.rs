@@ -8,7 +8,7 @@ use crate::{
     device::{
         legacy::{i8042::I8042Wrapper, serial::SerialWrapper, trigger::EventFdTrigger},
         meta::guest_manager::GuestManagerDevice,
-        virtio::{mmio::MmioConfig, net::device::Net, Env},
+        virtio::{block::device::Block, mmio::MmioConfig, net::device::Net, Env},
         SharedDeviceManager,
     },
     memory::Memory,
@@ -53,6 +53,7 @@ pub struct Vmm {
     vm: Vm<SharedExitEventHandler>,
     state: Option<VmmState>,
     net_device: Option<Arc<Mutex<Net>>>,
+    block_devices: Vec<Arc<Mutex<Block>>>,
 }
 
 impl Vmm {
@@ -96,11 +97,13 @@ impl Vmm {
             vm,
             state: None,
             net_device: None,
+            block_devices: vec![],
         };
 
         vmm.add_serial_console()?;
         vmm.add_i8042_device()?;
         vmm.add_net_device(net_ready_tx)?;
+        vmm.add_block_devices()?;
 
         Ok(vmm)
     }
@@ -139,6 +142,7 @@ impl Vmm {
             vm,
             state: Some(state),
             net_device: None,
+            block_devices: vec![],
         };
 
         vmm.add_serial_console()?;
@@ -321,6 +325,37 @@ impl Vmm {
         };
 
         self.net_device = Some(net);
+
+        Ok(())
+    }
+
+    fn add_block_devices(&mut self) -> Result<()> {
+        let mmio_range = {
+            let mut alloc = self.memory.lock_mmio_allocator();
+            let range = alloc.allocate(0x1000, 4, AllocPolicy::FirstMatch)?;
+            BusRange::new(MmioAddress(range.start()), range.len())?
+        };
+
+        let irq = self.device_manager.next_irq()?;
+
+        let mmio_config = MmioConfig {
+            range: mmio_range,
+            irq,
+        };
+
+        let mut env = Env {
+            mem: self.memory.clone(),
+            vm_fd: self.vm.fd(),
+            device_manager: self.device_manager.clone(),
+            event_mgr: &mut self.event_manager,
+            mmio_cfg: mmio_config,
+            kernel_cmdline: &mut self.config.kernel.cmdline,
+        };
+
+        for config in self.config.block.iter() {
+            let block = Block::new(&mut env, config.clone())?;
+            self.block_devices.push(block);
+        }
 
         Ok(())
     }
