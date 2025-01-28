@@ -180,7 +180,7 @@ impl Net {
             }
         }
 
-        // TODO: this is a hack, we need a cental event bus
+        // TODO: this is a hack, we need a central event bus
         {
             let mut gm = self.guest_manager.lock().unwrap();
             gm.set_boot_ready();
@@ -195,8 +195,8 @@ impl Net {
             .take()
             .ok_or_else(|| anyhow!("Handler not found"))?;
 
-        let mut handler = handler.lock().unwrap();
-        let (rxq_state, txq_state) = handler.inner.get_queue_states()?;
+        let handler = handler.lock().unwrap();
+        let (rxq_state, txq_state) = handler.inner.get_queue_states();
 
         let mut virtio_state = virtio_state_from_config(&self.device.virtio);
         virtio_state.queues = vec![rxq_state, txq_state];

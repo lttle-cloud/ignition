@@ -4,6 +4,7 @@ use std::{
     io::{Seek, SeekFrom},
     path::PathBuf,
     sync::{Arc, Mutex},
+    thread,
 };
 
 use util::result::{anyhow, Error, Result};
@@ -17,8 +18,9 @@ use crate::{
     device::virtio::{
         features::{VIRTIO_F_IN_ORDER, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_VERSION_1},
         mmio::VirtioMmioDeviceConfig,
-        Env, SingleFdSignalQueue,
+        virtio_config_from_state, virtio_state_from_config, Env, SingleFdSignalQueue,
     },
+    state::BlockState,
 };
 
 use super::handler::{BlockHandler, QueueHandler};
@@ -60,6 +62,7 @@ impl VirtioBlockConfig {
 pub struct Block {
     device: VirtioMmioDeviceConfig,
     config: BlockConfig,
+    handler: Option<Arc<Mutex<QueueHandler>>>,
 }
 
 impl Block {
@@ -80,12 +83,59 @@ impl Block {
 
         let device = VirtioMmioDeviceConfig::new(virtio_config, &env)?;
 
-        let block = Block { device, config };
+        let block = Block {
+            device,
+            config,
+            handler: None,
+        };
         let block = Arc::new(Mutex::new(block));
 
         env.register_mmio_device(block.clone())?;
 
         Ok(block)
+    }
+
+    pub fn from_state(env: &mut Env, state: &BlockState) -> Result<Arc<Mutex<Self>>> {
+        let mut virtio_config = virtio_config_from_state(&state.virtio_state);
+        virtio_config.device_activated = false;
+
+        let device = VirtioMmioDeviceConfig::new(virtio_config, env)?;
+
+        let block = Block {
+            device,
+            config: state.config.clone(),
+            handler: None,
+        };
+        let block = Arc::new(Mutex::new(block));
+
+        env.register_mmio_device(block.clone())?;
+
+        let activate_block = block.clone();
+        thread::spawn(move || -> Result<()> {
+            let mut block = activate_block.lock().unwrap();
+            block.activate()?;
+            Ok(())
+        });
+
+        Ok(block)
+    }
+
+    pub fn get_state(&mut self) -> Result<BlockState> {
+        let handler = self
+            .handler
+            .take()
+            .ok_or_else(|| anyhow!("handler not found"))?;
+
+        let handler = handler.lock().unwrap();
+        let queue_state = handler.inner.get_queue_state();
+
+        let mut virtio_state = virtio_state_from_config(&self.device.virtio);
+        virtio_state.queues = vec![queue_state];
+
+        Ok(BlockState {
+            config: self.config.clone(),
+            virtio_state,
+        })
     }
 }
 
@@ -141,6 +191,8 @@ impl VirtioDeviceActions for Block {
             inner: handler,
             ioeventfd: ioevents.remove(0),
         }));
+
+        self.handler = Some(handler.clone());
 
         self.device.finalize_activate(handler)?;
 

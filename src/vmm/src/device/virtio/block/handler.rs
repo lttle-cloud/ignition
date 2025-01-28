@@ -4,7 +4,7 @@ use event_manager::{EventOps, EventSet, Events, MutEventSubscriber};
 use tracing::warn;
 use util::result::{anyhow, Result};
 use virtio_blk::{request::Request, stdio_executor::StdIoBackend};
-use virtio_queue::{Queue, QueueOwnedT, QueueT};
+use virtio_queue::{Queue, QueueOwnedT, QueueState, QueueT};
 use vmm_sys_util::eventfd::EventFd;
 
 use crate::{
@@ -63,6 +63,10 @@ impl<S: SignalUsedQueue> BlockHandler<S> {
         }
 
         Ok(())
+    }
+
+    pub fn get_queue_state(&self) -> QueueState {
+        self.queue.state()
     }
 }
 

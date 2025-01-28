@@ -1,5 +1,5 @@
 use crate::{
-    config::Config,
+    config::{BlockConfig, Config, NetConfig},
     constants::{
         self, CMDLINE_START, E820_RAM, EBDA_START, HIGH_RAM_START, KERNEL_BOOT_FLAG_MAGIC,
         KERNEL_HDR_MAGIC, KERNEL_LOADER_OTHER, KERNEL_MIN_ALIGNMENT_BYTES, SERIAL_IRQ,
@@ -12,7 +12,7 @@ use crate::{
         SharedDeviceManager,
     },
     memory::Memory,
-    state::VmmState,
+    state::{BlockState, NetState, VmmState},
     vcpu::ExitHandler,
     vm::{Vm, VmConfig},
 };
@@ -89,7 +89,7 @@ impl Vmm {
         event_manager.add_subscriber(exit_handler.0.clone());
 
         let mut vmm = Vmm {
-            config,
+            config: config.clone(),
             memory,
             device_manager,
             event_manager,
@@ -102,8 +102,14 @@ impl Vmm {
 
         vmm.add_serial_console()?;
         vmm.add_i8042_device()?;
-        vmm.add_net_device(net_ready_tx)?;
-        vmm.add_block_devices()?;
+
+        if let Some(net_config) = &config.net {
+            vmm.add_net_device(net_config, net_ready_tx)?;
+        }
+
+        for block_config in config.block.iter() {
+            vmm.add_block_device(block_config.clone())?;
+        }
 
         Ok(vmm)
     }
@@ -140,14 +146,21 @@ impl Vmm {
             event_manager,
             exit_handler,
             vm,
-            state: Some(state),
+            state: Some(state.clone()),
             net_device: None,
             block_devices: vec![],
         };
 
         vmm.add_serial_console()?;
         vmm.add_i8042_device()?;
-        vmm.add_net_device(net_ready_tx)?;
+
+        if let Some(net_state) = &state.net_state {
+            vmm.add_net_device_from_state(net_state, net_ready_tx)?;
+        }
+
+        for block_state in state.block_states.iter() {
+            vmm.add_block_device_from_tate(block_state)?;
+        }
 
         Ok(vmm)
     }
@@ -210,6 +223,15 @@ impl Vmm {
             None
         };
 
+        let block_states = self
+            .block_devices
+            .iter()
+            .map(|dev| {
+                let mut dev = dev.lock().unwrap();
+                dev.get_state()
+            })
+            .collect::<Result<Vec<_>>>()?;
+
         self.memory.reset_mmio_allocator()?;
         self.device_manager.reset_irq();
 
@@ -219,6 +241,7 @@ impl Vmm {
                 vm_state: state,
                 kernel_load_addr,
                 net_state,
+                block_states,
             },
             self.memory.clone(),
         ))
@@ -282,7 +305,11 @@ impl Vmm {
         Ok(())
     }
 
-    fn add_net_device(&mut self, net_ready_tx: Option<sync::mpsc::Sender<()>>) -> Result<()> {
+    fn add_net_device(
+        &mut self,
+        config: &NetConfig,
+        net_ready_tx: Option<sync::mpsc::Sender<()>>,
+    ) -> Result<()> {
         let mmio_range = {
             let mut alloc = self.memory.lock_mmio_allocator();
             let range = alloc.allocate(0x1000, 4, AllocPolicy::FirstMatch)?;
@@ -305,31 +332,22 @@ impl Vmm {
             kernel_cmdline: &mut self.config.kernel.cmdline,
         };
 
-        let net_state = self.state.as_ref().and_then(|s| s.net_state.clone());
-        let net_config = self.config.net.clone();
-
-        let net = match (net_state, net_config) {
-            (Some(state), _) => Net::from_state(
-                &mut env,
-                &state,
-                net_ready_tx,
-                self.vm.guest_manager.clone(),
-            )?,
-            (None, Some(config)) => Net::new(
-                &mut env,
-                config,
-                net_ready_tx,
-                self.vm.guest_manager.clone(),
-            )?,
-            _ => bail!("Invliad net device configuration"),
-        };
-
+        let net = Net::new(
+            &mut env,
+            config.clone(),
+            net_ready_tx,
+            self.vm.guest_manager.clone(),
+        )?;
         self.net_device = Some(net);
 
         Ok(())
     }
 
-    fn add_block_devices(&mut self) -> Result<()> {
+    fn add_net_device_from_state(
+        &mut self,
+        state: &NetState,
+        net_ready_tx: Option<sync::mpsc::Sender<()>>,
+    ) -> Result<()> {
         let mmio_range = {
             let mut alloc = self.memory.lock_mmio_allocator();
             let range = alloc.allocate(0x1000, 4, AllocPolicy::FirstMatch)?;
@@ -352,10 +370,71 @@ impl Vmm {
             kernel_cmdline: &mut self.config.kernel.cmdline,
         };
 
-        for config in self.config.block.iter() {
-            let block = Block::new(&mut env, config.clone())?;
-            self.block_devices.push(block);
-        }
+        let net = Net::from_state(
+            &mut env,
+            &state,
+            net_ready_tx,
+            self.vm.guest_manager.clone(),
+        )?;
+        self.net_device = Some(net);
+
+        Ok(())
+    }
+
+    fn add_block_device(&mut self, config: BlockConfig) -> Result<()> {
+        let mmio_range = {
+            let mut alloc = self.memory.lock_mmio_allocator();
+            let range = alloc.allocate(0x1000, 4, AllocPolicy::FirstMatch)?;
+            BusRange::new(MmioAddress(range.start()), range.len())?
+        };
+
+        let irq = self.device_manager.next_irq()?;
+
+        let mmio_config = MmioConfig {
+            range: mmio_range,
+            irq,
+        };
+
+        let mut env = Env {
+            mem: self.memory.clone(),
+            vm_fd: self.vm.fd(),
+            device_manager: self.device_manager.clone(),
+            event_mgr: &mut self.event_manager,
+            mmio_cfg: mmio_config,
+            kernel_cmdline: &mut self.config.kernel.cmdline,
+        };
+
+        let block = Block::new(&mut env, config.clone())?;
+        self.block_devices.push(block);
+
+        Ok(())
+    }
+
+    fn add_block_device_from_tate(&mut self, state: &BlockState) -> Result<()> {
+        let mmio_range = {
+            let mut alloc = self.memory.lock_mmio_allocator();
+            let range = alloc.allocate(0x1000, 4, AllocPolicy::FirstMatch)?;
+            BusRange::new(MmioAddress(range.start()), range.len())?
+        };
+
+        let irq = self.device_manager.next_irq()?;
+
+        let mmio_config = MmioConfig {
+            range: mmio_range,
+            irq,
+        };
+
+        let mut env = Env {
+            mem: self.memory.clone(),
+            vm_fd: self.vm.fd(),
+            device_manager: self.device_manager.clone(),
+            event_mgr: &mut self.event_manager,
+            mmio_cfg: mmio_config,
+            kernel_cmdline: &mut self.config.kernel.cmdline,
+        };
+
+        let block = Block::from_state(&mut env, state)?;
+        self.block_devices.push(block);
 
         Ok(())
     }

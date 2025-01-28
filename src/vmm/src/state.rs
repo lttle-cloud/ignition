@@ -6,7 +6,7 @@ use virtio_queue::QueueState;
 use vm_memory::GuestAddress;
 
 use crate::{
-    config::{Config, NetConfig},
+    config::{BlockConfig, Config, NetConfig},
     vcpu::VcpuConfig,
     vm::VmConfig,
 };
@@ -45,6 +45,12 @@ pub struct NetState {
 }
 
 #[derive(Debug, Clone)]
+pub struct BlockState {
+    pub config: BlockConfig,
+    pub virtio_state: VirtioState,
+}
+
+#[derive(Debug, Clone)]
 pub struct VirtioState {
     pub config_generation: u8,
     pub conifg_space: Vec<u8>,
@@ -76,4 +82,5 @@ pub struct VmmState {
     pub vm_state: VmState,
     pub kernel_load_addr: GuestAddress,
     pub net_state: Option<NetState>,
+    pub block_states: Vec<BlockState>,
 }

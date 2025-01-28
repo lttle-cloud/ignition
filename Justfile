@@ -1,4 +1,4 @@
-takeoff:
+build-takeoff:
 	cd src/takeoff && RUSTFLAGS="-C link-arg=-nostartfiles -C target-feature=+crt-static" cargo build --bin takeoff --release --target x86_64-unknown-linux-musl
 	
 	mkdir -p target/cpio
@@ -21,3 +21,22 @@ takeoff:
 
 clean:
 	cargo clean
+
+build-hello-page:
+	truncate -s 64M target/hello-page.ext4
+	sudo mkfs.ext4 target/hello-page.ext4
+
+	mkdir -p target/hello-page
+	sudo mount target/hello-page.ext4 target/hello-page
+
+	sudo cp hello-page/index.html target/hello-page/index.html
+
+	sudo umount target/hello-page
+
+mount-hello-page:
+	mkdir -p target/hello-page
+	sudo mount target/hello-page.ext4 target/hello-page
+
+unmount-hello-page:
+	sudo umount target/hello-page
+	rmdir target/hello-page

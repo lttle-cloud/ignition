@@ -178,11 +178,11 @@ impl<S: SignalUsedQueue> NetHandler<S> {
         Ok(true)
     }
 
-    pub fn get_queue_states(&mut self) -> Result<(QueueState, QueueState)> {
+    pub fn get_queue_states(&self) -> (QueueState, QueueState) {
         let rxq_state = self.rxq.state();
         let txq_state = self.txq.state();
 
-        Ok((rxq_state, txq_state))
+        (rxq_state, txq_state)
     }
 }
 

@@ -2,7 +2,6 @@ mod serial;
 
 use std::{
     ffi::c_void,
-    fs,
     net::{IpAddr, Ipv4Addr},
     os::fd::FromRawFd,
     path::PathBuf,
@@ -22,7 +21,10 @@ use nix::{
     },
 };
 use serial::SerialWriter;
-use util::{async_runtime, result::Result};
+use util::{
+    async_runtime::{self, fs},
+    result::Result,
+};
 
 const PAGE_SIZE: usize = 4096;
 const MAGIC_MMIO_ADDR: i64 = 0xd0000000;
@@ -99,7 +101,7 @@ fn check_internet() {
     info!("internet check failed: {:?}", res);
 }
 
-fn check_block() {
+fn mount_block() {
     if let Err(e) = mount::mount(
         Some(&PathBuf::from("devtmpfs")),
         "/dev",
@@ -119,30 +121,20 @@ fn check_block() {
     ) {
         info!("mount /mnt failed: {:?}", e);
     };
-
-    // create a file in /mnt
-    let entries = fs::read_dir("/mnt").unwrap();
-    for entry in entries {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        let path = path.to_str().unwrap();
-        info!("found: {}", path);
-    }
-
-    let content = fs::read_to_string("/mnt/hello.txt").unwrap();
-    info!("content /mnt/hello.txt: {}", content.trim());
 }
 
-const HTML: &'static str = include_str!("../index.html");
-
 async fn handle_get(State(guest_manager): State<Arc<GuestManager>>) -> String {
+    let Ok(page) = fs::read_to_string("/mnt/index.html").await else {
+        return "<h1>failed to load index.html</h1>".to_string();
+    };
+
     let us = guest_manager.get_boot_ready_time_us();
     let ms_int = us / 1000;
     let ms_frac = us % 1000;
 
     let ms = format!("{ms_int}<span class=\"frac\">.{ms_frac}</span>ms");
 
-    HTML.replace("{ms}", &ms)
+    page.replace("{ms}", &ms)
 }
 
 async fn start_server(guest_manager: Arc<GuestManager>) {
@@ -165,8 +157,8 @@ async fn takeoff() {
 
     info!("takeoff is ready");
 
+    mount_block();
     check_internet();
-    check_block();
 
     start_server(guest_manager.clone()).await;
 
