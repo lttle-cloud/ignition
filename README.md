@@ -12,7 +12,7 @@ Key goals:
 - **Linux only**: Ignition exclusively runs Linux kernels. While microkernels have potential, we believe the time isn’t right just yet.
 - **Simple to use**: Ignition works with your existing applications, and can natively run OCI images.
 
-## How Is It So Fast?
+## How is it so fast?
 
 Ignition uses a snapshot-based approach to eliminate the overhead of application initialization. Here’s how it works:
 
@@ -29,6 +29,6 @@ Depending on your configuration, Ignition can capture the snapshot:
 
 The modified Linux kernel detects these triggers automatically, so you don’t have to alter your application’s code. As a result, you can enjoy rapid startup times without any extra development overhead.
 
-## State of the Project
+## State of the project
 
 Ignition is in its early stages of development. We’re actively working on the core functionality and tuning performance to achieve our primary goals. That said, we already have a working prototype that showcases the snapshot-based approach and near-instant startup times.
