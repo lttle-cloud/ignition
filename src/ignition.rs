@@ -317,33 +317,25 @@ async fn ignition() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)
         .context("Failed to set global default subscriber")?;
 
-    let memory_config = MemoryConfig {
-        size_mib: 128,
-        // path: Some("./memory.bin".into()),
-        path: None,
-    };
-
-    let config = Config {
-        memory: memory_config.clone(),
-        vcpu: VcpuConfig { num: 1 },
-        kernel: KernelConfig::builder("../linux/vmlinux")?
-            .with_initrd("./target/takeoff.cpio")
-            .with_cmdline("i8042.nokbd reboot=t panic=1 noapic clocksource=kvm-clock tsc=reliable")?
-            .build(),
-        net: NetConfig {
-            tap_name: "tap0".into(),
-            ip_addr: "172.16.0.2".into(),
-            netmask: "255.255.255.252".into(),
-            gateway: "172.16.0.1".into(),
-            mac_addr: "06:00:AC:10:00:02".into(),
-        }
-        .into(),
-        block: vec![BlockConfig {
-            file_path: "./tmp/test-fs".into(),
-            read_only: false,
-            root: false,
-        }],
-    };
+    let config = Config::new()
+        .memory(MemoryConfig::new(128))
+        .vcpu(VcpuConfig::new(1))
+        .kernel(
+            KernelConfig::new("../linux/vmlinux")?
+                .with_initrd("./target/takeoff.cpio")
+                .with_cmdline(
+                    "i8042.nokbd reboot=t panic=1 noapic clocksource=kvm-clock tsc=reliable",
+                )?,
+        )
+        .with_net(NetConfig::new(
+            "tap0",
+            "172.16.0.2",
+            "255.255.255.252",
+            "172.16.0.1",
+            "06:00:AC:10:00:02",
+        ))
+        .with_block(BlockConfig::new("./tmp/test-fs").writeable())
+        .into();
 
     info!("Initializing VM Controller.");
     let controller = Arc::new(VmController::new(config).context("Failed to create VmController")?);
