@@ -31,4 +31,4 @@ The modified Linux kernel detects these triggers automatically, so you don’t h
 
 ## State of the project
 
-Ignition is in its early stages of development. We’re actively working on the core functionality and tuning performance to achieve our primary goals. That said, we already have a working prototype that showcases the snapshot-based approach and near-instant startup times.
+Ignition is in its early stages of development. We’re actively working on the core functionality and tuning performance to achieve our primary goals. That said, we already have a working prototype that showcases the snapshot-based approach and near-instant startup times. You can [try it out here](https://hello.lttle.cloud/).
