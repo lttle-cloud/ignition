@@ -1,8 +1,13 @@
+use std::sync::{Arc, Mutex};
+
 use tracing::{info, warn};
+use util::async_runtime;
 
 use crate::{
     constants::{MMIO_LEN, MMIO_START},
-    vmm::{ExitHandlerReason, SharedExitEventHandler},
+    vmm::{
+        ExitHandlerReason, SharedExitEventHandler, VmmStateController, VmmStateControllerMessage,
+    },
 };
 
 pub const GUEST_MANAGER_MMIO_START: u64 = MMIO_START;
@@ -80,13 +85,33 @@ impl GuestManagerDevice {
         addr >= GUEST_MANAGER_MMIO_START && addr < GUEST_MANAGER_MMIO_END
     }
 
-    pub fn new(exit_handler: SharedExitEventHandler) -> Self {
-        Self {
+    pub fn new(
+        exit_handler: SharedExitEventHandler,
+        state_controller: VmmStateController,
+    ) -> Arc<Mutex<Self>> {
+        let guest_manager = Self {
             exit_handler,
             start_time: std::time::Instant::now(),
             should_exit_immediately: false,
             boot_ready_time: None,
-        }
+        };
+        let guest_manager = Arc::new(Mutex::new(guest_manager));
+
+        let mut rx = state_controller.rx();
+        let ready_guest_manager = guest_manager.clone();
+        async_runtime::spawn(async move {
+            while let Ok(event) = rx.recv().await {
+                match event {
+                    VmmStateControllerMessage::NetworkReady => {
+                        let mut guest_manager = ready_guest_manager.lock().unwrap();
+                        guest_manager.set_boot_ready();
+                    }
+                    _ => {}
+                };
+            }
+        });
+
+        guest_manager
     }
 
     pub fn should_exit_immediately(&self) -> bool {

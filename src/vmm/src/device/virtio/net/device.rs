@@ -1,10 +1,9 @@
 use std::{
     borrow::{Borrow, BorrowMut},
-    sync::{self, mpsc::Sender, Arc, Mutex},
+    sync::{Arc, Mutex},
     thread,
 };
 
-use tracing::warn;
 use util::result::{anyhow, bail, Error, Result};
 use virtio_device::{VirtioConfig, VirtioDeviceActions, VirtioDeviceType, VirtioMmioDevice};
 use virtio_queue::{Queue, QueueT};
@@ -15,21 +14,19 @@ use vm_device::{
 
 use crate::{
     config::NetConfig,
-    device::{
-        meta::guest_manager::GuestManagerDevice,
-        virtio::{
-            features::{
-                VIRTIO_F_IN_ORDER, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_VERSION_1, VIRTIO_NET_F_CSUM,
-                VIRTIO_NET_F_GUEST_CSUM, VIRTIO_NET_F_GUEST_TSO4, VIRTIO_NET_F_GUEST_TSO6,
-                VIRTIO_NET_F_GUEST_UFO, VIRTIO_NET_F_HOST_TSO4, VIRTIO_NET_F_HOST_TSO6,
-                VIRTIO_NET_F_HOST_UFO, VIRTIO_NET_F_MAC,
-            },
-            mmio::VirtioMmioDeviceConfig,
-            virtio_config_from_state, virtio_state_from_config, Env, SingleFdSignalQueue,
+    device::virtio::{
+        features::{
+            VIRTIO_F_IN_ORDER, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_VERSION_1, VIRTIO_NET_F_CSUM,
+            VIRTIO_NET_F_GUEST_CSUM, VIRTIO_NET_F_GUEST_TSO4, VIRTIO_NET_F_GUEST_TSO6,
+            VIRTIO_NET_F_GUEST_UFO, VIRTIO_NET_F_HOST_TSO4, VIRTIO_NET_F_HOST_TSO6,
+            VIRTIO_NET_F_HOST_UFO, VIRTIO_NET_F_MAC,
         },
+        mmio::VirtioMmioDeviceConfig,
+        virtio_config_from_state, virtio_state_from_config, Env, SingleFdSignalQueue,
     },
     memory::Memory,
     state::NetState,
+    vmm::{VmmStateController, VmmStateControllerMessage},
 };
 
 use super::{
@@ -52,8 +49,7 @@ pub struct Net {
     device: VirtioMmioDeviceConfig,
     memory: Arc<Memory>,
     handler: Option<Arc<Mutex<QueueHandler>>>,
-    ready_tx: Option<Sender<()>>,
-    guest_manager: Arc<Mutex<GuestManagerDevice>>,
+    state_controller: VmmStateController,
 }
 
 #[repr(C, packed)]
@@ -87,8 +83,7 @@ impl Net {
     pub fn new(
         env: &mut Env,
         config: NetConfig,
-        net_ready_tx: Option<sync::mpsc::Sender<()>>,
-        guest_manager: Arc<Mutex<GuestManagerDevice>>,
+        state_controller: VmmStateController,
     ) -> Result<Arc<Mutex<Self>>> {
         let device_features: u64 = (1 << VIRTIO_F_VERSION_1)
             | (1 << VIRTIO_F_RING_EVENT_IDX)
@@ -125,8 +120,7 @@ impl Net {
             memory: env.mem.clone(),
             device,
             handler: None,
-            ready_tx: net_ready_tx,
-            guest_manager,
+            state_controller,
         };
         let net = Arc::new(Mutex::new(net));
 
@@ -138,8 +132,7 @@ impl Net {
     pub fn from_state(
         env: &mut Env,
         state: &NetState,
-        net_ready_tx: Option<sync::mpsc::Sender<()>>,
-        guest_manager: Arc<Mutex<GuestManagerDevice>>,
+        state_controller: VmmStateController,
     ) -> Result<Arc<Mutex<Self>>> {
         let config = state.config.clone();
 
@@ -153,8 +146,7 @@ impl Net {
             memory: env.mem.clone(),
             device,
             handler: None,
-            ready_tx: net_ready_tx,
-            guest_manager,
+            state_controller,
         };
         let net = Arc::new(Mutex::new(net));
 
@@ -174,17 +166,8 @@ impl Net {
         self.device.finalize_activate(handler.clone())?;
         self.handler = Some(handler);
 
-        if let Some(ready_tx) = self.ready_tx.as_ref() {
-            if let Err(e) = ready_tx.send(()) {
-                warn!("Failed to send net ready signal: {}", e);
-            }
-        }
-
-        // TODO: this is a hack, we need a central event bus
-        {
-            let mut gm = self.guest_manager.lock().unwrap();
-            gm.set_boot_ready();
-        }
+        self.state_controller
+            .send(VmmStateControllerMessage::NetworkReady);
 
         Ok(())
     }

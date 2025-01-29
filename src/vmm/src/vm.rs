@@ -59,7 +59,6 @@ pub struct Vm<EH: ExitHandler + Send> {
     exit_handler: EH,
     vcpu_barrier: Arc<Barrier>,
     vcpu_run_state: Arc<VcpuRunState>,
-    pub guest_manager: Arc<Mutex<GuestManagerDevice>>,
 }
 
 impl<EH: ExitHandler + Send + 'static> Vm<EH> {
@@ -68,7 +67,6 @@ impl<EH: ExitHandler + Send + 'static> Vm<EH> {
         memory: &Memory,
         config: VmConfig,
         exit_handler: EH,
-        guest_manager: Arc<Mutex<GuestManagerDevice>>,
     ) -> Result<Self> {
         let vm_fd = kvm.create_vm()?;
         let vcpu_run_state = Arc::new(VcpuRunState::default());
@@ -83,7 +81,6 @@ impl<EH: ExitHandler + Send + 'static> Vm<EH> {
             exit_handler,
             vcpu_barrier: Arc::new(Barrier::new(vcpus_count)),
             vcpu_run_state,
-            guest_manager,
         };
 
         vm.configure_memory_regions(kvm, memory)?;
@@ -100,8 +97,7 @@ impl<EH: ExitHandler + Send + 'static> Vm<EH> {
         guest_manager: Arc<Mutex<GuestManagerDevice>>,
     ) -> Result<Self> {
         let vcpus_config = config.vcpus_config.clone();
-        let mut vm =
-            Self::create_instance(kvm, memory, config, exit_handler, guest_manager.clone())?;
+        let mut vm = Self::create_instance(kvm, memory, config, exit_handler)?;
 
         MpTable::new(vm.config.vcpus_count, MAX_IRQ as u8)?.write(memory.guest_memory())?;
 
@@ -119,13 +115,7 @@ impl<EH: ExitHandler + Send + 'static> Vm<EH> {
         device_manager: SharedDeviceManager,
         guest_manager: Arc<Mutex<GuestManagerDevice>>,
     ) -> Result<Self> {
-        let mut vm = Self::create_instance(
-            kvm,
-            memory,
-            state.config.clone(),
-            exit_handler,
-            guest_manager.clone(),
-        )?;
+        let mut vm = Self::create_instance(kvm, memory, state.config.clone(), exit_handler)?;
 
         vm.setup_irq_controller()?;
         vm.set_state(&state)?;

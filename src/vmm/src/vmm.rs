@@ -26,13 +26,15 @@ use std::{
     fs::OpenOptions,
     io::{stdout, Seek, SeekFrom},
     sync::{
-        self,
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
 };
 use tracing::warn;
-use util::result::{anyhow, bail, Result};
+use util::{
+    async_runtime::sync::broadcast,
+    result::{anyhow, bail, Result},
+};
 use vm_allocator::AllocPolicy;
 use vm_device::{
     bus::{BusRange, MmioAddress, PioAddress, PioRange},
@@ -48,6 +50,7 @@ pub struct Vmm {
     config: Config,
     memory: Arc<Memory>,
     device_manager: SharedDeviceManager,
+    state_controller: VmmStateController,
     event_manager: EventManager<Arc<Mutex<dyn MutEventSubscriber + Send>>>,
     exit_handler: SharedExitEventHandler,
     vm: Vm<SharedExitEventHandler>,
@@ -56,8 +59,41 @@ pub struct Vmm {
     block_devices: Vec<Arc<Mutex<Block>>>,
 }
 
+#[derive(Debug, Clone)]
+pub enum VmmStateControllerMessage {
+    StopRequested,
+    Stopping,
+    Stopped(VmmState),
+    NetworkReady,
+}
+
+#[derive(Clone)]
+pub struct VmmStateController {
+    evt: Arc<broadcast::Sender<VmmStateControllerMessage>>,
+}
+
+impl VmmStateController {
+    pub fn new() -> Self {
+        let (tx, _) = broadcast::channel(100);
+
+        VmmStateController { evt: tx.into() }
+    }
+
+    pub fn send(&self, msg: VmmStateControllerMessage) {
+        let _ = self.evt.send(msg);
+    }
+
+    pub fn request_stop(&self) {
+        let _ = self.evt.send(VmmStateControllerMessage::StopRequested);
+    }
+
+    pub fn rx(&self) -> broadcast::Receiver<VmmStateControllerMessage> {
+        self.evt.subscribe()
+    }
+}
+
 impl Vmm {
-    pub fn new(config: Config, net_ready_tx: Option<sync::mpsc::Sender<()>>) -> Result<Self> {
+    pub fn new(config: Config) -> Result<Self> {
         let kvm = Kvm::new()?;
         Vmm::check_kvm_caps(&kvm)?;
 
@@ -70,11 +106,12 @@ impl Vmm {
         let memory = Arc::new(memory);
 
         let device_manager = SharedDeviceManager::new(SERIAL_IRQ)?;
+        let state_controller = VmmStateController::new();
 
         let vm_config = VmConfig::new(&kvm, config.vcpu.num)?;
         let exit_handler = SharedExitEventHandler::new()?;
 
-        let guest_manger = Arc::new(Mutex::new(GuestManagerDevice::new(exit_handler.clone())));
+        let guest_manger = GuestManagerDevice::new(exit_handler.clone(), state_controller.clone());
 
         let vm = Vm::new(
             &kvm,
@@ -92,6 +129,7 @@ impl Vmm {
             config: config.clone(),
             memory,
             device_manager,
+            state_controller,
             event_manager,
             exit_handler,
             vm,
@@ -104,7 +142,7 @@ impl Vmm {
         vmm.add_i8042_device()?;
 
         if let Some(net_config) = &config.net {
-            vmm.add_net_device(net_config, net_ready_tx)?;
+            vmm.add_net_device(net_config)?;
         }
 
         for block_config in config.block.iter() {
@@ -114,18 +152,15 @@ impl Vmm {
         Ok(vmm)
     }
 
-    pub fn from_state(
-        state: VmmState,
-        memory: Arc<Memory>,
-        net_ready_tx: Option<sync::mpsc::Sender<()>>,
-    ) -> Result<Self> {
+    pub fn from_state(state: VmmState, memory: Arc<Memory>) -> Result<Self> {
         let kvm = Kvm::new()?;
         Vmm::check_kvm_caps(&kvm)?;
 
         let device_manager = SharedDeviceManager::new(SERIAL_IRQ)?;
+        let state_controller = VmmStateController::new();
         let exit_handler = SharedExitEventHandler::new()?;
 
-        let guest_manger = Arc::new(Mutex::new(GuestManagerDevice::new(exit_handler.clone())));
+        let guest_manger = GuestManagerDevice::new(exit_handler.clone(), state_controller.clone());
 
         let vm = Vm::from_state(
             &kvm,
@@ -143,6 +178,7 @@ impl Vmm {
             config: state.config.clone(),
             memory,
             device_manager,
+            state_controller,
             event_manager,
             exit_handler,
             vm,
@@ -155,7 +191,7 @@ impl Vmm {
         vmm.add_i8042_device()?;
 
         if let Some(net_state) = &state.net_state {
-            vmm.add_net_device_from_state(net_state, net_ready_tx)?;
+            vmm.add_net_device_from_state(net_state)?;
         }
 
         for block_state in state.block_states.iter() {
@@ -165,10 +201,11 @@ impl Vmm {
         Ok(vmm)
     }
 
-    pub fn run(
-        &mut self,
-        mut stop_trigger: Option<std::sync::mpsc::Receiver<()>>,
-    ) -> Result<(VmmState, Arc<Memory>)> {
+    pub fn controller(&self) -> VmmStateController {
+        self.state_controller.clone()
+    }
+
+    pub fn run(&mut self) -> Result<(VmmState, Arc<Memory>)> {
         let kernel_load_addr = match &self.state {
             Some(state) => state.kernel_load_addr.clone(),
             None => {
@@ -194,6 +231,7 @@ impl Vmm {
 
         self.vm.run(start_address)?;
 
+        let mut control_rx = self.state_controller.rx();
         loop {
             match self.event_manager.run_with_timeout(100) {
                 Ok(_) => {}
@@ -207,11 +245,16 @@ impl Vmm {
                 break;
             }
 
-            if let Some(stop_trigger) = stop_trigger.as_mut() {
-                if stop_trigger.try_recv().is_ok() {
+            let ev = control_rx.try_recv();
+            match ev {
+                Ok(VmmStateControllerMessage::StopRequested) => {
+                    self.state_controller
+                        .evt
+                        .send(VmmStateControllerMessage::Stopping)?;
                     self.stop()?;
                     break;
                 }
+                _ => {}
             }
         }
 
@@ -235,16 +278,19 @@ impl Vmm {
         self.memory.reset_mmio_allocator()?;
         self.device_manager.reset_irq();
 
-        Ok((
-            VmmState {
-                config: self.config.clone(),
-                vm_state: state,
-                kernel_load_addr,
-                net_state,
-                block_states,
-            },
-            self.memory.clone(),
-        ))
+        let state = VmmState {
+            config: self.config.clone(),
+            vm_state: state,
+            kernel_load_addr,
+            net_state,
+            block_states,
+        };
+
+        self.state_controller
+            .evt
+            .send(VmmStateControllerMessage::Stopped(state.clone()))?;
+
+        Ok((state, self.memory.clone()))
     }
 
     pub fn stop(&self) -> Result<()> {
@@ -305,11 +351,7 @@ impl Vmm {
         Ok(())
     }
 
-    fn add_net_device(
-        &mut self,
-        config: &NetConfig,
-        net_ready_tx: Option<sync::mpsc::Sender<()>>,
-    ) -> Result<()> {
+    fn add_net_device(&mut self, config: &NetConfig) -> Result<()> {
         let mmio_range = {
             let mut alloc = self.memory.lock_mmio_allocator();
             let range = alloc.allocate(0x1000, 4, AllocPolicy::FirstMatch)?;
@@ -332,22 +374,13 @@ impl Vmm {
             kernel_cmdline: &mut self.config.kernel.cmdline,
         };
 
-        let net = Net::new(
-            &mut env,
-            config.clone(),
-            net_ready_tx,
-            self.vm.guest_manager.clone(),
-        )?;
+        let net = Net::new(&mut env, config.clone(), self.state_controller.clone())?;
         self.net_device = Some(net);
 
         Ok(())
     }
 
-    fn add_net_device_from_state(
-        &mut self,
-        state: &NetState,
-        net_ready_tx: Option<sync::mpsc::Sender<()>>,
-    ) -> Result<()> {
+    fn add_net_device_from_state(&mut self, state: &NetState) -> Result<()> {
         let mmio_range = {
             let mut alloc = self.memory.lock_mmio_allocator();
             let range = alloc.allocate(0x1000, 4, AllocPolicy::FirstMatch)?;
@@ -370,12 +403,7 @@ impl Vmm {
             kernel_cmdline: &mut self.config.kernel.cmdline,
         };
 
-        let net = Net::from_state(
-            &mut env,
-            &state,
-            net_ready_tx,
-            self.vm.guest_manager.clone(),
-        )?;
+        let net = Net::from_state(&mut env, &state, self.state_controller.clone())?;
         self.net_device = Some(net);
 
         Ok(())

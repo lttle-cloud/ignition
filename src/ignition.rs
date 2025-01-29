@@ -9,7 +9,7 @@ use tracing_subscriber::FmtSubscriber;
 use util::{
     async_runtime::{
         self,
-        sync::{mpsc, Mutex as AsyncMutex, Notify},
+        sync::{Mutex as AsyncMutex, Notify},
         task, time,
     },
     result::{Context, Result},
@@ -19,7 +19,7 @@ use vmm::{
     config::{BlockConfig, Config, KernelConfig, MemoryConfig, NetConfig, VcpuConfig},
     memory::Memory,
     state::VmmState,
-    vmm::Vmm,
+    vmm::{Vmm, VmmStateController, VmmStateControllerMessage},
 };
 
 #[derive(Debug, Clone)]
@@ -30,61 +30,49 @@ enum VmStatus {
     Stopped,
 }
 
-enum VmMessage {
-    VmStopped(VmmState),
-    NetworkReady,
-}
-
 struct VmController {
     state: Arc<AsyncMutex<VmmState>>,
     memory: Arc<Memory>,
     status: Arc<AsyncMutex<VmStatus>>,
-    stop_tx: Arc<AsyncMutex<Option<std::sync::mpsc::Sender<()>>>>,
     status_notify: Arc<Notify>,
-    vm_message_tx: mpsc::Sender<VmMessage>,
 }
 
 impl VmController {
     pub fn new(config: Config) -> Result<Self> {
         let (state, memory) = {
             let start_time = std::time::Instant::now();
-            let mut vm = Vmm::new(config.clone(), None).context("Failed to create Vmm")?;
+            let mut vm = Vmm::new(config.clone()).context("Failed to create Vmm")?;
             let elapsed_us = start_time.elapsed().as_micros();
             info!("Initial VM creation took {}µs", elapsed_us);
 
             let start_time = std::time::Instant::now();
-            let (state, memory) = vm.run(None).context("Failed to run VM initially")?;
+            let (state, memory) = vm.run().context("Failed to run VM initially")?;
             let elapsed_ms = start_time.elapsed().as_millis();
             info!("Initial VM run took {}ms", elapsed_ms);
 
             (state, memory)
         };
 
-        let (vm_message_tx, vm_message_rx) = mpsc::channel::<VmMessage>(100);
-
         let controller = Self {
             state: Arc::new(AsyncMutex::new(state)),
             memory,
             status: Arc::new(AsyncMutex::new(VmStatus::Stopped)),
-            stop_tx: Arc::new(AsyncMutex::new(None)),
             status_notify: Arc::new(Notify::new()),
-            vm_message_tx,
         };
-
-        controller.start_vm_message_handler(vm_message_rx);
 
         Ok(controller)
     }
 
-    fn start_vm_message_handler(&self, mut vm_message_rx: mpsc::Receiver<VmMessage>) {
+    fn start_vm_message_handler(&self, state_controller: VmmStateController) {
         let state = self.state.clone();
         let status = self.status.clone();
         let status_notify = self.status_notify.clone();
 
+        let mut rx = state_controller.rx();
         task::spawn(async move {
-            while let Some(message) = vm_message_rx.recv().await {
+            while let Ok(message) = rx.recv().await {
                 match message {
-                    VmMessage::VmStopped(new_state) => {
+                    VmmStateControllerMessage::Stopped(new_state) => {
                         {
                             let mut state_guard = state.lock().await;
                             *state_guard = new_state;
@@ -99,7 +87,7 @@ impl VmController {
 
                         info!("VM has stopped.");
                     }
-                    VmMessage::NetworkReady => {
+                    VmmStateControllerMessage::NetworkReady => {
                         info!("Network is ready.");
 
                         {
@@ -111,6 +99,7 @@ impl VmController {
 
                         status_notify.notify_waiters();
                     }
+                    _ => {}
                 }
             }
         });
@@ -153,57 +142,29 @@ impl VmController {
     async fn start_vm_from_state(&self) -> Result<()> {
         let state_clone = self.state.clone();
         let memory_clone = self.memory.clone();
-        let vm_message_tx = self.vm_message_tx.clone();
 
         let old_state = {
             let state_guard = state_clone.lock().await;
             state_guard.clone()
         };
 
-        let (stop_tx, stop_rx) = std::sync::mpsc::channel::<()>();
-        let (net_ready_tx, net_ready_rx) = std::sync::mpsc::channel::<()>();
-
         let start_time = Instant::now();
-        let mut vm = Vmm::from_state(old_state, memory_clone, net_ready_tx.into())
-            .context("Failed to restore VM from state")?;
+        let mut vm =
+            Vmm::from_state(old_state, memory_clone).context("Failed to restore VM from state")?;
+        let state_controller = vm.controller();
+        self.start_vm_message_handler(state_controller.clone());
+
         let elapsed_us = start_time.elapsed().as_micros();
         info!("VM restoration took {}µs", elapsed_us);
 
-        {
-            let mut stop_tx_guard = self.stop_tx.lock().await;
-            *stop_tx_guard = Some(stop_tx);
-        }
-
-        let run_vm_message_tx = vm_message_tx.clone();
         task::spawn_blocking(move || {
             let start_time = Instant::now();
-            let run_result = vm.run(Some(stop_rx));
+            let run_result = vm.run();
             let elapsed_ms = start_time.elapsed().as_millis();
             info!("VM run took {}ms", elapsed_ms);
 
-            match run_result {
-                Ok((new_state, _)) => {
-                    let _ = run_vm_message_tx.blocking_send(VmMessage::VmStopped(new_state));
-                }
-                Err(e) => {
-                    error!("VM run encountered an error: {:?}", e);
-                }
-            }
-        });
-
-        let network_message_tx = vm_message_tx.clone();
-        task::spawn_blocking(move || {
-            let timeout_duration = Duration::from_secs(5);
-            match net_ready_rx.recv_timeout(timeout_duration) {
-                Ok(_) => {
-                    let _ = network_message_tx.blocking_send(VmMessage::NetworkReady);
-                }
-                Err(e) => {
-                    error!(
-                        "Failed to receive network readiness signal within timeout: {:?}",
-                        e
-                    );
-                }
+            if let Err(e) = run_result {
+                error!("VM run encountered an error: {:?}", e);
             }
         });
 
@@ -215,13 +176,9 @@ impl VmController {
 
         self.status_notify.notify_waiters();
 
-        let stop_tx_clone = {
-            let stop_tx_guard = self.stop_tx.lock().await;
-            stop_tx_guard.clone()
-        };
-
         let status_monitor = self.status.clone();
         let status_notify_monitor = self.status_notify.clone();
+
         task::spawn(async move {
             loop {
                 time::sleep(Duration::from_secs(3)).await;
@@ -232,11 +189,7 @@ impl VmController {
                         if Instant::now() > *deadline {
                             info!("VM timeout reached. Initiating shutdown.");
                             *status_guard = VmStatus::Stopping;
-                            if let Some(sender) = &stop_tx_clone {
-                                if let Err(e) = sender.send(()) {
-                                    error!("Failed to send stop signal: {:?}", e);
-                                }
-                            }
+                            state_controller.request_stop();
                             status_notify_monitor.notify_waiters();
                             break;
                         }
