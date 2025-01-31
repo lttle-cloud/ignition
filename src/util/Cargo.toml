@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.95"
 tokio = { version = "1.42.0", features = ["full"] }
+serde = { version = "1.0.217", features = ["derive"] }
+meta = { path = "../meta" }
