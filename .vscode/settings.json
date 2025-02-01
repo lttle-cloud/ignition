@@ -1,3 +1,6 @@
 {
-    "editor.formatOnSave": true
+    "editor.formatOnSave": true,
+    "yaml.schemas": {
+        "src/cli/schema.json": "demos/*.yaml"
+    },
 }

@@ -8,3 +8,5 @@ anyhow = "1.0.95"
 tokio = { version = "1.42.0", features = ["full"] }
 serde = { version = "1.0.217", features = ["derive"] }
 meta = { path = "../meta" }
+schemars = "0.8.21"
+serde_json = "1.0.138"

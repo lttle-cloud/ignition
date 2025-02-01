@@ -5,11 +5,23 @@ edition = "2021"
 
 [workspace]
 resolver = "2"
-members = [".", "src/util", "src/takeoff", "src/vmm"]
+members = [
+    ".",
+    "src/util",
+    "src/takeoff",
+    "src/vmm",
+    "src/proxy",
+    "src/sds",
+    "src/meta",
+    "src/api",
+    "src/cli",
+]
+
+default-members = [".", "src/cli"]
 
 [[bin]]
-name = "ignition"
-path = "src/ignition.rs"
+name = "ignition_demo"
+path = "src/ignition_demo.rs"
 
 [dependencies]
 axum = "0.8.1"
@@ -19,3 +31,4 @@ tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 util = { path = "src/util" }
 vmm = { path = "src/vmm" }
+sds = { path = "src/sds" }

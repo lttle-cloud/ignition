@@ -1,0 +1,353 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Ignition Resources",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "deployment"
+      ],
+      "properties": {
+        "deployment": {
+          "$ref": "#/definitions/Deployment"
+        }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "definitions": {
+    "Deployment": {
+      "type": "object",
+      "required": [
+        "image",
+        "memory",
+        "name",
+        "vcpus"
+      ],
+      "properties": {
+        "environment": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/DeploymentEnvironmentVariable"
+          }
+        },
+        "image": {
+          "type": "string"
+        },
+        "memory": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeploymentMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "scaling": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeploymentScaling"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "services": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/DeploymentService"
+          }
+        },
+        "vcpus": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0.0
+        }
+      }
+    },
+    "DeploymentEnvironmentVariable": {
+      "type": "object",
+      "required": [
+        "name",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "DeploymentExternalSErviceTlsTerminationMode": {
+      "type": "string",
+      "enum": [
+        "passthrough",
+        "reencrypt"
+      ]
+    },
+    "DeploymentExternalServiceIngress": {
+      "type": "object",
+      "required": [
+        "host"
+      ],
+      "properties": {
+        "cert": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IngressCertificate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host": {
+          "type": "string"
+        }
+      }
+    },
+    "DeploymentExternalServiceProtocol": {
+      "type": "string",
+      "enum": [
+        "http",
+        "tcp/tls"
+      ]
+    },
+    "DeploymentInternalServiceProtocol": {
+      "type": "string",
+      "enum": [
+        "http",
+        "tcp"
+      ]
+    },
+    "DeploymentMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "always-on"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "on-demand"
+          ],
+          "properties": {
+            "on-demand": {
+              "type": "object",
+              "required": [
+                "snapshot"
+              ],
+              "properties": {
+                "allow_idle_connection": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "snapshot": {
+                  "$ref": "#/definitions/OnDemandSnapshot"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "DeploymentScaling": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "replicas"
+          ],
+          "properties": {
+            "replicas": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "max",
+            "min"
+          ],
+          "properties": {
+            "max": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "min": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          }
+        }
+      ]
+    },
+    "DeploymentService": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "internal"
+          ],
+          "properties": {
+            "internal": {
+              "type": "object",
+              "required": [
+                "name",
+                "port"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "integer",
+                  "format": "uint16",
+                  "minimum": 0.0
+                },
+                "protocol": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/DeploymentInternalServiceProtocol"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "external"
+          ],
+          "properties": {
+            "external": {
+              "type": "object",
+              "required": [
+                "name",
+                "port"
+              ],
+              "properties": {
+                "ingress": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/DeploymentExternalServiceIngress"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "integer",
+                  "format": "uint16",
+                  "minimum": 0.0
+                },
+                "protocol": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/DeploymentExternalServiceProtocol"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "tls_termination": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/DeploymentExternalSErviceTlsTerminationMode"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "IngressCertificate": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "OnDemandSnapshot": {
+      "type": "object",
+      "required": [
+        "strategy"
+      ],
+      "properties": {
+        "stateful": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "strategy": {
+          "$ref": "#/definitions/SnapshotStrategy"
+        }
+      }
+    },
+    "SnapshotStrategy": {
+      "type": "string",
+      "enum": [
+        "none",
+        "boot",
+        "net"
+      ]
+    }
+  }
+}

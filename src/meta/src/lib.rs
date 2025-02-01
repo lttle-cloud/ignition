@@ -9,6 +9,9 @@ struct CodecArgs {
 
     #[darling(default)]
     decoding: Option<bool>,
+
+    #[darling(default)]
+    schema: Option<bool>,
 }
 
 #[proc_macro_attribute]
@@ -34,6 +37,7 @@ pub fn codec(
 
     let encoding = args.encoding.unwrap_or(true);
     let decoding = args.decoding.unwrap_or(true);
+    let schema = args.schema.unwrap_or(false);
 
     if !encoding && !decoding {
         return proc_macro::TokenStream::from(
@@ -55,8 +59,17 @@ pub fn codec(
         }
     };
 
+    let schema_derive = if schema {
+        quote! {
+            #[derive(util::encoding::schemars::JsonSchema)]
+        }
+    } else {
+        quote! {}
+    };
+
     quote! {
         #derive_args
+        #schema_derive
         #[serde(crate = "util::_serde")]
         #item
     }

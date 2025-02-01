@@ -1,0 +1,16 @@
+[package]
+name = "cli"
+version = "0.1.0"
+edition = "2021"
+
+build = "src/build.rs"
+
+[[bin]]
+name = "ignition"
+path = "src/main.rs"
+
+[dependencies]
+util = { path = "../util" }
+
+[build-dependencies]
+util = { path = "../util" }
