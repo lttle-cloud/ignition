@@ -11,6 +11,9 @@ path = "src/main.rs"
 
 [dependencies]
 util = { path = "../util" }
+ignition-client = { path = "../client" }
+tracing-subscriber = "0.3.19"
+tracing = "0.1.41"
 
 [build-dependencies]
 util = { path = "../util" }

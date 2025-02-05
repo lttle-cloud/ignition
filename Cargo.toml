@@ -15,6 +15,7 @@ members = [
     "src/meta",
     "src/api",
     "src/cli",
+    "src/client",
 ]
 
 default-members = [".", "src/cli"]
@@ -23,6 +24,10 @@ default-members = [".", "src/cli"]
 name = "ignition_demo"
 path = "src/ignition_demo.rs"
 
+[[bin]]
+name = "ignitiond"
+path = "src/ignition.rs"
+
 [dependencies]
 axum = "0.8.1"
 futures = "0.3.31"
@@ -30,5 +35,6 @@ reqwest = { version = "0.12.12", default-features = false }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 util = { path = "src/util" }
+api = { path = "src/api" }
 vmm = { path = "src/vmm" }
 sds = { path = "src/sds" }

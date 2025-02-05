@@ -1,14 +1,14 @@
 [package]
-name = "api"
+name = "ignition-client"
 version = "0.1.0"
 edition = "2021"
-
 
 [dependencies]
 prost = "0.13.4"
 tonic = "0.12.3"
 tracing = "0.1.41"
 util = { path = "../util" }
+
 
 [build-dependencies]
 prost-build = "0.13.4"
