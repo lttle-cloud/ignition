@@ -42,6 +42,7 @@ const VIRTIO_MMIO_INT_VRING: u8 = 0x01;
 pub const VIRTIO_MMIO_QUEUE_NOTIFY_OFFSET: u64 = 0x50;
 
 pub struct Env<'a> {
+    pub from_state: bool,
     pub mem: Arc<Memory>,
     pub vm_fd: Arc<VmFd>,
     pub event_mgr: &'a mut EventManager<Arc<Mutex<dyn MutEventSubscriber + Send>>>,
@@ -60,12 +61,14 @@ impl<'a> Env<'a> {
             io_manager.register_mmio(self.mmio_cfg.range, device)?;
         }
 
-        self.kernel_cmdline.add_virtio_mmio_device(
-            self.mmio_cfg.range.size(),
-            GuestAddress(self.mmio_cfg.range.base().0),
-            self.mmio_cfg.irq,
-            None,
-        )?;
+        if !self.from_state {
+            self.kernel_cmdline.add_virtio_mmio_device(
+                self.mmio_cfg.range.size(),
+                GuestAddress(self.mmio_cfg.range.base().0),
+                self.mmio_cfg.irq,
+                None,
+            )?;
+        }
 
         Ok(())
     }

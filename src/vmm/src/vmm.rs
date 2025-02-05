@@ -325,7 +325,9 @@ impl Vmm {
 
         self.vm.register_irqfd(&irq_fd, SERIAL_IRQ)?;
 
-        self.config.kernel.cmdline.insert_str("console=ttyS0")?;
+        if self.state.is_none() {
+            self.config.kernel.cmdline.insert_str("console=ttyS0")?;
+        }
 
         let range = PioRange::new(PioAddress(0x3f8), 8)?;
         let mut io_manager = self.device_manager.io_manager.lock().unwrap();
@@ -366,6 +368,7 @@ impl Vmm {
         };
 
         let mut env = Env {
+            from_state: false,
             mem: self.memory.clone(),
             vm_fd: self.vm.fd(),
             device_manager: self.device_manager.clone(),
@@ -395,6 +398,7 @@ impl Vmm {
         };
 
         let mut env = Env {
+            from_state: true,
             mem: self.memory.clone(),
             vm_fd: self.vm.fd(),
             device_manager: self.device_manager.clone(),
@@ -424,6 +428,7 @@ impl Vmm {
         };
 
         let mut env = Env {
+            from_state: false,
             mem: self.memory.clone(),
             vm_fd: self.vm.fd(),
             device_manager: self.device_manager.clone(),
@@ -453,6 +458,7 @@ impl Vmm {
         };
 
         let mut env = Env {
+            from_state: true,
             mem: self.memory.clone(),
             vm_fd: self.vm.fd(),
             device_manager: self.device_manager.clone(),
