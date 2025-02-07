@@ -5,10 +5,12 @@ use util::{
     result::Result,
 };
 
+pub use heed::Error;
+
 #[derive(Debug, Clone)]
 pub struct StoreConfig {
-    dir_path: PathBuf,
-    size_mib: usize,
+    pub dir_path: PathBuf,
+    pub size_mib: usize,
 }
 
 #[derive(Clone)]
@@ -21,24 +23,15 @@ pub struct Collection<T>
 where
     T: Serialize + DeserializeOwned,
 {
-    env: Arc<heed::Env>,
     database: heed::Database<heed::types::Str, heed::types::SerdeBincode<T>>,
 }
 
-pub struct ReadTransaction<'a, T>
-where
-    T: Serialize + DeserializeOwned,
-{
-    txn: heed::RoTxn<'a>,
-    database: heed::Database<heed::types::Str, heed::types::SerdeBincode<T>>,
+pub struct ReadTxn<'env> {
+    txn: heed::RoTxn<'env>,
 }
 
-pub struct WriteTransaction<'a, T>
-where
-    T: Serialize + DeserializeOwned,
-{
-    txn: heed::RwTxn<'a>,
-    database: heed::Database<heed::types::Str, heed::types::SerdeBincode<T>>,
+pub struct WriteTxn<'env> {
+    txn: heed::RwTxn<'env>,
 }
 
 impl Store {
@@ -71,105 +64,106 @@ impl Store {
                     &mut wtxn,
                     Some(&name),
                 )?;
-
             wtxn.commit()?;
-
             db
         };
 
-        Ok(Collection {
-            env: self.env.clone(),
-            database,
-        })
+        Ok(Collection { database })
     }
-}
 
-impl<V> Collection<V>
-where
-    V: Serialize + DeserializeOwned,
-{
-    pub fn read(&self) -> Result<ReadTransaction<V>> {
+    pub fn read_txn(&self) -> Result<ReadTxn> {
         let txn = self.env.read_txn()?;
-        Ok(ReadTransaction {
-            txn,
-            database: self.database.clone(),
-        })
+        Ok(ReadTxn { txn })
     }
 
-    pub fn write(&self) -> Result<WriteTransaction<V>> {
+    pub fn write_txn(&self) -> Result<WriteTxn> {
         let txn = self.env.write_txn()?;
-        Ok(WriteTransaction {
-            txn,
-            database: self.database.clone(),
-        })
+        Ok(WriteTxn { txn })
     }
 }
 
-impl<'a, V> ReadTransaction<'a, V>
-where
-    V: Serialize + DeserializeOwned,
-{
-    pub fn get(&self, key: &str) -> Option<V> {
-        let Ok(Some(value)) = self.database.get(&self.txn, key) else {
+impl<'env> ReadTxn<'env> {
+    pub fn get<V>(&self, collection: &Collection<V>, key: &str) -> Option<V>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let Ok(Some(value)) = collection.database.get(&self.txn, key) else {
             return None;
         };
-
         Some(value)
     }
 
-    pub fn iter(&self) -> Result<heed::RoIter<'_, heed::types::Str, heed::types::SerdeBincode<V>>> {
-        let iter = self.database.iter(&self.txn)?;
-        Ok(iter)
+    pub fn iter<V>(
+        &self,
+        collection: &Collection<V>,
+    ) -> Result<heed::RoIter<'_, heed::types::Str, heed::types::SerdeBincode<V>>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        Ok(collection.database.iter(&self.txn)?)
     }
 
-    pub fn prefix_iter(
+    pub fn prefix_iter<V>(
         &self,
+        collection: &Collection<V>,
         prefix: impl AsRef<str>,
-    ) -> Result<heed::RoPrefix<'_, heed::types::Str, heed::types::SerdeBincode<V>>> {
-        let iter = self.database.prefix_iter(&self.txn, prefix.as_ref())?;
-        Ok(iter)
+    ) -> Result<heed::RoPrefix<'_, heed::types::Str, heed::types::SerdeBincode<V>>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        Ok(collection
+            .database
+            .prefix_iter(&self.txn, prefix.as_ref())?)
     }
 }
 
-impl<'a, V> WriteTransaction<'a, V>
-where
-    V: Serialize + DeserializeOwned,
-{
-    pub fn get(&self, key: &str) -> Option<V> {
-        let Ok(Some(value)) = self.database.get(&self.txn, key) else {
+impl<'env> WriteTxn<'env> {
+    pub fn get<V>(&self, collection: &Collection<V>, key: &str) -> Option<V>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let Ok(Some(value)) = collection.database.get(&self.txn, key) else {
             return None;
         };
-
         Some(value)
     }
 
-    pub fn iter(&self) -> Result<heed::RoIter<'_, heed::types::Str, heed::types::SerdeBincode<V>>> {
-        let iter = self.database.iter(&self.txn)?;
-        Ok(iter)
-    }
-
-    pub fn prefix_iter(
+    pub fn iter<V>(
         &self,
+        collection: &Collection<V>,
+    ) -> Result<heed::RoIter<'_, heed::types::Str, heed::types::SerdeBincode<V>>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        Ok(collection.database.iter(&self.txn)?)
+    }
+
+    pub fn prefix_iter<V>(
+        &self,
+        collection: &Collection<V>,
         prefix: impl AsRef<str>,
-    ) -> Result<heed::RoPrefix<'_, heed::types::Str, heed::types::SerdeBincode<V>>> {
-        let iter = self.database.prefix_iter(&self.txn, prefix.as_ref())?;
-        Ok(iter)
+    ) -> Result<heed::RoPrefix<'_, heed::types::Str, heed::types::SerdeBincode<V>>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        Ok(collection
+            .database
+            .prefix_iter(&self.txn, prefix.as_ref())?)
     }
 
-    pub fn iter_mut(
-        &mut self,
-    ) -> Result<heed::RwIter<'_, heed::types::Str, heed::types::SerdeBincode<V>>> {
-        let iter = self.database.iter_mut(&mut self.txn)?;
-        Ok(iter)
-    }
-
-    pub fn put(&mut self, key: &str, value: &V) -> Result<()> {
-        self.database.put(&mut self.txn, key, value)?;
+    pub fn put<V>(&mut self, collection: &Collection<V>, key: &str, value: &V) -> Result<()>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        collection.database.put(&mut self.txn, key, value)?;
         Ok(())
     }
 
-    pub fn del(&mut self, key: &str) -> Result<()> {
-        self.database.delete(&mut self.txn, key)?;
+    pub fn del<V>(&mut self, collection: &Collection<V>, key: &str) -> Result<()>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        collection.database.delete(&mut self.txn, key)?;
         Ok(())
     }
 
