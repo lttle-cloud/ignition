@@ -1,6 +1,6 @@
 use ignition_proto::admin_server::AdminServer;
 use sds::Store;
-use services::admin::{admin_auth_interceptor, AdminService};
+use services::admin::{admin_auth_interceptor, AdminService, AdminServiceConfig};
 use std::net::SocketAddr;
 use tonic::transport::Server;
 use tracing::info;
@@ -23,21 +23,19 @@ pub struct ApiServerConfig {
     pub addr: SocketAddr,
     pub store: Store,
     pub admin_token: String,
-}
-
-impl ApiServerConfig {
-    pub fn new(addr: SocketAddr, store: Store, admin_token: String) -> Self {
-        Self {
-            addr,
-            store,
-            admin_token,
-        }
-    }
+    pub jwt_private_key: String,
+    pub default_token_duration: u32,
 }
 
 pub async fn start_api_server(config: ApiServerConfig) -> Result<()> {
     let admin_token = config.admin_token.clone();
-    let admin_service = AdminService::new(config.store.clone())?;
+    let admin_service = AdminService::new(
+        config.store.clone(),
+        AdminServiceConfig {
+            jwt_private_key: config.jwt_private_key,
+            default_token_duration: config.default_token_duration,
+        },
+    )?;
     let admin_server = AdminServer::with_interceptor(admin_service, move |req| {
         admin_auth_interceptor(req, admin_token.clone())
     });

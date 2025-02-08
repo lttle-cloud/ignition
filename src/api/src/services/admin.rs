@@ -1,28 +1,37 @@
+use jsonwebtoken::{encode, EncodingKey, Header};
 use sds::{Collection, Store};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tonic::{Request, Response, Status};
 use util::result::Result;
 
+use crate::data::token::UserTokenClaims;
 use crate::data::user::{User, UserStatus};
 use crate::ignition_proto::admin::{
     self, CreateUserRequest, CreateUserResponse, CreateUserTokenRequest, CreateUserTokenResponse,
-    DisableUserRequest, DisableUserResponse, EnableUserRequest, EnableUserResponse,
-    ListUsersResponse,
+    ListUsersResponse, SetStatusRequest, SetStatusResponse,
 };
 use crate::ignition_proto::admin_server::Admin;
 use crate::ignition_proto::util::Empty;
 
+pub struct AdminServiceConfig {
+    pub jwt_private_key: String,
+    pub default_token_duration: u32,
+}
+
 pub struct AdminService {
     store: Store,
     user_collection: Collection<User>,
+    config: AdminServiceConfig,
 }
 
 impl AdminService {
-    pub fn new(store: Store) -> Result<Self> {
+    pub fn new(store: Store, config: AdminServiceConfig) -> Result<Self> {
         let user_collection = store.collection("users")?;
 
         Ok(Self {
             store,
             user_collection,
+            config,
         })
     }
 }
@@ -107,25 +116,92 @@ impl Admin for AdminService {
         }))
     }
 
-    async fn disable_user(
+    async fn set_status(
         &self,
-        request: Request<DisableUserRequest>,
-    ) -> Result<Response<DisableUserResponse>, Status> {
-        todo!("Implement disable_user")
-    }
+        request: Request<SetStatusRequest>,
+    ) -> Result<Response<SetStatusResponse>, Status> {
+        let request = request.into_inner();
+        let new_status = match request.status() {
+            admin::user::Status::Active => UserStatus::Active,
+            admin::user::Status::Inactive => UserStatus::Inactive,
+        };
 
-    async fn enable_user(
-        &self,
-        request: Request<EnableUserRequest>,
-    ) -> Result<Response<EnableUserResponse>, Status> {
-        todo!("Implement enable_user")
+        let mut txn = self
+            .store
+            .write_txn()
+            .map_err(|_| Status::internal("failed to create write txn"))?;
+
+        let (user_key, mut user) = match txn
+            .find_first(&self.user_collection, |_, user| user.id == request.id)
+            .map_err(|_| Status::internal("failed to find user"))?
+        {
+            Some((k, u)) => (k, u),
+            None => return Err(Status::not_found("User not found")),
+        };
+
+        if user.status == new_status {
+            return Err(Status::failed_precondition(match new_status {
+                UserStatus::Active => "User is already enabled",
+                UserStatus::Inactive => "User is already disabled",
+            }));
+        }
+
+        user.status = new_status;
+
+        txn.put(&self.user_collection, &user_key, &user)
+            .map_err(|_| Status::internal("failed to update user"))?;
+
+        txn.commit()
+            .map_err(|_| Status::internal("failed to commit txn"))?;
+
+        Ok(Response::new(SetStatusResponse {
+            user: Some((&user).into()),
+        }))
     }
 
     async fn create_user_token(
         &self,
         request: Request<CreateUserTokenRequest>,
     ) -> Result<Response<CreateUserTokenResponse>, Status> {
-        todo!("Implement create_user_token")
+        let request = request.into_inner();
+
+        let txn = self
+            .store
+            .read_txn()
+            .map_err(|_| Status::internal("failed to create read txn"))?;
+
+        match txn
+            .find_first(&self.user_collection, |_, user| user.id == request.id)
+            .map_err(|_| Status::internal("failed to find user"))?
+        {
+            Some((_, user)) if user.status == UserStatus::Active => (),
+            Some(_) => return Err(Status::failed_precondition("User is not active")),
+            None => return Err(Status::not_found("User not found")),
+        }
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| Status::internal("failed to get timestamp"))?
+            .as_secs();
+
+        let duration = request
+            .duration_seconds
+            .unwrap_or(self.config.default_token_duration);
+        let claims = UserTokenClaims {
+            sub: request.id,
+            iat: now,
+            exp: now + duration as u64,
+        };
+
+        let token = encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_base64_secret(&self.config.jwt_private_key)
+                .map_err(|_| Status::internal("invalid jwt private key"))?,
+        )
+        .map_err(|_| Status::internal("failed to create token"))?;
+
+        Ok(Response::new(CreateUserTokenResponse { token }))
     }
 }
 
