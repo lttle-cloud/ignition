@@ -10,7 +10,6 @@ members = [
     "src/util",
     "src/takeoff",
     "src/vmm",
-    "src/proxy",
     "src/sds",
     "src/meta",
     "src/api",

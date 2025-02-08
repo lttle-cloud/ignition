@@ -115,6 +115,25 @@ impl<'env> ReadTxn<'env> {
             .database
             .prefix_iter(&self.txn, prefix.as_ref())?)
     }
+
+    pub fn find_first<V, F>(
+        &self,
+        collection: &Collection<V>,
+        predicate: F,
+    ) -> Result<Option<(String, V)>>
+    where
+        V: Serialize + DeserializeOwned,
+        F: Fn(&str, &V) -> bool,
+    {
+        let iter = collection.database.iter(&self.txn)?;
+        for item in iter {
+            let (key, value) = item?;
+            if predicate(key, &value) {
+                return Ok(Some((key.to_string(), value)));
+            }
+        }
+        Ok(None)
+    }
 }
 
 impl<'env> WriteTxn<'env> {
@@ -170,5 +189,24 @@ impl<'env> WriteTxn<'env> {
     pub fn commit(self) -> Result<()> {
         self.txn.commit()?;
         Ok(())
+    }
+
+    pub fn find_first<V, F>(
+        &self,
+        collection: &Collection<V>,
+        predicate: F,
+    ) -> Result<Option<(String, V)>>
+    where
+        V: Serialize + DeserializeOwned,
+        F: Fn(&str, &V) -> bool,
+    {
+        let iter = collection.database.iter(&self.txn)?;
+        for item in iter {
+            let (key, value) = item?;
+            if predicate(key, &value) {
+                return Ok(Some((key.to_string(), value)));
+            }
+        }
+        Ok(None)
     }
 }

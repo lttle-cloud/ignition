@@ -9,8 +9,7 @@ import "deployment.proto";
 service Admin {
   rpc ListUsers(ignition.util.Empty) returns (ignition.admin.ListUsersResponse);
   rpc CreateUser(ignition.admin.CreateUserRequest) returns (ignition.admin.CreateUserResponse);
-  rpc DisableUser(ignition.admin.DisableUserRequest) returns (ignition.admin.DisableUserResponse);
-  rpc EnableUser(ignition.admin.EnableUserRequest) returns (ignition.admin.EnableUserResponse);
+  rpc SetStatus(ignition.admin.SetStatusRequest) returns (ignition.admin.SetStatusResponse);
   rpc CreateUserToken(ignition.admin.CreateUserTokenRequest) returns (ignition.admin.CreateUserTokenResponse);
 }
 

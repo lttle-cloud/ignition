@@ -10,6 +10,7 @@ pub struct User {
 }
 
 #[codec(schema = false)]
+#[derive(Debug, PartialEq)]
 pub enum UserStatus {
     Active,
     Inactive,

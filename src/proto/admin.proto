@@ -24,19 +24,12 @@ message CreateUserResponse {
   User user = 1;
 }
 
-message DisableUserRequest {
+message SetStatusRequest {
   string id = 1;
+  User.Status status = 2;
 }
 
-message DisableUserResponse {
-  User user = 1;
-}
-
-message EnableUserRequest {
-  string id = 1;
-}
-
-message EnableUserResponse {
+message SetStatusResponse {
   User user = 1;
 }
 
