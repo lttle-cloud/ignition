@@ -1,0 +1,26 @@
+services:
+  postgres1:
+    image: postgres:12
+    ports:
+      - "5561:5432"
+    environment:
+      POSTGRES_USER: postgres1
+      POSTGRES_PASSWORD: postgres1
+      POSTGRES_DB: postgres1
+    volumes:
+      - postgres1-data:/var/lib/postgresql/data
+
+  postgres2:
+    image: postgres:12
+    ports:
+      - "5562:5432"
+    environment:
+      POSTGRES_USER: postgres2
+      POSTGRES_PASSWORD: postgres2
+      POSTGRES_DB: postgres2
+    volumes:
+      - postgres2-data:/var/lib/postgresql/data
+
+volumes:
+  postgres1-data:
+  postgres2-data:
