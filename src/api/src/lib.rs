@@ -1,6 +1,7 @@
 use ignition_proto::admin_server::AdminServer;
 use sds::Store;
 use services::admin::{admin_auth_interceptor, AdminService, AdminServiceConfig};
+use services::auth::{AuthInterceptor, AuthInterceptorConfig};
 use std::net::SocketAddr;
 use tonic::transport::Server;
 use tracing::info;
@@ -23,7 +24,7 @@ pub struct ApiServerConfig {
     pub addr: SocketAddr,
     pub store: Store,
     pub admin_token: String,
-    pub jwt_private_key: String,
+    pub jwt_secret: String,
     pub default_token_duration: u32,
 }
 
@@ -32,13 +33,21 @@ pub async fn start_api_server(config: ApiServerConfig) -> Result<()> {
     let admin_service = AdminService::new(
         config.store.clone(),
         AdminServiceConfig {
-            jwt_private_key: config.jwt_private_key,
+            jwt_secret: config.jwt_secret.clone(),
             default_token_duration: config.default_token_duration,
         },
     )?;
     let admin_server = AdminServer::with_interceptor(admin_service, move |req| {
         admin_auth_interceptor(req, admin_token.clone())
     });
+
+    // Create the auth interceptor that can be used by other services
+    let auth_interceptor = AuthInterceptor::new(
+        config.store.clone(),
+        AuthInterceptorConfig {
+            jwt_secret: config.jwt_secret,
+        },
+    )?;
 
     info!("api server listening on {:?}", config.addr);
 

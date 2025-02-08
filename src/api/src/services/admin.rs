@@ -14,7 +14,7 @@ use crate::ignition_proto::admin_server::Admin;
 use crate::ignition_proto::util::Empty;
 
 pub struct AdminServiceConfig {
-    pub jwt_private_key: String,
+    pub jwt_secret: String,
     pub default_token_duration: u32,
 }
 
@@ -196,8 +196,8 @@ impl Admin for AdminService {
         let token = encode(
             &Header::default(),
             &claims,
-            &EncodingKey::from_base64_secret(&self.config.jwt_private_key)
-                .map_err(|_| Status::internal("invalid jwt private key"))?,
+            &EncodingKey::from_base64_secret(&self.config.jwt_secret)
+                .map_err(|_| Status::internal("invalid jwt secret"))?,
         )
         .map_err(|_| Status::internal("failed to create token"))?;
 

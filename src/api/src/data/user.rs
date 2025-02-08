@@ -3,6 +3,7 @@ use util::encoding::codec;
 use crate::ignition_proto::admin;
 
 #[codec(schema = false)]
+#[derive(Clone)]
 pub struct User {
     pub id: String,
     pub name: String,
@@ -10,7 +11,7 @@ pub struct User {
 }
 
 #[codec(schema = false)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum UserStatus {
     Active,
     Inactive,

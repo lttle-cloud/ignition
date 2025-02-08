@@ -23,7 +23,7 @@ async fn ignition() -> Result<()> {
         store,
         // TODO(@laurci): get this from env
         admin_token: "temp_admin_token".to_string(),
-        jwt_private_key: "dGVtcF9qd3RfcHJpdmF0ZV9rZXk=".to_string(),
+        jwt_secret: "dGVtcF9qd3Rfc2VjcmV0".to_string(), // Note: In production, this should be a proper secret
         default_token_duration: 3600,
     };
 
