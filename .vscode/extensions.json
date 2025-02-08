@@ -1,0 +1,8 @@
+{
+    "recommendations": [
+        "rust-lang.rust-analyzer",
+        "tooltitudeteam.tooltitude-pb",
+        "redhat.vscode-yaml",
+        "tamasfe.even-better-toml"
+    ]
+}
