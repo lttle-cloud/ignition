@@ -1,4 +1,8 @@
-use ignition_client::{Client, ClientConfig, HelloRequest};
+use ignition_client::{
+    ignition_proto::{admin::CreateUserRequest, util::Empty},
+    ClientConfig, PrivilegedClient,
+};
+use tracing::info;
 use tracing_subscriber::FmtSubscriber;
 use util::{
     async_runtime,
@@ -14,31 +18,34 @@ async fn ignition() -> Result<()> {
 
     let client_config = ClientConfig {
         addr: "tcp://127.0.0.1:5100".into(),
+        // TODO(@laurci): get this from env
+        token: "temp_admin_token".into(),
     };
 
-    let client = Client::new(client_config).await?;
+    let client = PrivilegedClient::new(client_config).await?;
 
-    let reply = client
-        .greeter()
-        .say_hello(HelloRequest {
-            name: "Mark".to_owned(),
-            age: Some(23),
-        })
-        .await?
-        .into_inner();
+    let create_user = false;
+    let list_users = true;
 
-    dbg!(reply);
+    if create_user {
+        info!("Creating user");
 
-    let reply = client
-        .greeter()
-        .say_hello(HelloRequest {
-            name: "Harry".to_owned(),
-            age: None,
-        })
-        .await?
-        .into_inner();
+        let create_user = CreateUserRequest {
+            name: "laurci_test".into(),
+        };
 
-    dbg!(reply);
+        let user = client.admin().create_user(create_user).await?.into_inner();
+
+        dbg!(user);
+    }
+
+    if list_users {
+        info!("Listing users");
+
+        let users_list = client.admin().list_users(Empty {}).await?.into_inner();
+
+        dbg!(users_list);
+    }
 
     Ok(())
 }

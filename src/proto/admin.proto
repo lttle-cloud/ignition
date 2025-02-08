@@ -1,0 +1,50 @@
+syntax = "proto3";
+package ignition.admin;
+
+message ListUsersResponse {
+  repeated User users = 1;
+}
+
+message User {
+  enum Status {
+    ACTIVE = 0;
+    INACTIVE = 1;
+  }
+
+  string id = 1;
+  Status status = 2;
+  string name = 3;
+}
+
+message CreateUserRequest {
+  string name = 1;
+}
+
+message CreateUserResponse {
+  User user = 1;
+}
+
+message DisableUserRequest {
+  string id = 1;
+}
+
+message DisableUserResponse {
+  User user = 1;
+}
+
+message EnableUserRequest {
+  string id = 1;
+}
+
+message EnableUserResponse {
+  User user = 1;
+}
+
+message CreateUserTokenRequest {
+  string id = 1;
+  optional uint32 duration_seconds = 2;
+}
+
+message CreateUserTokenResponse {
+  string token = 1;
+}

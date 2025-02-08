@@ -9,6 +9,8 @@ prost = "0.13.4"
 tonic = "0.12.3"
 tracing = "0.1.41"
 util = { path = "../util" }
+sds = { path = "../sds" }
+cuid = "1.3.3"
 
 [build-dependencies]
 prost-build = "0.13.4"
