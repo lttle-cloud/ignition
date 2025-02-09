@@ -87,21 +87,21 @@ impl Admin for AdminService {
 
         let user = User {
             id: cuid::cuid2(),
-            name: request.name,
+            name: request.name.clone(),
             status: UserStatus::Active,
         };
 
         // check if user with this name already exists
-        if let Some(_existing_user) = txn
-            .prefix_iter(&self.user_collection, &user.name)
-            .map_err(|_| Status::internal("failed to iterate users"))?
-            .next()
+        if let Ok(Some((_, user))) =
+            txn.find_first(&self.user_collection, |_, user| user.name == request.name)
         {
-            return Err(Status::already_exists("User already exists"));
-        };
+            return Err(Status::already_exists(format!(
+                "User {} already exists",
+                user.name
+            )));
+        }
 
-        let user_key = format!("{}:{}", &user.name, &user.id);
-        txn.put(&self.user_collection, &user_key, &user)
+        txn.put(&self.user_collection, &user.id, &user)
             .map_err(|_| Status::internal("failed to put user"))?;
 
         txn.commit()
@@ -131,13 +131,9 @@ impl Admin for AdminService {
             .write_txn()
             .map_err(|_| Status::internal("failed to create write txn"))?;
 
-        let (user_key, mut user) = match txn
-            .find_first(&self.user_collection, |_, user| user.id == request.id)
-            .map_err(|_| Status::internal("failed to find user"))?
-        {
-            Some((k, u)) => (k, u),
-            None => return Err(Status::not_found("User not found")),
-        };
+        let mut user = txn
+            .get(&self.user_collection, &request.id)
+            .ok_or_else(|| Status::not_found("User not found"))?;
 
         if user.status == new_status {
             return Err(Status::failed_precondition(match new_status {
@@ -148,7 +144,7 @@ impl Admin for AdminService {
 
         user.status = new_status;
 
-        txn.put(&self.user_collection, &user_key, &user)
+        txn.put(&self.user_collection, &request.id, &user)
             .map_err(|_| Status::internal("failed to update user"))?;
 
         txn.commit()

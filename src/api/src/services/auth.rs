@@ -56,12 +56,11 @@ impl AuthInterceptor {
             .map_err(|_| Status::internal("failed to create read txn"))?;
 
         match txn
-            .find_first(&self.user_collection, |_, user| user.id == claims.sub)
-            .map_err(|_| Status::internal("failed to find user"))?
+            .get(&self.user_collection, &claims.sub)
+            .ok_or_else(|| Status::unauthenticated("User not found"))?
         {
-            Some((_, user)) if user.status == UserStatus::Active => (),
-            Some(_) => return Err(Status::permission_denied("User is not active")),
-            None => return Err(Status::unauthenticated("User not found")),
+            user if user.status == UserStatus::Active => (),
+            _ => return Err(Status::permission_denied("User is not active")),
         }
 
         Ok(req)
