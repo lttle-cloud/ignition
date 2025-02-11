@@ -1,4 +1,6 @@
-# Ignition
+[<p align="center" width="100%"><img src="./assets/lttle.gif"></p>](https://lttle.cloud)
+
+# lttle.cloud | Ignition
 
 With modern FaaS and serverless workloads, startup times can cause latencies that degrade user experience.
 
