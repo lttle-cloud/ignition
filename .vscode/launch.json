@@ -4,12 +4,28 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug executable 'ignitiond'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=ignitiond"
+                ],
+                "filter": {
+                    "name": "ignitiond",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug executable 'ignition'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=ignition",
-                    "--package=ignition"
+                    "--bin=ignition"
                 ],
                 "filter": {
                     "name": "ignition",

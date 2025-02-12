@@ -13,7 +13,7 @@ service Admin {
   rpc CreateUserToken(ignition.admin.CreateUserTokenRequest) returns (ignition.admin.CreateUserTokenResponse);
 }
 
-/*service Image {
+service Image {
   rpc CreatePullSecret(ignition.image.CreatePullSecretRequest) returns (ignition.image.CreatePullSecretResponse);
   rpc DeletePullSecret(ignition.image.DeletePullSecretRequest) returns (ignition.util.Empty);
   rpc ListPullSecrets(ignition.util.Empty) returns (ignition.image.ListPullSecretsResponse);
@@ -22,7 +22,7 @@ service Admin {
   rpc Import(ignition.image.ImportImageRequest) returns (ignition.image.ImportImageResponse);
 
   rpc ListImages(ignition.util.Empty) returns (ignition.image.ListImagesResponse);
-} */
+}
 
 /* service Deployment {
   rpc Apply(ignition.deployment.ApplyConfigRequest) returns (ignition.deployment.ApplyConfigResponse);

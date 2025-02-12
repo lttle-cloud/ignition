@@ -1,4 +1,4 @@
-use ignition_proto::admin_client::AdminClient;
+use ignition_proto::{admin_client::AdminClient, image_client::ImageClient};
 use tonic::{
     service::interceptor::InterceptedService,
     transport::{Channel, Endpoint},
@@ -8,13 +8,17 @@ use util::result::Result;
 
 pub mod ignition_proto {
     tonic::include_proto!("ignition");
-
     pub mod util {
         tonic::include_proto!("ignition.util");
     }
-
     pub mod admin {
         tonic::include_proto!("ignition.admin");
+    }
+    pub mod image {
+        tonic::include_proto!("ignition.image");
+    }
+    pub mod deployment {
+        tonic::include_proto!("ignition.deployment");
     }
 }
 
@@ -38,6 +42,20 @@ impl Client {
             token: config.token,
         })
     }
+
+    pub fn image(
+        &self,
+    ) -> ImageClient<InterceptedService<Channel, impl Fn(Request<()>) -> Result<Request<()>, Status>>>
+    {
+        let token = self.token.clone();
+        let interceptor = move |mut req: Request<()>| {
+            req.metadata_mut()
+                .insert("authorization", token.parse().unwrap());
+            Ok(req)
+        };
+
+        ImageClient::with_interceptor(self.transport.clone(), interceptor)
+    }
 }
 
 pub struct PrivilegedClient {
@@ -55,9 +73,7 @@ impl PrivilegedClient {
             token: config.token,
         })
     }
-}
 
-impl PrivilegedClient {
     pub fn admin(
         &self,
     ) -> AdminClient<InterceptedService<Channel, impl Fn(Request<()>) -> Result<Request<()>, Status>>>

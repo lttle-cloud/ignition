@@ -55,13 +55,17 @@ impl AuthInterceptor {
             .read_txn()
             .map_err(|_| Status::internal("failed to create read txn"))?;
 
-        match txn
+        let user = match txn
             .get(&self.user_collection, &claims.sub)
             .ok_or_else(|| Status::unauthenticated("User not found"))?
         {
-            user if user.status == UserStatus::Active => (),
+            user if user.status == UserStatus::Active => user,
             _ => return Err(Status::permission_denied("User is not active")),
-        }
+        };
+
+        // Store user in request extensions
+        let mut req = req;
+        req.extensions_mut().insert(user);
 
         Ok(req)
     }
@@ -74,4 +78,10 @@ pub fn user_auth_interceptor(
         let interceptor = interceptor.clone();
         interceptor.validate_request(req)
     }
+}
+
+pub fn get_authenticated_user<T>(req: &Request<T>) -> Result<&User, Status> {
+    req.extensions()
+        .get::<User>()
+        .ok_or_else(|| Status::internal("User not found in request context"))
 }

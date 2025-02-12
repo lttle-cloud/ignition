@@ -5,11 +5,12 @@ package ignition.image;
 message ImagePullSecret {
   string name = 1;
   string username = 2;
-  string password = 3;
 }
 
 message CreatePullSecretRequest {
-  ImagePullSecret secret = 1;
+  string name = 1;
+  string username = 2;
+  string password = 3;
 }
 
 message CreatePullSecretResponse {
