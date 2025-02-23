@@ -158,7 +158,7 @@ async fn takeoff() {
     info!("takeoff is ready");
 
     mount_block();
-    check_internet();
+    // check_internet();
 
     start_server(guest_manager.clone()).await;
 

@@ -176,7 +176,7 @@ impl Net {
         let handler = self
             .handler
             .take()
-            .ok_or_else(|| anyhow!("Handler not found"))?;
+            .ok_or_else(|| anyhow!("net handler not found"))?;
 
         let handler = handler.lock().unwrap();
         let (rxq_state, txq_state) = handler.inner.get_queue_states();

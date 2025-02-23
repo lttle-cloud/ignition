@@ -124,7 +124,7 @@ impl Block {
         let handler = self
             .handler
             .take()
-            .ok_or_else(|| anyhow!("handler not found"))?;
+            .ok_or_else(|| anyhow!("block handler not found"))?;
 
         let handler = handler.lock().unwrap();
         let queue_state = handler.inner.get_queue_state();
