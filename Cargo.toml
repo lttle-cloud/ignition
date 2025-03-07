@@ -28,7 +28,7 @@ name = "ignitiond"
 path = "src/ignition.rs"
 
 [dependencies]
-axum = "0.8.1"
+axum = { version = "0.8.1", features = ["macros"] }
 futures = "0.3.31"
 reqwest = { version = "0.12.12", default-features = false }
 tracing = "0.1.41"
