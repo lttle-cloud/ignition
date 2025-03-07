@@ -249,7 +249,7 @@ async fn handle_vm_request(
     let elapsed_ms = start_time.elapsed().as_millis();
     info!("Proxy request took {}ms", elapsed_ms);
 
-    let (response_text, status_code, content_type) = match res {
+    let (response_body, status_code, content_type) = match res {
         Ok(resp) => {
             let status_code = resp.status();
             let content_type = resp
@@ -258,12 +258,12 @@ async fn handle_vm_request(
                 .unwrap_or(&HeaderValue::from_static("text/html"))
                 .clone();
 
-            match resp.text().await {
-                Ok(text) => (text, status_code, content_type),
+            match resp.bytes().await {
+                Ok(bytes) => (bytes.to_vec(), status_code, content_type),
                 Err(e) => {
                     error!("Failed to read response text: {:?}", e);
                     (
-                        format!("Error reading response: {:?}", e),
+                        format!("Error reading response: {:?}", e).into_bytes(),
                         status_code,
                         content_type,
                     )
@@ -273,7 +273,7 @@ async fn handle_vm_request(
         Err(e) => {
             error!("Failed to perform proxy request: {:?}", e);
             (
-                format!("Error performing proxy request: {:?}", e),
+                format!("Error performing proxy request: {:?}", e).into_bytes(),
                 StatusCode::INTERNAL_SERVER_ERROR,
                 HeaderValue::from_static("text/html"),
             )
@@ -283,7 +283,7 @@ async fn handle_vm_request(
     let total_elapsed = start_time_total.elapsed().as_millis();
     info!("Total time taken: {}ms", total_elapsed);
 
-    let mut res = response_text.into_response();
+    let mut res = response_body.into_response();
     res.headers_mut().insert("content-type", content_type);
     *res.status_mut() = status_code;
     res.headers_mut()
