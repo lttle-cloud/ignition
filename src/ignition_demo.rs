@@ -242,10 +242,9 @@ async fn handle_vm_request(
     info!("VM prepare took {}ms", elapsed_ms);
 
     let path = original_uri.path();
-    info!("Path: {}", path);
 
     let start_time = Instant::now();
-    let res = reqwest::get(format!("http://172.16.0.2:3000/{}", path)).await;
+    let res = reqwest::get(format!("http://172.16.0.2:3000{}", path)).await;
 
     let elapsed_ms = start_time.elapsed().as_millis();
     info!("Proxy request took {}ms", elapsed_ms);
