@@ -94,7 +94,6 @@ impl GuestManager {
 
 #[derive(Clone)]
 struct AssetCacheEntry {
-    path: String,
     mime_type: Mime,
     content: Vec<u8>,
 }
@@ -123,11 +122,7 @@ impl AssetCache {
         };
 
         let mime_type = mime_guess::from_path(&path).first_or_octet_stream();
-        let entry = AssetCacheEntry {
-            path: path.to_string(),
-            mime_type,
-            content,
-        };
+        let entry = AssetCacheEntry { mime_type, content };
 
         cache.insert(path.to_string(), entry.clone());
 
@@ -140,6 +135,7 @@ struct AppState {
     asset_cache: Arc<AssetCache>,
 }
 
+#[allow(unused)]
 fn check_internet() {
     let Err(res) = ping::ping(
         IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
