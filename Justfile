@@ -29,7 +29,7 @@ build-hello-page:
 	mkdir -p target/hello-page
 	sudo mount target/hello-page.ext4 target/hello-page
 
-	sudo cp hello-page/index.html target/hello-page/index.html
+	sudo cp hello-page/* target/hello-page/
 
 	sudo umount target/hello-page
 
