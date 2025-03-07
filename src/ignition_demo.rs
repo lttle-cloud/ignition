@@ -4,7 +4,7 @@ use std::{
 };
 
 use axum::{
-    extract::{Path, State},
+    extract::{OriginalUri, Path, State},
     http::HeaderValue,
     response::IntoResponse,
     routing::get,
@@ -228,7 +228,7 @@ impl VmController {
 }
 
 async fn handle_vm_request(
-    Path(path): Path<String>,
+    OriginalUri(original_uri): OriginalUri,
     State(controller): State<Arc<VmController>>,
 ) -> impl IntoResponse {
     let start_time_total = Instant::now();
@@ -240,6 +240,8 @@ async fn handle_vm_request(
 
     let elapsed_ms = start_time_total.elapsed().as_millis();
     info!("VM prepare took {}ms", elapsed_ms);
+
+    let path = original_uri.path();
 
     let start_time = Instant::now();
     let res = reqwest::get(format!("http://172.16.0.2:3000/{}", path)).await;
@@ -321,7 +323,8 @@ async fn ignition() -> Result<()> {
     let controller = Arc::new(VmController::new(config).context("Failed to create VmController")?);
 
     let app = Router::new()
-        .route("{*path}", get(handle_vm_request))
+        .route("/", get(handle_vm_request))
+        .route("/{*path}", get(handle_vm_request))
         .with_state(controller.clone());
 
     let listener = async_runtime::net::TcpListener::bind("0.0.0.0:9898")
