@@ -321,6 +321,7 @@ async fn ignition() -> Result<()> {
     let controller = Arc::new(VmController::new(config).context("Failed to create VmController")?);
 
     let app = Router::new()
+        .route("/", get(handle_vm_request))
         .route("/{*path}", get(handle_vm_request))
         .with_state(controller.clone());
 
