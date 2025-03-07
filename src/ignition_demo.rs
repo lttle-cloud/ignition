@@ -3,7 +3,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use axum::{extract::State, http::HeaderValue, response::IntoResponse, routing::get, Router};
+use axum::{
+    extract::{Path, State},
+    http::HeaderValue,
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
+use reqwest::StatusCode;
 use tracing::{error, info};
 use tracing_subscriber::FmtSubscriber;
 use util::{
@@ -220,7 +227,10 @@ impl VmController {
     }
 }
 
-async fn handle_vm_request(State(controller): State<Arc<VmController>>) -> impl IntoResponse {
+async fn handle_vm_request(
+    Path(path): Path<String>,
+    State(controller): State<Arc<VmController>>,
+) -> impl IntoResponse {
     let start_time_total = Instant::now();
 
     if let Err(e) = controller.prepare_for_request().await {
@@ -232,22 +242,39 @@ async fn handle_vm_request(State(controller): State<Arc<VmController>>) -> impl 
     info!("VM prepare took {}ms", elapsed_ms);
 
     let start_time = Instant::now();
-    let res = reqwest::get("http://172.16.0.2:3000/").await;
+    let res = reqwest::get(format!("http://172.16.0.2:3000/{}", path)).await;
 
     let elapsed_ms = start_time.elapsed().as_millis();
     info!("Proxy request took {}ms", elapsed_ms);
 
-    let response_text = match res {
-        Ok(resp) => match resp.text().await {
-            Ok(text) => text,
-            Err(e) => {
-                error!("Failed to read response text: {:?}", e);
-                format!("Error reading response: {:?}", e)
+    let (response_text, status_code, content_type) = match res {
+        Ok(resp) => {
+            let status_code = resp.status();
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .unwrap_or(&HeaderValue::from_static("text/html"))
+                .clone();
+
+            match resp.text().await {
+                Ok(text) => (text, status_code, content_type),
+                Err(e) => {
+                    error!("Failed to read response text: {:?}", e);
+                    (
+                        format!("Error reading response: {:?}", e),
+                        status_code,
+                        content_type,
+                    )
+                }
             }
-        },
+        }
         Err(e) => {
             error!("Failed to perform proxy request: {:?}", e);
-            format!("Error performing proxy request: {:?}", e)
+            (
+                format!("Error performing proxy request: {:?}", e),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                HeaderValue::from_static("text/html"),
+            )
         }
     };
 
@@ -255,8 +282,8 @@ async fn handle_vm_request(State(controller): State<Arc<VmController>>) -> impl 
     info!("Total time taken: {}ms", total_elapsed);
 
     let mut res = response_text.into_response();
-    res.headers_mut()
-        .insert("content-type", HeaderValue::from_static("text/html"));
+    res.headers_mut().insert("content-type", content_type);
+    *res.status_mut() = status_code;
     res.headers_mut()
         .insert("x-powered-by", HeaderValue::from_static("ignition"));
 
