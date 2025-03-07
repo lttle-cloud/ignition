@@ -212,7 +212,7 @@ async fn handle_static_assets(
 async fn start_server(app_state: Arc<AppState>) {
     let app = Router::new()
         .route("/", get(handle_get))
-        .route("/:path", get(handle_static_assets))
+        .route("/{*path}", get(handle_static_assets))
         .with_state(app_state);
 
     let listener = async_runtime::net::TcpListener::bind("0.0.0.0:3000")
