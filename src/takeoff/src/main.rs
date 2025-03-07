@@ -231,7 +231,7 @@ async fn takeoff() {
     info!("takeoff is ready");
 
     mount_block();
-    check_internet();
+    // check_internet();
 
     let asset_cache = Arc::new(AssetCache::new());
 
