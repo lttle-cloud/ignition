@@ -179,9 +179,14 @@ fn mount_block() {
     };
 }
 
-async fn handle_get(State(app_state): State<Arc<AppState>>) -> String {
+async fn handle_get(State(app_state): State<Arc<AppState>>) -> impl IntoResponse {
     let Ok(page) = fs::read_to_string("/mnt/index.html").await else {
-        return "<h1>failed to load index.html</h1>".to_string();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            [("Content-Type", "text/html")],
+            "failed to load index.html",
+        )
+            .into_response();
     };
 
     let us = app_state.guest_manager.get_boot_ready_time_us();
@@ -190,7 +195,12 @@ async fn handle_get(State(app_state): State<Arc<AppState>>) -> String {
 
     let ms = format!("{ms_int}<span class=\"frac\">.{ms_frac}</span>ms");
 
-    page.replace("{ms}", &ms)
+    (
+        StatusCode::OK,
+        [("Content-Type", "text/html")],
+        page.replace("{ms}", &ms),
+    )
+        .into_response()
 }
 
 async fn handle_static_assets(
