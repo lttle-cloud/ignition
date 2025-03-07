@@ -1,6 +1,7 @@
 mod serial;
 
 use std::{
+    collections::HashMap,
     ffi::c_void,
     net::{IpAddr, Ipv4Addr},
     os::fd::FromRawFd,
@@ -9,9 +10,16 @@ use std::{
     time,
 };
 
+use mime_guess::Mime;
 use tracing::info;
 
-use axum::{extract::State, routing::get, Router};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
 use nix::{
     fcntl::{open, OFlag},
     mount::{self, MsFlags},
@@ -22,7 +30,7 @@ use nix::{
 };
 use serial::SerialWriter;
 use util::{
-    async_runtime::{self, fs},
+    async_runtime::{self, fs, sync::Mutex},
     result::Result,
 };
 
@@ -84,6 +92,54 @@ impl GuestManager {
     }
 }
 
+#[derive(Clone)]
+struct AssetCacheEntry {
+    path: String,
+    mime_type: Mime,
+    content: Vec<u8>,
+}
+
+struct AssetCache {
+    entries: Mutex<HashMap<String, AssetCacheEntry>>,
+}
+
+impl AssetCache {
+    pub fn new() -> AssetCache {
+        AssetCache {
+            entries: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub async fn get(&self, path: &str) -> Option<AssetCacheEntry> {
+        let mut cache = self.entries.lock().await;
+
+        let existing = cache.get(path);
+        if let Some(entry) = existing {
+            return Some(entry.clone());
+        }
+
+        let Ok(content) = fs::read(format!("/mnt/{}", path)).await else {
+            return None;
+        };
+
+        let mime_type = mime_guess::from_path(&path).first_or_octet_stream();
+        let entry = AssetCacheEntry {
+            path: path.to_string(),
+            mime_type,
+            content,
+        };
+
+        cache.insert(path.to_string(), entry.clone());
+
+        Some(entry)
+    }
+}
+
+struct AppState {
+    guest_manager: Arc<GuestManager>,
+    asset_cache: Arc<AssetCache>,
+}
+
 fn check_internet() {
     let Err(res) = ping::ping(
         IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
@@ -123,12 +179,12 @@ fn mount_block() {
     };
 }
 
-async fn handle_get(State(guest_manager): State<Arc<GuestManager>>) -> String {
+async fn handle_get(State(app_state): State<Arc<AppState>>) -> String {
     let Ok(page) = fs::read_to_string("/mnt/index.html").await else {
         return "<h1>failed to load index.html</h1>".to_string();
     };
 
-    let us = guest_manager.get_boot_ready_time_us();
+    let us = app_state.guest_manager.get_boot_ready_time_us();
     let ms_int = us / 1000;
     let ms_frac = us % 1000;
 
@@ -137,10 +193,27 @@ async fn handle_get(State(guest_manager): State<Arc<GuestManager>>) -> String {
     page.replace("{ms}", &ms)
 }
 
-async fn start_server(guest_manager: Arc<GuestManager>) {
+async fn handle_static_assets(
+    Path(path): Path<String>,
+    State(app_state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let Some(asset) = app_state.asset_cache.get(&path).await else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+
+    (
+        StatusCode::OK,
+        [("Content-Type", asset.mime_type.to_string().as_str())],
+        asset.content,
+    )
+        .into_response()
+}
+
+async fn start_server(app_state: Arc<AppState>) {
     let app = Router::new()
         .route("/", get(handle_get))
-        .with_state(guest_manager);
+        .route("/:path", get(handle_static_assets))
+        .with_state(app_state);
 
     let listener = async_runtime::net::TcpListener::bind("0.0.0.0:3000")
         .await // the guest will be suspended here
@@ -158,9 +231,16 @@ async fn takeoff() {
     info!("takeoff is ready");
 
     mount_block();
-    // check_internet();
+    check_internet();
 
-    start_server(guest_manager.clone()).await;
+    let asset_cache = Arc::new(AssetCache::new());
+
+    let app_state = AppState {
+        guest_manager,
+        asset_cache,
+    };
+
+    start_server(Arc::new(app_state)).await;
 
     // guest_manager.trigger_snapshot(); // here the guest is suspended. will comtinue from here.
 

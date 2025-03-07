@@ -1,0 +1,46 @@
+* {
+    font-family: Roboto, sans-serif;
+    font-weight: 100;
+    font-style: normal;
+}
+
+html,
+body,
+h1, h2, h3 {
+    padding: 0;
+    margin: 0;
+}
+
+h1 {
+    font-weight: 400;
+    padding-bottom: 1rem;
+}
+
+a {
+    color: black;
+}
+
+body {
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+}
+
+
+.content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+span {
+    font-weight: 400;
+}
+
+
+.frac {
+    font-size: 1rem;
+}
