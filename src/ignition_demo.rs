@@ -470,7 +470,8 @@ async fn ignition() -> Result<()> {
             "172.16.0.1",
             "06:00:AC:10:00:02",
         ))
-        .with_block(BlockConfig::new("./target/hello-page.ext4").writeable())
+        // .with_block(BlockConfig::new("./target/hello-page.ext4").writeable())
+        .with_block(BlockConfig::new("./rootfs.img").writeable())
         .into();
 
     info!("Initializing VM Controller.");
