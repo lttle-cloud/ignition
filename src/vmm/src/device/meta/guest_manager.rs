@@ -74,6 +74,9 @@ pub struct GuestManagerDevice {
     start_time: std::time::Instant,
     should_exit_immediately: bool,
     boot_ready_time: Option<std::time::Duration>,
+    target_listen_trigger_count: u32,
+    listen_trigger_count: u32,
+    exit_enabled: bool,
 }
 
 impl GuestManagerDevice {
@@ -88,12 +91,16 @@ impl GuestManagerDevice {
     pub fn new(
         exit_handler: SharedExitEventHandler,
         state_controller: VmmStateController,
+        target_listen_trigger_count: u32,
     ) -> Arc<Mutex<Self>> {
         let guest_manager = Self {
             exit_handler,
             start_time: std::time::Instant::now(),
             should_exit_immediately: false,
             boot_ready_time: None,
+            target_listen_trigger_count,
+            listen_trigger_count: 0,
+            exit_enabled: true,
         };
         let guest_manager = Arc::new(Mutex::new(guest_manager));
 
@@ -112,6 +119,10 @@ impl GuestManagerDevice {
         });
 
         guest_manager
+    }
+
+    pub fn set_exit_enabled(&mut self, enabled: bool) {
+        self.exit_enabled = enabled;
     }
 
     pub fn should_exit_immediately(&self) -> bool {
@@ -150,6 +161,10 @@ impl GuestManagerDevice {
     }
 
     pub fn mmio_write(&mut self, _offset: vm_device::bus::MmioAddressOffset, data: &[u8]) {
+        if !self.exit_enabled {
+            return;
+        }
+
         let Some(trigger_data) = TriggerData::from_bytes(data) else {
             warn!("Failed to parse trigger data");
             return;
@@ -157,7 +172,12 @@ impl GuestManagerDevice {
 
         match trigger_data.code {
             TriggerCode::AfterListen => {
-                warn!("trigger exit");
+                self.listen_trigger_count += 1;
+                warn!("listen trigger count {}", self.listen_trigger_count);
+                if self.listen_trigger_count < self.target_listen_trigger_count {
+                    return;
+                }
+
                 self.exit_handler
                     .trigger_exit(ExitHandlerReason::Snapshot)
                     .unwrap();

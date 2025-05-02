@@ -398,7 +398,7 @@ async fn handle_vm_request(
     let path = original_uri.path();
 
     let start_time = Instant::now();
-    let res = reqwest::get(format!("http://172.16.0.2:3000{}", path)).await;
+    let res = reqwest::get(format!("http://172.16.0.2:80{}", path)).await;
 
     let elapsed_ms = start_time.elapsed().as_millis();
     info!("Proxy request took {}ms", elapsed_ms);
@@ -447,6 +447,10 @@ async fn handle_vm_request(
 }
 
 async fn ignition() -> Result<()> {
+    let rootfs_path = std::env::args()
+        .nth(1)
+        .context("Rootfs path not provided")?;
+
     let subscriber = FmtSubscriber::builder()
         .with_max_level(tracing::Level::INFO)
         .finish();
@@ -470,8 +474,7 @@ async fn ignition() -> Result<()> {
             "172.16.0.1",
             "06:00:AC:10:00:02",
         ))
-        // .with_block(BlockConfig::new("./target/hello-page.ext4").writeable())
-        .with_block(BlockConfig::new("./rootfs.img").writeable())
+        .with_block(BlockConfig::new(rootfs_path).writeable())
         .into();
 
     info!("Initializing VM Controller.");

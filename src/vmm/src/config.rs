@@ -72,6 +72,7 @@ pub struct NetConfig {
     pub netmask: String,
     pub gateway: String,
     pub mac_addr: String,
+    pub listen_trigger_count: u32,
 }
 
 impl NetConfig {
@@ -88,7 +89,13 @@ impl NetConfig {
             netmask: netmask.as_ref().to_string(),
             gateway: gateway.as_ref().to_string(),
             mac_addr: mac_addr.as_ref().to_string(),
+            listen_trigger_count: 1,
         }
+    }
+
+    pub fn with_listen_trigger_count(mut self, value: u32) -> Self {
+        self.listen_trigger_count = value;
+        self
     }
 }
 

@@ -1,4 +1,5 @@
 use anyhow::{Result, bail};
+use clap::Parser;
 use docker_credential::{CredentialRetrievalError, DockerCredential};
 use flate2::read::GzDecoder;
 use oci_client::{
@@ -10,8 +11,20 @@ use oci_client::{
 use std::fs::{self, OpenOptions};
 use std::io::Cursor;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 use tar::Archive;
+
+#[derive(Parser, Debug)]
+#[command(name = "convert-image")]
+#[command(about = "Pull and convert OCI images to ext4 sparse volumes", long_about = None)]
+struct Cli {
+    #[arg(value_name = "IMAGE")]
+    image: String,
+
+    #[arg(short, long, value_name = "OUTPUT")]
+    output: PathBuf,
+}
 
 fn build_auth(reference: &Reference, anonymous: bool) -> RegistryAuth {
     let server = reference
@@ -57,14 +70,9 @@ async fn extract_image_to_dir(
 
     println!("Pulling manifest and config: {}", reference);
     let (manifest, digest, config) = client.pull_manifest_and_config(reference, auth).await?;
-    println!("Manifest and config pulled: {}", reference);
-
-    println!("Manifest: {:?}", manifest);
-    println!("Digest: {:?}", digest);
-    println!("Config: {:?}", config);
+    println!("Manifest and config pulled: {} {}", reference, digest);
 
     let config: ConfigFile = serde_json::from_slice(&config.as_bytes())?;
-    println!("Config: {:#?}", config);
 
     for layer in manifest.layers.iter() {
         if layer.media_type != "application/vnd.oci.image.layer.v1.tar+gzip" {
@@ -164,27 +172,23 @@ fn create_ext4_image_from_dir(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // let image = "nginxdemos/hello:latest";
-    let image = "caddy:latest";
-    let reference: Reference = image.parse()?;
+    let args = Cli::parse();
+
+    let reference: Reference = args.image.parse()?;
     let auth = build_auth(&reference, false);
 
     let temp_dir = tempfile::tempdir()?;
-    println!("Created temp directory: {}", temp_dir.path().display());
 
     extract_image_to_dir(&reference, &auth, &temp_dir.path()).await?;
     remove_whiteouts(&temp_dir.path())?;
     let size_bytes = dir_size_in_bytes_recursive(&temp_dir.path())?;
     let size_mb = size_bytes / 1024 / 1024;
-    println!("Size of directory: {} MB", size_mb);
 
     let sparse_image_size_mb = (size_mb as f64 * 1.15).ceil() as u64;
     let sparse_image_size = sparse_image_size_mb * 1024 * 1024;
-    println!("Sparse image size: {} MB", sparse_image_size_mb);
-    create_sparse_image("rootfs.img", sparse_image_size)?;
+    create_sparse_image(&args.output, sparse_image_size)?;
 
-    create_ext4_image_from_dir(&temp_dir.path(), "./rootfs.img")?;
+    create_ext4_image_from_dir(&temp_dir.path(), &args.output)?;
 
-    println!("Created ext4 image from directory");
     Ok(())
 }
