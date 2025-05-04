@@ -12,6 +12,7 @@ members = [
     "src/vmm",
     "src/sds",
     "src/meta",
+    "src/controller",
     "src/api",
     "src/cli",
     "src/client",

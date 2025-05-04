@@ -1,0 +1,11 @@
+[package]
+name = "controller"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+util = { path = "../util" }
+sds = { path = "../sds" }
+vmm = { path = "../vmm" }
+rtnetlink = "0.16.0"
+nix = "0.30.1"

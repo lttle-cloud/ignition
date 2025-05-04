@@ -6,7 +6,7 @@ edition = "2021"
 build = "src/build.rs"
 
 [[bin]]
-name = "ignition"
+name = "lttle"
 path = "src/main.rs"
 
 [dependencies]

@@ -10,3 +10,5 @@ serde = { version = "1.0.217", features = ["derive"] }
 meta = { path = "../meta" }
 schemars = "0.8.21"
 serde_json = "1.0.138"
+futures-util = "0.3.31"
+rand = "0.9.1"
