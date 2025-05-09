@@ -425,6 +425,9 @@ async fn ignition() -> Result<()> {
         .context("Failed to get local address")?;
     info!("TCP proxy running on {}", addr);
 
+    // Track active connections
+    let active_connections = Arc::new(AsyncMutex::new(Vec::new()));
+
     loop {
         info!("Waiting for client connection...");
         let (client_stream, client_addr) = match listener.accept().await {
@@ -436,7 +439,35 @@ async fn ignition() -> Result<()> {
         };
         info!("Accepted connection from {}", client_addr);
 
+        // Set TCP nodelay on the client connection
+        if let Err(e) = client_stream.set_nodelay(true) {
+            error!("Failed to set nodelay on client connection: {:?}", e);
+        }
+
         let controller = controller.clone();
+        let active_connections = active_connections.clone();
+
+        // Monitor VM status and close connections when VM stops
+        let active_connections_monitor = active_connections.clone();
+        let controller_monitor = controller.clone();
+        task::spawn(async move {
+            loop {
+                time::sleep(Duration::from_secs(1)).await;
+                let status = {
+                    let status = controller_monitor.status.lock().await;
+                    status.clone()
+                };
+
+                if matches!(status, VmStatus::Stopping | VmStatus::Stopped) {
+                    info!("VM is stopping/stopped, closing all active connections");
+                    let mut connections = active_connections_monitor.lock().await;
+                    for addr in connections.drain(..) {
+                        info!("Connection for {} will be closed when VM stops", addr);
+                    }
+                    break;
+                }
+            }
+        });
 
         task::spawn(async move {
             info!("Handling connection from {}", client_addr);
@@ -485,6 +516,11 @@ async fn ignition() -> Result<()> {
                 // Try to connect to VM
                 match async_runtime::net::TcpStream::connect("172.16.0.2:80").await {
                     Ok(stream) => {
+                        // Set TCP nodelay on the VM connection
+                        if let Err(e) = stream.set_nodelay(true) {
+                            error!("Failed to set nodelay on VM connection: {:?}", e);
+                        }
+
                         // Test if connection is actually ready by trying to write
                         match stream.writable().await {
                             Ok(_) => {
@@ -528,6 +564,12 @@ async fn ignition() -> Result<()> {
             let (mut client_read, mut client_write) = client_stream.into_split();
             let (mut vm_read, mut vm_write) = vm_stream.into_split();
 
+            // Add connection to active connections
+            {
+                let mut connections = active_connections.lock().await;
+                connections.push(client_addr);
+            }
+
             let client_to_vm = async {
                 let mut buf = vec![0; 8192];
                 loop {
@@ -539,6 +581,11 @@ async fn ignition() -> Result<()> {
                         Ok(n) => {
                             if let Err(e) = vm_write.write_all(&buf[..n]).await {
                                 error!("Failed to write to VM: {:?}", e);
+                                break;
+                            }
+                            // Ensure data is flushed
+                            if let Err(e) = vm_write.flush().await {
+                                error!("Failed to flush VM write: {:?}", e);
                                 break;
                             }
                         }
@@ -563,6 +610,11 @@ async fn ignition() -> Result<()> {
                                 error!("Failed to write to client: {:?}", e);
                                 break;
                             }
+                            // Ensure data is flushed
+                            if let Err(e) = client_write.flush().await {
+                                error!("Failed to flush client write: {:?}", e);
+                                break;
+                            }
                         }
                         Err(e) => {
                             error!("Failed to read from VM: {:?}", e);
@@ -576,6 +628,12 @@ async fn ignition() -> Result<()> {
             async_runtime::select! {
                 _ = client_to_vm => info!("Client to VM copy completed for {}", client_addr),
                 _ = vm_to_client => info!("VM to client copy completed for {}", client_addr),
+            }
+
+            // Remove connection from active connections
+            {
+                let mut connections = active_connections.lock().await;
+                connections.retain(|addr| *addr != client_addr);
             }
         });
     }
