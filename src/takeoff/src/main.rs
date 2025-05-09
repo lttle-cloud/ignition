@@ -109,6 +109,9 @@ async fn takeoff() {
         return;
     }
 
+    mount("devtmpfs", "/dev", Some("devtmpfs")).await;
+    mount("proc", "/proc", Some("proc")).await;
+
     let config = fs::read_to_string("/etc/lttle/oci-config.json")
         .await
         .unwrap();
