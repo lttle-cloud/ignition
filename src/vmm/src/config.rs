@@ -59,6 +59,14 @@ impl KernelConfig {
         Ok(self)
     }
 
+    pub fn with_init_envs(mut self, value: Vec<impl AsRef<str>>) -> Result<Self> {
+        for env in value {
+            self.cmdline
+                .insert_str(format!("--takeoff-env={}", env.as_ref()))?;
+        }
+        Ok(self)
+    }
+
     pub fn with_initrd(mut self, value: impl AsRef<str>) -> Self {
         self.initrd_path = Some(value.as_ref().to_string());
         self
