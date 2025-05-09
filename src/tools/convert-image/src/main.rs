@@ -74,8 +74,13 @@ async fn extract_image_to_dir(
 
     let config: ConfigFile = serde_json::from_slice(&config.as_bytes())?;
 
+    let supported_layer_media_types = vec![
+        "application/vnd.docker.image.rootfs.diff.tar.gzip",
+        "application/vnd.oci.image.layer.v1.tar+gzip",
+    ];
+
     for layer in manifest.layers.iter() {
-        if layer.media_type != "application/vnd.oci.image.layer.v1.tar+gzip" {
+        if !supported_layer_media_types.contains(&layer.media_type.as_str()) {
             bail!("Unsupported layer media type: {}", layer.media_type);
         }
     }
