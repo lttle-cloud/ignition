@@ -2,7 +2,7 @@ use util::encoding::codec;
 
 use crate::ignition_proto::image;
 
-#[codec(schema = false)]
+#[codec]
 #[derive(Clone)]
 pub struct ImagePullSecret {
     pub owner_id: String,

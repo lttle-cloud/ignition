@@ -34,4 +34,3 @@ deployment:
         ingress:
           host: example-nginx.ciobanu.dev
           cert: auto # try to get cert from letsencrypt, can be manually specified as a cert name as string
-
