@@ -419,10 +419,20 @@ async fn ignition() -> Result<()> {
     info!("TCP proxy running on {}", addr);
 
     loop {
-        let (client_stream, _) = listener.accept().await?;
+        info!("Waiting for client connection...");
+        let (client_stream, client_addr) = match listener.accept().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                error!("Failed to accept client connection: {:?}", e);
+                continue;
+            }
+        };
+        info!("Accepted connection from {}", client_addr);
+
         let controller = controller.clone();
 
         task::spawn(async move {
+            info!("Handling connection from {}", client_addr);
             // Try to prepare VM with retries
             let mut retries = 0;
             let max_retries = 3;
@@ -460,12 +470,18 @@ async fn ignition() -> Result<()> {
             let mut vm_stream = None;
 
             while retries < max_retries {
+                info!(
+                    "Attempting to connect to VM (attempt {}/{})",
+                    retries + 1,
+                    max_retries
+                );
                 // Try to connect to VM
                 match async_runtime::net::TcpStream::connect("172.16.0.2:80").await {
                     Ok(stream) => {
                         // Test if connection is actually ready by trying to write
                         match stream.writable().await {
                             Ok(_) => {
+                                info!("Successfully connected to VM");
                                 vm_stream = Some(stream);
                                 break;
                             }
@@ -500,6 +516,7 @@ async fn ignition() -> Result<()> {
                 }
             };
 
+            info!("Starting bidirectional copy for {}", client_addr);
             // Bidirectional copy between client and VM
             let (mut client_read, mut client_write) = client_stream.into_split();
             let (mut vm_read, mut vm_write) = vm_stream.into_split();
@@ -508,7 +525,10 @@ async fn ignition() -> Result<()> {
                 let mut buf = vec![0; 8192];
                 loop {
                     match client_read.read(&mut buf).await {
-                        Ok(0) => break, // EOF
+                        Ok(0) => {
+                            info!("Client {} closed connection", client_addr);
+                            break;
+                        }
                         Ok(n) => {
                             if let Err(e) = vm_write.write_all(&buf[..n]).await {
                                 error!("Failed to write to VM: {:?}", e);
@@ -527,7 +547,10 @@ async fn ignition() -> Result<()> {
                 let mut buf = vec![0; 8192];
                 loop {
                     match vm_read.read(&mut buf).await {
-                        Ok(0) => break, // EOF
+                        Ok(0) => {
+                            info!("VM closed connection for client {}", client_addr);
+                            break;
+                        }
                         Ok(n) => {
                             if let Err(e) = client_write.write_all(&buf[..n]).await {
                                 error!("Failed to write to client: {:?}", e);
@@ -544,8 +567,8 @@ async fn ignition() -> Result<()> {
 
             // Wait for either direction to complete
             async_runtime::select! {
-                _ = client_to_vm => {},
-                _ = vm_to_client => {},
+                _ = client_to_vm => info!("Client to VM copy completed for {}", client_addr),
+                _ = vm_to_client => info!("VM to client copy completed for {}", client_addr),
             }
         });
     }
