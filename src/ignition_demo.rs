@@ -3,19 +3,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use axum::{
-    extract::{OriginalUri, State},
-    http::HeaderValue,
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
-use reqwest::StatusCode;
 use tracing::{error, info};
 use tracing_subscriber::FmtSubscriber;
 use util::{
     async_runtime::{
         self,
+        io::{AsyncReadExt, AsyncWriteExt},
         sync::{Mutex as AsyncMutex, Notify},
         task, time,
     },
@@ -381,71 +374,6 @@ impl VmController {
     }
 }
 
-async fn handle_vm_request(
-    OriginalUri(original_uri): OriginalUri,
-    State(controller): State<Arc<VmController>>,
-) -> impl IntoResponse {
-    let start_time_total = Instant::now();
-
-    if let Err(e) = controller.prepare_for_request().await {
-        error!("Failed to prepare VM for request: {:?}", e);
-        return format!("Internal Server Error: {:?}", e).into_response();
-    }
-
-    let elapsed_ms = start_time_total.elapsed().as_millis();
-    info!("VM prepare took {}ms", elapsed_ms);
-
-    let path = original_uri.path();
-
-    let start_time = Instant::now();
-    let res = reqwest::get(format!("http://172.16.0.2:80{}", path)).await;
-
-    let elapsed_ms = start_time.elapsed().as_millis();
-    info!("Proxy request took {}ms", elapsed_ms);
-
-    let (response_body, status_code, content_type) = match res {
-        Ok(resp) => {
-            let status_code = resp.status();
-            let content_type = resp
-                .headers()
-                .get("content-type")
-                .unwrap_or(&HeaderValue::from_static("text/html"))
-                .clone();
-
-            match resp.bytes().await {
-                Ok(bytes) => (bytes.to_vec(), status_code, content_type),
-                Err(e) => {
-                    error!("Failed to read response text: {:?}", e);
-                    (
-                        format!("Error reading response: {:?}", e).into_bytes(),
-                        status_code,
-                        content_type,
-                    )
-                }
-            }
-        }
-        Err(e) => {
-            error!("Failed to perform proxy request: {:?}", e);
-            (
-                format!("Error performing proxy request: {:?}", e).into_bytes(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-                HeaderValue::from_static("text/html"),
-            )
-        }
-    };
-
-    let total_elapsed = start_time_total.elapsed().as_millis();
-    info!("Total time taken: {}ms", total_elapsed);
-
-    let mut res = response_body.into_response();
-    res.headers_mut().insert("content-type", content_type);
-    *res.status_mut() = status_code;
-    res.headers_mut()
-        .insert("x-powered-by", HeaderValue::from_static("ignition"));
-
-    res
-}
-
 async fn ignition() -> Result<()> {
     let rootfs_path = std::env::args()
         .nth(1)
@@ -458,14 +386,15 @@ async fn ignition() -> Result<()> {
         .context("Failed to set global default subscriber")?;
 
     let config = Config::new()
-        .memory(MemoryConfig::new(128))
-        .vcpu(VcpuConfig::new(1))
+        .memory(MemoryConfig::new(1024))
+        .vcpu(VcpuConfig::new(2))
         .kernel(
             KernelConfig::new("../linux/vmlinux")?
                 .with_initrd("./target/takeoff.cpio")
                 .with_cmdline(
                     "i8042.nokbd reboot=t panic=1 noapic clocksource=kvm-clock tsc=reliable",
-                )?,
+                )?
+                .with_init_envs(vec!["IGNITION_DEMO=true"])?,
         )
         .with_net(NetConfig::new(
             "tap0",
@@ -480,11 +409,6 @@ async fn ignition() -> Result<()> {
     info!("Initializing VM Controller.");
     let controller = Arc::new(VmController::new(config).context("Failed to create VmController")?);
 
-    let app = Router::new()
-        .route("/", get(handle_vm_request))
-        .route("/{*path}", get(handle_vm_request))
-        .with_state(controller.clone());
-
     let listener = async_runtime::net::TcpListener::bind("0.0.0.0:9898")
         .await
         .context("Failed to bind to address")?;
@@ -492,11 +416,139 @@ async fn ignition() -> Result<()> {
     let addr = listener
         .local_addr()
         .context("Failed to get local address")?;
-    info!("Ignition server running on {}", addr);
+    info!("TCP proxy running on {}", addr);
 
-    axum::serve(listener, app).await.unwrap();
+    loop {
+        let (client_stream, _) = listener.accept().await?;
+        let controller = controller.clone();
 
-    Ok(())
+        task::spawn(async move {
+            // Try to prepare VM with retries
+            let mut retries = 0;
+            let max_retries = 3;
+            let mut vm_ready = false;
+
+            while retries < max_retries {
+                match controller.prepare_for_request().await {
+                    Ok(_) => {
+                        vm_ready = true;
+                        break;
+                    }
+                    Err(e) => {
+                        error!(
+                            "Failed to prepare VM (attempt {}/{}): {:?}",
+                            retries + 1,
+                            max_retries,
+                            e
+                        );
+                        retries += 1;
+                        if retries < max_retries {
+                            time::sleep(Duration::from_millis(500)).await;
+                        }
+                    }
+                }
+            }
+
+            if !vm_ready {
+                error!("Failed to prepare VM after {} attempts", max_retries);
+                return;
+            }
+
+            // Wait for VM to be ready to accept connections
+            let mut retries = 0;
+            let max_retries = 10; // More retries for connection readiness
+            let mut vm_stream = None;
+
+            while retries < max_retries {
+                // Try to connect to VM
+                match async_runtime::net::TcpStream::connect("172.16.0.2:80").await {
+                    Ok(stream) => {
+                        // Test if connection is actually ready by trying to write
+                        match stream.writable().await {
+                            Ok(_) => {
+                                vm_stream = Some(stream);
+                                break;
+                            }
+                            Err(e) => {
+                                error!(
+                                    "VM connection not ready (attempt {}/{}): {:?}",
+                                    retries + 1,
+                                    max_retries,
+                                    e
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!(
+                            "Failed to connect to VM (attempt {}/{}): {:?}",
+                            retries + 1,
+                            max_retries,
+                            e
+                        );
+                    }
+                }
+                retries += 1;
+                time::sleep(Duration::from_millis(500)).await;
+            }
+
+            let vm_stream = match vm_stream {
+                Some(stream) => stream,
+                None => {
+                    error!("Failed to connect to VM after {} attempts", max_retries);
+                    return;
+                }
+            };
+
+            // Bidirectional copy between client and VM
+            let (mut client_read, mut client_write) = client_stream.into_split();
+            let (mut vm_read, mut vm_write) = vm_stream.into_split();
+
+            let client_to_vm = async {
+                let mut buf = vec![0; 8192];
+                loop {
+                    match client_read.read(&mut buf).await {
+                        Ok(0) => break, // EOF
+                        Ok(n) => {
+                            if let Err(e) = vm_write.write_all(&buf[..n]).await {
+                                error!("Failed to write to VM: {:?}", e);
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to read from client: {:?}", e);
+                            break;
+                        }
+                    }
+                }
+            };
+
+            let vm_to_client = async {
+                let mut buf = vec![0; 8192];
+                loop {
+                    match vm_read.read(&mut buf).await {
+                        Ok(0) => break, // EOF
+                        Ok(n) => {
+                            if let Err(e) = client_write.write_all(&buf[..n]).await {
+                                error!("Failed to write to client: {:?}", e);
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to read from VM: {:?}", e);
+                            break;
+                        }
+                    }
+                }
+            };
+
+            // Wait for either direction to complete
+            async_runtime::select! {
+                _ = client_to_vm => {},
+                _ = vm_to_client => {},
+            }
+        });
+    }
 }
 
 fn main() -> Result<()> {
