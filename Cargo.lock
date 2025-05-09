@@ -2791,6 +2791,7 @@ name = "takeoff"
 version = "0.1.0"
 dependencies = [
  "axum 0.8.1",
+ "clap",
  "mime_guess",
  "nix 0.29.0",
  "ping",
