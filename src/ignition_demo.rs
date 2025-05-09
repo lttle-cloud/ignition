@@ -82,14 +82,21 @@ impl VmController {
 
                         {
                             let mut status_guard = status.lock().await;
-                            if matches!(*status_guard, VmStatus::Stopping) {
-                                *status_guard = VmStatus::Stopped;
-                                info!("VM has stopped.");
-                            } else {
-                                error!(
-                                    "Received unexpected Stopped message while in state: {:?}",
-                                    *status_guard
-                                );
+                            match *status_guard {
+                                VmStatus::Stopping => {
+                                    *status_guard = VmStatus::Stopped;
+                                    info!("VM has stopped.");
+                                }
+                                VmStatus::Running { .. } => {
+                                    *status_guard = VmStatus::Stopped;
+                                    info!("VM has stopped unexpectedly.");
+                                }
+                                _ => {
+                                    error!(
+                                        "Received unexpected Stopped message while in state: {:?}",
+                                        *status_guard
+                                    );
+                                }
                             }
                         }
 
