@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use util::{
     encoding::{DeserializeOwned, Serialize},
-    result::Result,
+    result::{Context, Result},
 };
 
 pub use heed::Error;
@@ -134,6 +134,96 @@ impl<'env> ReadTxn<'env> {
         }
         Ok(None)
     }
+
+    pub fn get_all_keys<V>(&self, collection: &Collection<V>) -> Result<Vec<String>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let iter = self.iter(collection)?;
+        let data = iter
+            .map(|item| item.map(|(k, _)| k.to_string()))
+            .collect::<Result<Vec<_>, Error>>()
+            .context("failed to collect data")?;
+
+        Ok(data)
+    }
+
+    pub fn get_all_values<V>(&self, collection: &Collection<V>) -> Result<Vec<V>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let iter = self.iter(collection)?;
+        let data = iter
+            .map(|item| item.map(|(_, v)| v))
+            .collect::<Result<Vec<_>, Error>>()
+            .context("failed to collect data")?;
+
+        Ok(data)
+    }
+
+    pub fn get_all<V>(&self, collection: &Collection<V>) -> Result<Vec<(String, V)>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let iter = self.iter(collection)?;
+        let data = iter
+            .map(|item| item.map(|(k, v)| (k.to_string(), v)))
+            .collect::<Result<Vec<_>, Error>>()
+            .context("failed to collect data")?;
+
+        Ok(data)
+    }
+
+    pub fn get_all_keys_prefix<V>(
+        &self,
+        collection: &Collection<V>,
+        prefix: &str,
+    ) -> Result<Vec<String>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let iter = self.prefix_iter(collection, prefix)?;
+        let data = iter
+            .map(|item| item.map(|(k, _)| k.to_string()))
+            .collect::<Result<Vec<_>, Error>>()
+            .context("failed to collect data")?;
+
+        Ok(data)
+    }
+
+    pub fn get_all_values_prefix<V>(
+        &self,
+        collection: &Collection<V>,
+        prefix: &str,
+    ) -> Result<Vec<V>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let iter = self.prefix_iter(collection, prefix)?;
+        let data = iter
+            .map(|item| item.map(|(_, v)| v))
+            .collect::<Result<Vec<_>, Error>>()
+            .context("failed to collect data")?;
+
+        Ok(data)
+    }
+
+    pub fn get_all_prefix<V>(
+        &self,
+        collection: &Collection<V>,
+        prefix: &str,
+    ) -> Result<Vec<(String, V)>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let iter = self.prefix_iter(collection, prefix)?;
+        let data = iter
+            .map(|item| item.map(|(k, v)| (k.to_string(), v)))
+            .collect::<Result<Vec<_>, Error>>()
+            .context("failed to collect data")?;
+
+        Ok(data)
+    }
 }
 
 impl<'env> WriteTxn<'env> {
@@ -168,6 +258,96 @@ impl<'env> WriteTxn<'env> {
         Ok(collection
             .database
             .prefix_iter(&self.txn, prefix.as_ref())?)
+    }
+
+    pub fn get_all_keys<V>(&self, collection: &Collection<V>) -> Result<Vec<String>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let iter = self.iter(collection)?;
+        let data = iter
+            .map(|item| item.map(|(k, _)| k.to_string()))
+            .collect::<Result<Vec<_>, Error>>()
+            .context("failed to collect data")?;
+
+        Ok(data)
+    }
+
+    pub fn get_all_values<V>(&self, collection: &Collection<V>) -> Result<Vec<V>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let iter = self.iter(collection)?;
+        let data = iter
+            .map(|item| item.map(|(_, v)| v))
+            .collect::<Result<Vec<_>, Error>>()
+            .context("failed to collect data")?;
+
+        Ok(data)
+    }
+
+    pub fn get_all<V>(&self, collection: &Collection<V>) -> Result<Vec<(String, V)>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let iter = self.iter(collection)?;
+        let data = iter
+            .map(|item| item.map(|(k, v)| (k.to_string(), v)))
+            .collect::<Result<Vec<_>, Error>>()
+            .context("failed to collect data")?;
+
+        Ok(data)
+    }
+
+    pub fn get_all_keys_prefix<V>(
+        &self,
+        collection: &Collection<V>,
+        prefix: &str,
+    ) -> Result<Vec<String>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let iter = self.prefix_iter(collection, prefix)?;
+        let data = iter
+            .map(|item| item.map(|(k, _)| k.to_string()))
+            .collect::<Result<Vec<_>, Error>>()
+            .context("failed to collect data")?;
+
+        Ok(data)
+    }
+
+    pub fn get_all_values_prefix<V>(
+        &self,
+        collection: &Collection<V>,
+        prefix: &str,
+    ) -> Result<Vec<V>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let iter = self.prefix_iter(collection, prefix)?;
+        let data = iter
+            .map(|item| item.map(|(_, v)| v))
+            .collect::<Result<Vec<_>, Error>>()
+            .context("failed to collect data")?;
+
+        Ok(data)
+    }
+
+    pub fn get_all_prefix<V>(
+        &self,
+        collection: &Collection<V>,
+        prefix: &str,
+    ) -> Result<Vec<(String, V)>>
+    where
+        V: Serialize + DeserializeOwned,
+    {
+        let iter = self.prefix_iter(collection, prefix)?;
+        let data = iter
+            .map(|item| item.map(|(k, v)| (k.to_string(), v)))
+            .collect::<Result<Vec<_>, Error>>()
+            .context("failed to collect data")?;
+
+        Ok(data)
     }
 
     pub fn put<V>(&mut self, collection: &Collection<V>, key: &str, value: &V) -> Result<()>

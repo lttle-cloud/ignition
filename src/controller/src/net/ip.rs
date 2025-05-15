@@ -2,7 +2,6 @@ use std::net::Ipv4Addr;
 
 use sds::{Collection, Store};
 use util::{
-    async_runtime::sync::Mutex,
     encoding::codec,
     rand::{self, Rng},
     result::{Context, Result, bail},
@@ -66,7 +65,6 @@ impl IpPoolRange {
 #[derive(Debug, Clone)]
 pub struct ReservedIp {
     pub addr: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
 }
 
@@ -79,11 +77,10 @@ pub struct IpPool {
     range: IpPoolRange,
     store: Store,
     reserved_ips_collection: Collection<ReservedIp>,
-    reserved_ips: Mutex<Vec<ReservedIp>>,
 }
 
 impl IpPool {
-    pub async fn new(config: IpPoolConfig, store: Store) -> Result<Self> {
+    pub fn new(config: IpPoolConfig, store: Store) -> Result<Self> {
         let collection =
             store.collection::<ReservedIp>(&format!("reserved_ips_{}", config.name))?;
 
@@ -91,43 +88,29 @@ impl IpPool {
             range: IpPoolRange::from_cidr(&config.cidr)?,
             store,
             reserved_ips_collection: collection,
-            reserved_ips: Mutex::new(vec![]),
         };
-
-        pool.load_reserved_ips().await?;
 
         Ok(pool)
     }
 
-    async fn load_reserved_ips(&self) -> Result<()> {
+    fn get_reserved_ips(&self) -> Result<Vec<ReservedIp>> {
         let tx = self.store.read_txn()?;
-
-        let stored_reserved_ips = tx
-            .iter(&self.reserved_ips_collection)?
-            .collect::<Result<Vec<_>, sds::Error>>()
-            .context("failed to collect reserved ips")?
-            .into_iter()
-            .map(|(_, ip)| ip)
-            .collect::<Vec<_>>();
-
-        {
-            let mut reserved_ips = self.reserved_ips.lock().await;
-            *reserved_ips = stored_reserved_ips;
-        }
-
-        Ok(())
+        let reserved_ips = tx.get_all_values(&self.reserved_ips_collection)?;
+        Ok(reserved_ips)
     }
 
-    pub async fn reserve_tagged(&self, tag: impl AsRef<str>) -> Result<ReservedIp> {
-        self.reserve(Some(tag.as_ref().to_string())).await
+    pub fn reserve_tagged(&self, tag: impl AsRef<str>) -> Result<ReservedIp> {
+        self.reserve(Some(tag.as_ref().to_string()))
     }
 
-    pub async fn reserve_untagged(&self) -> Result<ReservedIp> {
-        self.reserve(None).await
+    pub fn reserve_untagged(&self) -> Result<ReservedIp> {
+        self.reserve(None)
     }
 
-    async fn reserve(&self, tag: Option<String>) -> Result<ReservedIp> {
-        let mut reserved_ips = self.reserved_ips.lock().await;
+    fn reserve(&self, tag: Option<String>) -> Result<ReservedIp> {
+        let mut tx = self.store.write_txn()?;
+
+        let reserved_ips = tx.get_all_values(&self.reserved_ips_collection)?;
 
         let mut ip = self.range.random();
         while reserved_ips
@@ -142,39 +125,34 @@ impl IpPool {
             tag,
         };
 
-        let mut tx = self.store.write_txn()?;
         tx.put(
             &self.reserved_ips_collection,
             &reserved_ip.addr,
             &reserved_ip,
         )
         .context("failed to reserve ip")?;
-        tx.commit()?;
 
-        reserved_ips.push(reserved_ip.clone());
+        tx.commit()?;
 
         Ok(reserved_ip)
     }
 
-    pub async fn get_by_tag(&self, tag: impl AsRef<str>) -> Option<ReservedIp> {
-        let reserved_ips = self.reserved_ips.lock().await;
-        let Some(reserved_ip) = reserved_ips
-            .iter()
-            .find(|reserved_ip| reserved_ip.tag == Some(tag.as_ref().to_string()))
-        else {
+    pub fn get_by_tag(&self, tag: impl AsRef<str>) -> Option<ReservedIp> {
+        let Some(reserved_ip) = self.get_reserved_ips().ok().and_then(|ips| {
+            ips.iter()
+                .find(|reserved_ip| reserved_ip.tag == Some(tag.as_ref().to_string()))
+                .cloned()
+        }) else {
             return None;
         };
 
-        Some(reserved_ip.clone())
+        Some(reserved_ip)
     }
 
-    pub async fn release_tag(&self, tag: impl AsRef<str>) -> Result<()> {
-        let Some(reserved_ip) = self.get_by_tag(&tag).await else {
+    pub fn release_tag(&self, tag: impl AsRef<str>) -> Result<()> {
+        let Some(reserved_ip) = self.get_by_tag(&tag) else {
             bail!("ip with tag {} not found", tag.as_ref());
         };
-
-        let mut reserved_ips = self.reserved_ips.lock().await;
-        reserved_ips.retain(|reserved_ip| reserved_ip.tag != Some(tag.as_ref().to_string()));
 
         let mut tx = self.store.write_txn()?;
         tx.del(&self.reserved_ips_collection, &reserved_ip.addr)
@@ -184,16 +162,12 @@ impl IpPool {
         Ok(())
     }
 
-    pub async fn release(&self, addr: impl AsRef<str>) -> Result<()> {
-        let mut reserved_ips = self.reserved_ips.lock().await;
-
+    pub fn release(&self, addr: impl AsRef<str>) -> Result<()> {
         let ip: String = addr.as_ref().to_string();
         let mut tx = self.store.write_txn()?;
         tx.del(&self.reserved_ips_collection, &ip)
             .context("failed to release ip")?;
         tx.commit()?;
-
-        reserved_ips.retain(|reserved_ip| reserved_ip.addr != ip);
 
         Ok(())
     }
@@ -201,8 +175,6 @@ impl IpPool {
 
 #[cfg(test)]
 mod tests {
-    use util::async_runtime;
-
     use super::*;
 
     #[test]
@@ -223,93 +195,67 @@ mod tests {
 
     #[test]
     fn test_reserve_untagged() {
-        let rt = async_runtime::runtime::Runtime::new().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = Store::new(sds::StoreConfig {
+            dir_path: db_dir.path().to_path_buf(),
+            size_mib: 1024,
+        })
+        .unwrap();
 
-        rt.block_on(async {
-            let store = Store::new(sds::StoreConfig {
-                dir_path: "/tmp/test-dbs/reserve_ips_test".into(),
-                size_mib: 1024,
-            })
-            .unwrap();
+        let pool = IpPool::new(
+            IpPoolConfig {
+                name: "test".to_string(),
+                cidr: "10.0.0.0/16".to_string(),
+            },
+            store.clone(),
+        )
+        .unwrap();
 
-            let pool = IpPool::new(
-                IpPoolConfig {
-                    name: "test".to_string(),
-                    cidr: "10.0.0.0/16".to_string(),
-                },
-                store.clone(),
-            )
-            .await
-            .unwrap();
+        let ip = pool.reserve_untagged().unwrap();
+        let ip_addr: Ipv4Addr = ip.addr.parse().unwrap();
+        assert!(ip_addr.is_private());
+        {
+            let reserved_ips = pool.get_reserved_ips().unwrap();
+            assert!(reserved_ips.iter().any(|ip| ip.addr == ip.addr.to_string()));
+        }
 
-            let ip = pool.reserve_untagged().await.unwrap();
-            let ip_addr: Ipv4Addr = ip.addr.parse().unwrap();
-            assert!(ip_addr.is_private());
-            {
-                let reserved_ips = pool.reserved_ips.lock().await;
-                assert!(reserved_ips.iter().any(|ip| ip.addr == ip.addr.to_string()));
-            }
-
-            let read_tx = store.read_txn().unwrap();
-            let reserved_ips = read_tx.iter(&pool.reserved_ips_collection).unwrap();
-            assert_eq!(reserved_ips.count(), 1);
-            drop(read_tx);
-
-            pool.release(&ip.addr).await.unwrap();
-            {
-                let reserved_ips = pool.reserved_ips.lock().await;
-                assert_eq!(reserved_ips.len(), 0);
-            }
-
-            let read_tx = store.read_txn().unwrap();
-            let reserved_ips = read_tx.iter(&pool.reserved_ips_collection).unwrap();
-            assert_eq!(reserved_ips.count(), 0);
-            drop(read_tx);
-
-            // delete the test_store dir
-            std::fs::remove_dir_all("/tmp/test-dbs/reserve_ips_test").unwrap();
-        });
+        pool.release(&ip.addr).unwrap();
+        {
+            let reserved_ips = pool.get_reserved_ips().unwrap();
+            assert_eq!(reserved_ips.len(), 0);
+        }
     }
 
     #[test]
     fn test_reserve_tagged() {
-        let rt = async_runtime::runtime::Runtime::new().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = Store::new(sds::StoreConfig {
+            dir_path: db_dir.path().to_path_buf(),
+            size_mib: 1024,
+        })
+        .unwrap();
 
-        rt.block_on(async {
-            let store = Store::new(sds::StoreConfig {
-                dir_path: "/tmp/test-dbs/reserve_tagged_ips_test".into(),
-                size_mib: 1024,
-            })
-            .unwrap();
+        let pool = IpPool::new(
+            IpPoolConfig {
+                name: "test".to_string(),
+                cidr: "10.0.0.0/16".to_string(),
+            },
+            store.clone(),
+        )
+        .unwrap();
 
-            let pool = IpPool::new(
-                IpPoolConfig {
-                    name: "test".to_string(),
-                    cidr: "10.0.0.0/16".to_string(),
-                },
-                store.clone(),
-            )
-            .await
-            .unwrap();
+        let ip = pool.reserve_tagged("test").unwrap();
+        let ip_addr: Ipv4Addr = ip.addr.parse().unwrap();
+        assert!(ip_addr.is_private());
+        assert_eq!(ip.tag, Some("test".to_string()));
 
-            let ip = pool.reserve_tagged("test").await.unwrap();
-            let ip_addr: Ipv4Addr = ip.addr.parse().unwrap();
-            assert!(ip_addr.is_private());
-            assert_eq!(ip.tag, Some("test".to_string()));
+        pool.release_tag("test").unwrap();
+        {
+            let reserved_ips = pool.get_reserved_ips().unwrap();
+            assert_eq!(reserved_ips.len(), 0);
+        }
 
-            pool.release_tag("test").await.unwrap();
-            {
-                let reserved_ips = pool.reserved_ips.lock().await;
-                assert_eq!(reserved_ips.len(), 0);
-            }
-
-            let read_tx = store.read_txn().unwrap();
-            let reserved_ips = read_tx.iter(&pool.reserved_ips_collection).unwrap();
-            assert_eq!(reserved_ips.count(), 0);
-            drop(read_tx);
-
-            // delete the test_store dir
-            std::fs::remove_dir_all("/tmp/test-dbs/reserve_tagged_ips_test").unwrap();
-        });
+        // delete the test_store dir
+        std::fs::remove_dir_all("/tmp/test-dbs/reserve_tagged_ips_test").unwrap();
     }
 }
