@@ -29,6 +29,7 @@ impl InstanceStatus {
     }
 }
 
+#[derive(Debug)]
 pub struct InstancePipeline {
     status: InstanceStatus,
     current_progress_handles: HashMap<InstanceStatus, JoinHandle<()>>,
@@ -42,6 +43,14 @@ impl InstancePipeline {
             current_progress_handles: HashMap::new(),
             cancelled: false,
         }
+    }
+
+    pub fn get_status(&self) -> InstanceStatus {
+        self.status
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled
     }
 
     pub fn can_progress(&mut self) -> Option<InstanceStatus> {
@@ -77,6 +86,26 @@ impl InstancePipeline {
 
         self.current_progress_handles
             .insert(self.status, progress_handle);
+    }
+
+    pub fn go_to_next_status(&mut self) {
+        if self.cancelled {
+            return;
+        }
+
+        let Some(next_status) = self.status.next() else {
+            return;
+        };
+
+        self.status = next_status;
+    }
+
+    pub fn go_to_status(&mut self, status: InstanceStatus) {
+        if self.cancelled {
+            return;
+        }
+
+        self.status = status;
     }
 
     pub fn cancel(&mut self) {

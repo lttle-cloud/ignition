@@ -1,3 +1,4 @@
+use controller::{Controller, DeployRequest};
 use ignition_proto::admin_server::AdminServer;
 use ignition_proto::image_server::ImageServer;
 use sds::Store;
@@ -5,8 +6,11 @@ use services::admin::{admin_auth_interceptor, AdminService, AdminServiceConfig};
 use services::auth::{AuthInterceptor, AuthInterceptorConfig};
 use services::image::ImageService;
 use std::net::SocketAddr;
+use std::time::Duration;
 use tonic::transport::Server;
 use tracing::info;
+use util::async_runtime::spawn;
+use util::async_runtime::time::sleep;
 use util::result::Result;
 
 pub(crate) mod data;
@@ -31,6 +35,7 @@ pub(crate) mod ignition_proto {
 pub struct ApiServerConfig {
     pub addr: SocketAddr,
     pub store: Store,
+    pub controller: Controller,
     pub admin_token: String,
     pub jwt_secret: String,
     pub default_token_duration: u32,
@@ -61,6 +66,8 @@ pub async fn start_api_server(config: ApiServerConfig) -> Result<()> {
         auth_interceptor.validate_request(req)
     });
 
+    test_controller(config.controller.clone()).await?;
+
     info!("api server listening on {:?}", config.addr);
 
     Server::builder()
@@ -68,6 +75,28 @@ pub async fn start_api_server(config: ApiServerConfig) -> Result<()> {
         .add_service(image_server)
         .serve(config.addr)
         .await?;
+
+    Ok(())
+}
+
+async fn test_controller(controller: Controller) -> Result<()> {
+    // starting progress task
+    controller.start_progress_task().await?;
+
+    controller
+        .deploy(DeployRequest {
+            instance_name: "test-caddy".to_string(),
+            image: "caddy:latest".to_string(),
+        })
+        .await?;
+
+    println!("progress task started");
+
+    let controller_clone = controller.clone();
+    spawn(async move {
+        sleep(Duration::from_secs(45)).await;
+        controller_clone.stop_progress_task().await;
+    });
 
     Ok(())
 }

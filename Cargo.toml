@@ -39,3 +39,4 @@ util = { path = "src/util" }
 api = { path = "src/api" }
 vmm = { path = "src/vmm" }
 sds = { path = "src/sds" }
+controller = { path = "src/controller" }
