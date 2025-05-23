@@ -21,22 +21,3 @@ build-takeoff:
 
 clean:
 	cargo clean
-
-build-hello-page:
-	truncate -s 64M target/hello-page.ext4
-	sudo mkfs.ext4 target/hello-page.ext4
-
-	mkdir -p target/hello-page
-	sudo mount target/hello-page.ext4 target/hello-page
-
-	sudo cp hello-page/* target/hello-page/
-
-	sudo umount target/hello-page
-
-mount-hello-page:
-	mkdir -p target/hello-page
-	sudo mount target/hello-page.ext4 target/hello-page
-
-unmount-hello-page:
-	sudo umount target/hello-page
-	rmdir target/hello-page
