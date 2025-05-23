@@ -1,0 +1,44 @@
+to deploy
+
+1. pull & convert image
+a. pull the manifest
+b. check if the image is already converted
+c. if not, convert the image
+d. save the image to the disk
+
+2. setup networking
+a. grab a tap device
+b. grab an ip address
+c. add the ip and tap to the bridge
+
+3. start the vm
+
+4. (optional if start-stop) wait for the exit signal
+
+5. confirm it's running properly
+a. if start-stop send healthcheck on the defined port
+b. if no start-top, wait for a while, then send healthcheck on the defined port
+
+6. mark as ready (the other instance should be terminated)
+
+to teardown
+
+1. stop the vm
+2. cleanup networking
+
+to update
+
+1. start a new instance
+2. tear down the old one once ready
+
+to update during an ongoning update
+
+1. cancel the ongoing update
+2. start a new instance
+3. in parallel tear down the old one once ready
+
+
+to collect garbage
+1. run once every few hours
+2. collect all image digests that are not used by any distance
+3. delete them from disk
