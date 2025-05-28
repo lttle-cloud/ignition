@@ -7,6 +7,7 @@ use util::{
     result::{Context, Result, bail},
 };
 
+#[derive(Clone)]
 struct IpPoolRange {
     pub net: u32,
     pub mask: u32,
@@ -73,6 +74,7 @@ pub struct IpPoolConfig {
     pub cidr: String, // e.g. "10.0.0.0/16"
 }
 
+#[derive(Clone)]
 pub struct IpPool {
     range: IpPoolRange,
     store: Store,
@@ -82,7 +84,7 @@ pub struct IpPool {
 impl IpPool {
     pub fn new(config: IpPoolConfig, store: Store) -> Result<Self> {
         let collection =
-            store.collection::<ReservedIp>(&format!("reserved_ips_{}", config.name))?;
+            store.collection::<ReservedIp>(&format!("ip_pool:{}:reserved_ips", config.name))?;
 
         let pool = Self {
             range: IpPoolRange::from_cidr(&config.cidr)?,

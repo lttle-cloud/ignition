@@ -1,7 +1,7 @@
 use std::io::Write;
 
-use tracing::warn;
 use util::result::Error;
+use util::tracing::warn;
 use vm_device::{
     bus::{PioAddress, PioAddressOffset},
     MutDevicePio,

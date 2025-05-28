@@ -6,11 +6,11 @@ use ignition_client::{
     },
     Client, ClientConfig, PrivilegedClient,
 };
-use tracing::info;
 use tracing_subscriber::FmtSubscriber;
 use util::{
     async_runtime,
     result::{Context, Result},
+    tracing::{self, info},
 };
 
 async fn ignition() -> Result<()> {

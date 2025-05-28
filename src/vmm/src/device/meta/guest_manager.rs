@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use tracing::{info, warn};
 use util::async_runtime;
+use util::tracing::{info, warn};
 
 use crate::{
     constants::{MMIO_LEN, MMIO_START},

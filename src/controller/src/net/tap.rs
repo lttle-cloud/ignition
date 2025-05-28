@@ -1,24 +1,25 @@
+use std::sync::Arc;
+
 use nix::libc;
 use rtnetlink::{Handle, new_connection, packet_route::link::LinkAttribute};
 use util::{
-    async_runtime::{spawn, task::JoinHandle},
+    async_runtime::{spawn, sync::mpsc::unbounded_channel, task::JoinHandle},
     futures_util::TryStreamExt,
     rand::{self, Rng},
     result::{Result, bail},
 };
 
 const SIOCBRADDIF: libc::Ioctl = 0x89a2;
-
-const DEV_NET_TUN: *const libc::c_char = b"/dev/net/tun\0".as_ptr() as *const libc::c_char;
 const TAP_PREFIX: &str = "tap_lt_";
 
 pub struct TapPoolConfig {
     pub bridge_name: String,
 }
 
+#[derive(Clone)]
 pub struct TapPool {
     bridge_name: String,
-    nl_connection_task: JoinHandle<()>,
+    nl_connection_task: Arc<JoinHandle<()>>,
     nl_handle: Handle,
 }
 
@@ -33,7 +34,7 @@ fn str_to_const_ifname(name: &str) -> [libc::c_char; libc::IFNAMSIZ] {
 impl TapPool {
     pub async fn new(config: TapPoolConfig) -> Result<Self> {
         let (connection, handle, _) = new_connection()?;
-        let nl_connection_task = spawn(connection);
+        let nl_connection_task = Arc::new(spawn(connection));
 
         Ok(Self {
             bridge_name: config.bridge_name,
@@ -134,7 +135,12 @@ impl TapPool {
             },
         };
 
-        let fd = unsafe { libc::open(DEV_NET_TUN, libc::O_RDWR | libc::O_CLOEXEC) };
+        let fd = unsafe {
+            libc::open(
+                b"/dev/net/tun\0".as_ptr() as *const libc::c_char,
+                libc::O_RDWR | libc::O_CLOEXEC,
+            )
+        };
         if fd == -1 {
             bail!(
                 "failed to open /dev/net/tun: {}",

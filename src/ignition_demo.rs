@@ -3,7 +3,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tracing::{error, info};
 use tracing_subscriber::FmtSubscriber;
 use util::{
     async_runtime::{
@@ -13,6 +12,7 @@ use util::{
         task, time,
     },
     result::{bail, Context, Result},
+    tracing::{error, info},
 };
 
 use vmm::{

@@ -21,4 +21,3 @@ virtio-queue = { git = "https://github.com/rust-vmm/vm-virtio.git" }
 virtio-blk = { git = "https://github.com/rust-vmm/vm-virtio.git", features = [
     "backend-stdio",
 ] }
-tracing = "0.1.41"

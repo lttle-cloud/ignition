@@ -110,7 +110,6 @@ dependencies = [
  "sds",
  "tonic 0.13.0",
  "tonic-build 0.13.0",
- "tracing",
  "util",
 ]
 
@@ -454,7 +453,6 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "ignition-client",
- "tracing",
  "tracing-subscriber",
  "util",
 ]
@@ -469,9 +467,14 @@ checksum = "5b63caa9aa9397e2d9480a9b13673856c78d8ac123288526c37d7839f2a86990"
 name = "controller"
 version = "0.1.0"
 dependencies = [
+ "docker_credential",
+ "flate2",
  "nix 0.30.1",
+ "oci-client",
  "rtnetlink",
  "sds",
+ "serde_json",
+ "tar",
  "tempfile",
  "util",
  "vmm",
@@ -1368,7 +1371,6 @@ dependencies = [
  "futures",
  "reqwest",
  "sds",
- "tracing",
  "tracing-subscriber",
  "util",
  "vmm",
@@ -1382,7 +1384,6 @@ dependencies = [
  "prost-build",
  "tonic 0.12.3",
  "tonic-build 0.12.3",
- "tracing",
  "util",
 ]
 
@@ -2799,7 +2800,6 @@ dependencies = [
  "ping",
  "serde",
  "serde_json",
- "tracing",
  "tracing-subscriber",
  "util",
 ]
@@ -3272,6 +3272,7 @@ name = "util"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures",
  "futures-util",
  "meta",
  "rand 0.9.1",
@@ -3279,15 +3280,20 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
 name = "uuid"
-version = "1.13.1"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ced87ca4be083373936a67f8de945faa23b6b42384bd5b64434850802c6dccd0"
+checksum = "3cf4199d1e5d15ddd86a694e4d0dffa9c323ce759fea589f00fef9d81cc1931d"
 dependencies = [
  "getrandom 0.3.1",
+ "js-sys",
+ "rand 0.9.1",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -3391,7 +3397,6 @@ dependencies = [
  "libc",
  "linux-loader",
  "thiserror 2.0.9",
- "tracing",
  "util",
  "virtio-blk",
  "virtio-device",

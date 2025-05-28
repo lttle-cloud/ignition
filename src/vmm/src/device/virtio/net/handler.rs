@@ -5,8 +5,8 @@ use std::{
 };
 
 use event_manager::{EventOps, EventSet, Events, MutEventSubscriber};
-use tracing::warn;
 use util::result::Result;
+use util::tracing::warn;
 use virtio_queue::{Queue, QueueOwnedT, QueueState, QueueT};
 use vm_memory::Bytes;
 use vmm_sys_util::eventfd::EventFd;
