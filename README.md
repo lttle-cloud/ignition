@@ -1,4 +1,8 @@
-[<p align="center" width="100%"><img src="./assets/lttle.gif"></p>](https://lttle.cloud)
+<p align="center">
+  <a href="https://lttle.cloud">
+    <img src="./assets/lttle.gif" alt="lttle.cloud" />
+  </a>
+</p>
 
 # lttle.cloud | Ignition
 
