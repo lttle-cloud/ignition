@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://lttle.cloud">
+  <a href="https://lttle.cloud" target="_blank">
     <img src="./assets/lttle.gif" alt="lttle.cloud" />
   </a>
 </p>
