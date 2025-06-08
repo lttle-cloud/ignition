@@ -14,7 +14,7 @@ use util::{
 
 use crate::{
     image::{ImagePool, PullPolicy},
-    machine::{Machine, MachineConfig, MachineStatus},
+    machine::{Machine, MachineConfig, MachineStatus, SparkSnapshotPolicy},
     net::{ip::IpPool, tap::TapPool},
 };
 
@@ -101,9 +101,20 @@ pub type DeploymentRef = Arc<Mutex<Deployment>>;
 
 #[codec]
 #[derive(Clone, Debug)]
+pub enum DeploymentMode {
+    Normal,
+    Spark {
+        timeout_ms: u64,
+        snapshot_policy: SparkSnapshotPolicy,
+    },
+}
+
+#[codec]
+#[derive(Clone, Debug)]
 pub struct DeploymentConfig {
     pub name: String,
     pub image: String,
+    pub mode: DeploymentMode,
     pub image_pull_policy: PullPolicy,
     pub vcpu_count: u8,
     pub memory_mib: usize,
@@ -486,6 +497,13 @@ impl Deployment {
                 }
             };
 
+            let spark_snapshot_policy = match &self.config.mode {
+                DeploymentMode::Spark {
+                    snapshot_policy, ..
+                } => Some(snapshot_policy.clone()),
+                _ => None,
+            };
+
             let machine_config = MachineConfig {
                 memory_size_mib: self.config.memory_mib,
                 vcpu_count: self.config.vcpu_count,
@@ -496,6 +514,7 @@ impl Deployment {
                 netmask: self.netmask.clone(),
                 envs: self.config.envs.clone(),
                 log_file_path,
+                spark_snapshot_policy,
             };
 
             debug!(

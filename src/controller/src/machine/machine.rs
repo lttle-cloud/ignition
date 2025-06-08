@@ -5,6 +5,7 @@ use util::{
         sync::{RwLock, broadcast},
         task::{self, JoinHandle},
     },
+    encoding::codec,
     result::{Result, bail},
     tracing::{info, warn},
 };
@@ -19,6 +20,14 @@ use vmm::{
 pub enum MachineStopReason {
     Suspend,
     Shutdown,
+}
+
+#[codec]
+#[derive(Clone, Debug)]
+pub enum SparkSnapshotPolicy {
+    OnNthListenSyscall(u32),
+    OnUserspaceReady,
+    Manual,
 }
 
 #[derive(Clone)]
@@ -94,6 +103,7 @@ pub struct MachineConfig {
     pub netmask: String,
     pub envs: Vec<String>,
     pub log_file_path: String,
+    pub spark_snapshot_policy: Option<SparkSnapshotPolicy>,
 }
 
 impl TryFrom<&MachineConfig> for Config {
