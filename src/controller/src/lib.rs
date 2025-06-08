@@ -4,7 +4,7 @@ pub mod machine;
 pub mod net;
 pub mod volume;
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
 use deployment::{Deployment, DeploymentConfig, DeploymentRef};
@@ -215,6 +215,25 @@ impl Controller {
         Ok(deployments)
     }
 
+    pub async fn list_tracked_resources(&self) -> Result<(Vec<String>, Vec<String>)> {
+        let deployments = self.list_deployments().await?;
+        let mut images = HashSet::new();
+        let mut volumes = HashSet::new();
+
+        for deployment in deployments {
+            for instance in deployment.instances {
+                if let Some(image_id) = instance.image_id {
+                    images.insert(image_id);
+                }
+                if let Some(volume_id) = instance.rootfs_volume_id {
+                    volumes.insert(volume_id);
+                }
+            }
+        }
+
+        Ok((images.into_iter().collect(), volumes.into_iter().collect()))
+    }
+
     pub async fn delete_deployment(&self, id: &str) -> Result<()> {
         info!("Deleting deployment: {}", id);
 
@@ -227,7 +246,9 @@ impl Controller {
             util::async_runtime::time::sleep(std::time::Duration::from_millis(100)).await;
 
             // Force cleanup all instances (this will delete volumes)
-            deployment.cleanup_all_instances().await?;
+            deployment
+                .cleanup_all_instances(self.image_pool.clone())
+                .await?;
 
             debug!("Active deployment cleaned up");
         }

@@ -54,8 +54,8 @@ pub struct Instance {
     pub tap_name: String,
     pub ip_addr: String,
     pub created_at: u128,
-    // Track the volume so we can clean it up
-    pub volume_path: Option<String>,
+    pub image_id: Option<String>,
+    pub rootfs_volume_id: Option<String>,
 }
 
 struct Tasks {
@@ -263,7 +263,7 @@ impl Deployment {
                         "Cleaning up {} partial instances from previous attempt",
                         self.instances.len()
                     );
-                    self.cleanup_partial_instances().await?;
+                    self.cleanup_partial_instances(image_pool.clone()).await?;
                 }
 
                 self.status = DeploymentStatus::PullingImage;
@@ -338,7 +338,8 @@ impl Deployment {
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap()
                             .as_millis(),
-                        volume_path: None,
+                        image_id: None,
+                        rootfs_volume_id: None,
                     };
 
                     debug!(
@@ -359,7 +360,8 @@ impl Deployment {
 
                     for instance_id in instances_to_remove {
                         debug!("Removing excess instance: {}", instance_id);
-                        self.cleanup_instance(&instance_id).await?;
+                        self.cleanup_instance(&instance_id, image_pool.clone())
+                            .await?;
                     }
                 }
 
@@ -381,7 +383,7 @@ impl Deployment {
                 debug!("Replacing all instances due to configuration change");
 
                 // Clean up all current instances (stops machines and deletes volumes)
-                self.cleanup_all_instances().await?;
+                self.cleanup_all_instances(image_pool.clone()).await?;
 
                 // Clear any remaining tasks
                 self.tasks.instance_tasks.clear();
@@ -400,7 +402,7 @@ impl Deployment {
 
                 // Cancel all tasks and clean up all instances
                 self.tasks.cancel_all();
-                self.cleanup_all_instances().await?;
+                self.cleanup_all_instances(image_pool.clone()).await?;
 
                 self.status = DeploymentStatus::Stopped;
                 debug!("Deployment stopped");
@@ -459,7 +461,17 @@ impl Deployment {
             // Update the instance to track its volume and get its data
             let (tap_name, ip_addr) = {
                 if let Some(instance) = self.instances.get_mut(&instance_id) {
-                    instance.volume_path = Some(instance_volume.path.clone());
+                    instance.image_id =
+                        Some(format!("{}@{}", base_image.reference, base_image.digest));
+                    instance.rootfs_volume_id = Some(instance_volume.id.clone());
+
+                    debug!(
+                        "Instance {} tracking: image={}, volume={}",
+                        instance_id,
+                        instance.image_id.as_ref().unwrap(),
+                        instance.rootfs_volume_id.as_ref().unwrap()
+                    );
+
                     (instance.tap_name.clone(), instance.ip_addr.clone())
                 } else {
                     continue; // Instance was removed, skip
@@ -634,7 +646,11 @@ impl Deployment {
         self.instances.len()
     }
 
-    async fn cleanup_instance(&mut self, instance_id: &str) -> Result<()> {
+    async fn cleanup_instance(
+        &mut self,
+        instance_id: &str,
+        image_pool: Arc<ImagePool>,
+    ) -> Result<()> {
         debug!("Cleaning up instance: {}", instance_id);
 
         // Stop the machine if it exists
@@ -647,12 +663,22 @@ impl Deployment {
 
         // Remove and clean up the instance volume
         if let Some(instance) = self.instances.remove(instance_id) {
-            if let Some(volume_path) = &instance.volume_path {
-                debug!("Deleting volume: {}", volume_path);
-                if let Err(e) = std::fs::remove_file(volume_path) {
-                    warn!("Failed to delete volume {}: {}", volume_path, e);
+            if let Some(image_id) = &instance.image_id {
+                debug!("Instance {} was using image: {}", instance_id, image_id);
+            }
+
+            if let Some(volume_id) = &instance.rootfs_volume_id {
+                debug!(
+                    "Instance {} was using rootfs volume: {}",
+                    instance_id, volume_id
+                );
+
+                // Get volume by id and delete it
+                if let Some(volume) = image_pool.get_volume(volume_id).await? {
+                    volume.delete().await?;
+                    debug!("Volume deleted successfully: {}", volume_id);
                 } else {
-                    debug!("Volume deleted successfully: {}", volume_path);
+                    warn!("Volume not found: {}", volume_id);
                 }
             }
         }
@@ -665,7 +691,7 @@ impl Deployment {
         Ok(())
     }
 
-    async fn cleanup_partial_instances(&mut self) -> Result<()> {
+    async fn cleanup_partial_instances(&mut self, image_pool: Arc<ImagePool>) -> Result<()> {
         debug!("Cleaning up partial instances during cancellation");
 
         // Get instances that are not ready (partial instances)
@@ -687,18 +713,20 @@ impl Deployment {
         );
 
         for instance_id in partial_instance_ids {
-            self.cleanup_instance(&instance_id).await?;
+            self.cleanup_instance(&instance_id, image_pool.clone())
+                .await?;
         }
 
         Ok(())
     }
 
-    pub async fn cleanup_all_instances(&mut self) -> Result<()> {
+    pub async fn cleanup_all_instances(&mut self, image_pool: Arc<ImagePool>) -> Result<()> {
         debug!("Cleaning up all instances for deployment");
         let instance_ids: Vec<_> = self.instances.keys().cloned().collect();
 
         for instance_id in instance_ids {
-            self.cleanup_instance(&instance_id).await?;
+            self.cleanup_instance(&instance_id, image_pool.clone())
+                .await?;
         }
 
         Ok(())

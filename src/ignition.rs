@@ -96,6 +96,14 @@ async fn create_and_start_controller(store: Store) -> Result<Arc<Controller>> {
 
     info!("Controller reconciliation started");
 
+    // Test resource tracking
+    let (tracked_images, tracked_volumes) = controller.list_tracked_resources().await?;
+    info!(
+        "Current tracked resources: {} images, {} volumes",
+        tracked_images.len(),
+        tracked_volumes.len()
+    );
+
     Ok(controller)
 }
 

@@ -6,7 +6,7 @@ use std::{
 use sds::{Collection, Store};
 use util::{
     async_runtime::{
-        fs::{OpenOptions, create_dir_all},
+        fs::{OpenOptions, create_dir_all, remove_file},
         process::Command,
     },
     encoding::codec,
@@ -240,6 +240,23 @@ impl Volume {
                 "failed to format volume as ext4: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
+        }
+
+        Ok(())
+    }
+
+    pub async fn delete(&self) -> Result<()> {
+        debug!("Deleting volume: {} ({})", self.id, self.path);
+
+        if let Err(e) = remove_file(&self.path).await {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                debug!("Volume file already deleted: {}", self.path);
+            } else {
+                warn!("Failed to delete volume file {}: {}", self.path, e);
+                return Err(e.into());
+            }
+        } else {
+            debug!("Volume file deleted successfully: {}", self.path);
         }
 
         Ok(())
