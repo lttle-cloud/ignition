@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use util::async_runtime;
-use util::tracing::{info, warn};
+use util::tracing::{debug, warn};
 
 use crate::{
     constants::{MMIO_LEN, MMIO_START},
@@ -133,11 +133,11 @@ impl GuestManagerDevice {
         let boot_ready_time = self.start_time.elapsed();
         self.boot_ready_time = Some(boot_ready_time);
 
-        let ms = boot_ready_time.as_millis();
-        if ms > 2 {
-            info!("boot ready {ms}ms");
+        // Boot ready time is useful for performance monitoring
+        if boot_ready_time.as_millis() > 100 {
+            debug!("boot ready {}ms", boot_ready_time.as_millis());
         } else {
-            info!("boot ready {}us", boot_ready_time.as_micros());
+            debug!("boot ready {}us", boot_ready_time.as_micros());
         }
     }
 
@@ -173,7 +173,6 @@ impl GuestManagerDevice {
         match trigger_data.code {
             TriggerCode::AfterListen => {
                 self.listen_trigger_count += 1;
-                warn!("listen trigger count {}", self.listen_trigger_count);
                 if self.listen_trigger_count < self.target_listen_trigger_count {
                     return;
                 }
@@ -187,12 +186,7 @@ impl GuestManagerDevice {
             TriggerCode::BootReadyMarker => {
                 self.set_boot_ready();
             }
-            _ => {
-                warn!(
-                    "Guest manager unhandled trigger code {:?}",
-                    trigger_data.code
-                );
-            }
+            _ => {}
         }
     }
 }

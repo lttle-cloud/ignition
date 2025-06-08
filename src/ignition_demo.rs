@@ -12,7 +12,7 @@ use util::{
         task, time,
     },
     result::{bail, Context, Result},
-    tracing::{error, info},
+    tracing::{self, error, info},
 };
 
 use vmm::{
@@ -42,7 +42,8 @@ impl VmController {
     pub fn new(config: Config) -> Result<Self> {
         let (state, memory) = {
             let start_time = std::time::Instant::now();
-            let mut vm = Vmm::new(config.clone()).context("Failed to create Vmm")?;
+            let memory = Vmm::create_memory_from_config(&config)?;
+            let mut vm = Vmm::new(config.clone(), memory)?;
             let elapsed_us = start_time.elapsed().as_micros();
             info!("Initial VM creation took {}µs", elapsed_us);
 
@@ -325,7 +326,6 @@ impl VmController {
                     error!("VM failed to start properly. Current status: {:?}", status);
                     bail!("VM failed to start properly");
                 }
-                _ => {}
             };
 
             // Use a timeout to avoid infinite wait

@@ -1,4 +1,4 @@
-use controller::{Controller, DeployRequest};
+use controller::Controller;
 use ignition_proto::admin_server::AdminServer;
 use ignition_proto::image_server::ImageServer;
 use sds::Store;
@@ -6,9 +6,8 @@ use services::admin::{admin_auth_interceptor, AdminService, AdminServiceConfig};
 use services::auth::{AuthInterceptor, AuthInterceptorConfig};
 use services::image::ImageService;
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::sync::Arc;
 use tonic::transport::Server;
-use util::async_runtime::time;
 use util::result::Result;
 use util::tracing::info;
 
@@ -34,7 +33,7 @@ pub(crate) mod ignition_proto {
 pub struct ApiServerConfig {
     pub addr: SocketAddr,
     pub store: Store,
-    pub controller: Controller,
+    pub controller: Arc<Controller>,
     pub admin_token: String,
     pub jwt_secret: String,
     pub default_token_duration: u32,
@@ -65,8 +64,6 @@ pub async fn start_api_server(config: ApiServerConfig) -> Result<()> {
         auth_interceptor.validate_request(req)
     });
 
-    test_controller(config.controller.clone()).await?;
-
     info!("api server listening on {:?}", config.addr);
 
     Server::builder()
@@ -74,91 +71,6 @@ pub async fn start_api_server(config: ApiServerConfig) -> Result<()> {
         .add_service(image_server)
         .serve(config.addr)
         .await?;
-
-    Ok(())
-}
-
-async fn test_controller(controller: Controller) -> Result<()> {
-    println!("Controller initialized successfully");
-
-    // Deploy an instance (this now returns immediately and queues the work)
-    println!("Deploying instance: test-instance");
-
-    // This will:
-    // 1. Queue the deployment request
-    // 2. Return immediately
-    // 3. Background reconciliation loop will handle actual deployment
-    controller
-        .deploy("test-instance".to_string(), "alpine:latest".to_string())
-        .await?;
-
-    println!("Deployment queued successfully!");
-
-    // Wait a bit for deployment to progress
-    time::sleep(Duration::from_secs(5)).await;
-
-    // Check deployment status
-    let instances = controller.list_instances().await;
-    println!("Current instances:");
-    for instance in instances {
-        println!(
-            "  {}: {:?} on {} ({})",
-            instance.name, instance.status, instance.ip_addr, instance.tap_name
-        );
-    }
-
-    // Try deploying the same instance again (should trigger redeployment with new generation)
-    // println!("\nDeploying the same instance again (should trigger redeployment)...");
-    // controller
-    //     .deploy("test-instance".to_string(), "caddy:latest".to_string())
-    //     .await?;
-
-    // println!("Redeployment queued!");
-
-    // // Wait for redeployment to progress
-    // time::sleep(Duration::from_secs(3)).await;
-
-    // // List instances again
-    // let instances = controller.list_instances().await;
-    // println!("\nInstances after redeployment:");
-    // for instance in instances {
-    //     println!(
-    //         "  {}: {:?} on {} ({})",
-    //         instance.name, instance.status, instance.ip_addr, instance.tap_name
-    //     );
-    // }
-
-    // // Deploy a second instance
-    // println!("\nDeploying second instance...");
-    // controller
-    //     .deploy("test-instance-2".to_string(), "caddy:latest".to_string())
-    //     .await?;
-
-    // // Wait and check
-    // time::sleep(Duration::from_secs(2)).await;
-    // let instances = controller.list_instances().await;
-    // println!("\nAll instances:");
-    // for instance in instances {
-    //     println!(
-    //         "  {}: {:?} on {} ({})",
-    //         instance.name, instance.status, instance.ip_addr, instance.tap_name
-    //     );
-    // }
-
-    // // Destroy the first instance
-    // println!("\nDestroying first instance...");
-    // controller.destroy_instance("test-instance").await?;
-
-    // // Wait for destruction
-    // time::sleep(Duration::from_secs(2)).await;
-    // let instances = controller.list_instances().await;
-    // println!("\nRemaining instances:");
-    // for instance in instances {
-    //     println!(
-    //         "  {}: {:?} on {} ({})",
-    //         instance.name, instance.status, instance.ip_addr, instance.tap_name
-    //     );
-    // }
 
     Ok(())
 }

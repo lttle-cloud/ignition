@@ -1,34 +1,34 @@
+use std::sync::Arc;
+
 use api::{start_api_server, ApiServerConfig};
+use controller::image::credentials::DockerCredentialsProvider;
+use controller::image::{ImagePool, ImagePoolConfig};
+use controller::net::ip::{IpPool, IpPoolConfig};
+use controller::net::tap::{TapPool, TapPoolConfig};
+use controller::volume::VolumePoolConfig;
 use controller::{Controller, ControllerConfig};
+use futures::executor::block_on;
 use sds::{Store, StoreConfig};
 use tracing_subscriber::FmtSubscriber;
+use util::tracing::{self, info};
 use util::{
-    async_runtime,
+    async_runtime::{self, task::spawn_blocking},
     result::{Context, Result},
 };
 
 async fn ignition() -> Result<()> {
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(tracing::Level::DEBUG)
         .finish();
     tracing::subscriber::set_global_default(subscriber)
         .context("Failed to set global default subscriber")?;
 
     let store = Store::new(StoreConfig {
-        dir_path: "./data/ignition_store".into(),
+        dir_path: "./data/store".into(),
         size_mib: 128,
     })?;
 
-    let controller = Controller::new(
-        store.clone(),
-        ControllerConfig {
-            progress_frequency_hz: Some(1),
-            vm_ip_cidr: "10.0.0.0/16".to_string(),
-            svc_ip_cidr: "10.1.0.0/16".to_string(),
-            bridge_name: "ltbr0".to_string(),
-        },
-    )
-    .await?;
+    let controller = create_and_start_controller(store.clone()).await?;
 
     let api_config = ApiServerConfig {
         addr: "0.0.0.0:5100".parse()?,
@@ -43,6 +43,60 @@ async fn ignition() -> Result<()> {
     start_api_server(api_config).await?;
 
     Ok(())
+}
+
+async fn create_and_start_controller(store: Store) -> Result<Arc<Controller>> {
+    let image_volume_pool = controller::volume::VolumePool::new(
+        store.clone(),
+        VolumePoolConfig {
+            name: "image".to_string(),
+            root_dir: "./data/volumes/images".to_string(),
+        },
+    )?;
+
+    let image_pool = Arc::new(ImagePool::new(
+        store.clone(),
+        ImagePoolConfig {
+            volume_pool: image_volume_pool,
+            credentials_provider: Arc::new(DockerCredentialsProvider {}),
+        },
+    )?);
+
+    let tap_pool = TapPool::new(TapPoolConfig {
+        bridge_name: "ltbr0".to_string(),
+    })
+    .await?;
+
+    let ip_pool = IpPool::new(
+        IpPoolConfig {
+            name: "vm".to_string(),
+            cidr: "10.0.0.0/16".to_string(),
+        },
+        store.clone(),
+    )?;
+
+    // Create controller
+    let controller = Controller::new(
+        ControllerConfig {
+            reconcile_interval_secs: 2, // slow for demo and testing
+        },
+        store.clone(),
+        image_pool,
+        tap_pool.clone(),
+        ip_pool,
+    )?;
+
+    // Start reconciliation in background
+    let reconcile_controller = controller.clone();
+    spawn_blocking(move || {
+        block_on(async {
+            let _ = reconcile_controller.run_reconciliation().await;
+        });
+    });
+
+    info!("Controller reconciliation started");
+
+    Ok(controller)
 }
 
 fn main() -> Result<()> {

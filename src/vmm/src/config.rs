@@ -148,6 +148,7 @@ pub struct Config {
     pub kernel: KernelConfig,
     pub net: Option<NetConfig>,
     pub block: Vec<BlockConfig>,
+    pub log_file_path: Option<String>,
 }
 
 pub struct Set;
@@ -159,7 +160,7 @@ pub struct ConfigBuilder<V, M, K> {
     kernel: Option<KernelConfig>,
     net: Option<NetConfig>,
     block: Vec<BlockConfig>,
-
+    log_file_path: Option<String>,
     _marker: std::marker::PhantomData<(V, M, K)>,
 }
 
@@ -171,6 +172,7 @@ impl<M, V, K> ConfigBuilder<M, V, K> {
             kernel: self.kernel,
             net: self.net,
             block: self.block,
+            log_file_path: self.log_file_path,
             _marker: std::marker::PhantomData,
         }
     }
@@ -182,6 +184,7 @@ impl<M, V, K> ConfigBuilder<M, V, K> {
             kernel: self.kernel,
             net: self.net,
             block: self.block,
+            log_file_path: self.log_file_path,
             _marker: std::marker::PhantomData,
         }
     }
@@ -193,6 +196,7 @@ impl<M, V, K> ConfigBuilder<M, V, K> {
             kernel: Some(kernel),
             net: self.net,
             block: self.block,
+            log_file_path: self.log_file_path,
             _marker: std::marker::PhantomData,
         }
     }
@@ -204,6 +208,7 @@ impl<M, V, K> ConfigBuilder<M, V, K> {
             kernel: self.kernel,
             net: Some(net),
             block: self.block,
+            log_file_path: self.log_file_path,
             _marker: std::marker::PhantomData,
         }
     }
@@ -217,8 +222,14 @@ impl<M, V, K> ConfigBuilder<M, V, K> {
             kernel: self.kernel,
             net: self.net,
             block: self.block,
+            log_file_path: self.log_file_path,
             _marker: std::marker::PhantomData,
         }
+    }
+
+    pub fn with_log_file_path(mut self, value: impl AsRef<str>) -> Self {
+        self.log_file_path = Some(value.as_ref().to_string());
+        self
     }
 }
 
@@ -230,6 +241,7 @@ impl From<ConfigBuilder<Set, Set, Set>> for Config {
             kernel: builder.kernel.unwrap(),
             net: builder.net,
             block: builder.block,
+            log_file_path: builder.log_file_path,
         }
     }
 }
@@ -242,6 +254,7 @@ impl Config {
             kernel: None,
             net: None,
             block: Vec::new(),
+            log_file_path: None,
             _marker: std::marker::PhantomData,
         }
     }

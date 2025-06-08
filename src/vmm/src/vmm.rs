@@ -24,7 +24,7 @@ use linux_loader::{
 };
 use std::{
     fs::OpenOptions,
-    io::{stdout, Seek, SeekFrom},
+    io::{stdout, BufWriter, Seek, SeekFrom},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -65,6 +65,7 @@ pub enum VmmStateControllerMessage {
     Stopping,
     Stopped(VmmState),
     NetworkReady,
+    Error(String),
 }
 
 #[derive(Clone)]
@@ -93,10 +94,7 @@ impl VmmStateController {
 }
 
 impl Vmm {
-    pub fn new(config: Config) -> Result<Self> {
-        let kvm = Kvm::new()?;
-        Vmm::check_kvm_caps(&kvm)?;
-
+    pub fn create_memory_from_config(config: &Config) -> Result<Arc<Memory>> {
         let memory = if let Some(path) = config.memory.path.as_ref() {
             let file = OpenOptions::new().read(true).write(true).open(path)?;
             Memory::new_backed_by_file(config.memory.clone(), file)?
@@ -104,6 +102,13 @@ impl Vmm {
             Memory::new(config.memory.clone())?
         };
         let memory = Arc::new(memory);
+
+        Ok(memory)
+    }
+
+    pub fn new(config: Config, memory: Arc<Memory>) -> Result<Self> {
+        let kvm = Kvm::new()?;
+        Vmm::check_kvm_caps(&kvm)?;
 
         let device_manager = SharedDeviceManager::new(SERIAL_IRQ)?;
         let state_controller = VmmStateController::new();
@@ -344,10 +349,6 @@ impl Vmm {
     fn add_serial_console(&mut self) -> Result<()> {
         let irq_fd = EventFdTrigger::new(libc::EFD_NONBLOCK)?;
 
-        let serial = Serial::new(irq_fd.try_clone()?, stdout());
-        let serial = SerialWrapper(serial);
-        let serial = Arc::new(Mutex::new(serial));
-
         self.vm.register_irqfd(&irq_fd, SERIAL_IRQ)?;
 
         if self.state.is_none() {
@@ -356,7 +357,29 @@ impl Vmm {
 
         let range = PioRange::new(PioAddress(0x3f8), 8)?;
         let mut io_manager = self.device_manager.io_manager.lock().unwrap();
-        io_manager.register_pio(range, serial.clone())?;
+
+        if let Some(log_file_path) = &self.config.log_file_path {
+            let log_file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_file_path)?;
+
+            let log_file = BufWriter::new(log_file);
+
+            let serial = Serial::new(irq_fd.try_clone()?, log_file);
+            let serial = SerialWrapper(serial);
+            let serial = Arc::new(Mutex::new(serial));
+
+            io_manager.register_pio(range, serial.clone())?;
+        } else {
+            let writer = BufWriter::new(stdout());
+
+            let serial = Serial::new(irq_fd.try_clone()?, writer);
+            let serial = SerialWrapper(serial);
+            let serial = Arc::new(Mutex::new(serial));
+
+            io_manager.register_pio(range, serial.clone())?;
+        };
 
         Ok(())
     }

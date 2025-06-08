@@ -3,7 +3,7 @@ use std::sync::Arc;
 use nix::libc;
 use rtnetlink::{Handle, new_connection, packet_route::link::LinkAttribute};
 use util::{
-    async_runtime::{spawn, sync::mpsc::unbounded_channel, task::JoinHandle},
+    async_runtime::{spawn, task::JoinHandle},
     futures_util::TryStreamExt,
     rand::{self, Rng},
     result::{Result, bail},
@@ -19,6 +19,7 @@ pub struct TapPoolConfig {
 #[derive(Clone)]
 pub struct TapPool {
     bridge_name: String,
+    #[allow(dead_code)]
     nl_connection_task: Arc<JoinHandle<()>>,
     nl_handle: Handle,
 }

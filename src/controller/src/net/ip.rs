@@ -60,6 +60,24 @@ impl IpPoolRange {
             (ip & 0xff) as u8,
         )
     }
+
+    pub fn gateway(&self) -> Ipv4Addr {
+        Ipv4Addr::new(
+            ((self.net >> 24) & 0xff) as u8,
+            ((self.net >> 16) & 0xff) as u8,
+            ((self.net >> 8) & 0xff) as u8,
+            ((self.net & 0xff) + 1) as u8,
+        )
+    }
+
+    pub fn netmask(&self) -> Ipv4Addr {
+        Ipv4Addr::new(
+            ((self.mask >> 24) & 0xff) as u8,
+            ((self.mask >> 16) & 0xff) as u8,
+            ((self.mask >> 8) & 0xff) as u8,
+            (self.mask & 0xff) as u8,
+        )
+    }
 }
 
 #[codec]
@@ -93,6 +111,14 @@ impl IpPool {
         };
 
         Ok(pool)
+    }
+
+    pub fn gateway(&self) -> Ipv4Addr {
+        self.range.gateway()
+    }
+
+    pub fn netmask(&self) -> Ipv4Addr {
+        self.range.netmask()
     }
 
     fn get_reserved_ips(&self) -> Result<Vec<ReservedIp>> {

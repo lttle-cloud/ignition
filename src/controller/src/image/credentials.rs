@@ -1,6 +1,9 @@
 use docker_credential::{CredentialRetrievalError, DockerCredential};
 use oci_client::{Reference, secrets::RegistryAuth};
-use util::result::Result;
+use util::{
+    result::Result,
+    tracing::{debug, warn},
+};
 
 pub trait OciCredentialsProvider {
     fn get_credentials_for_reference(&self, reference: &Reference) -> Result<RegistryAuth>;
@@ -27,15 +30,15 @@ impl OciCredentialsProvider for DockerCredentialsProvider {
             Err(CredentialRetrievalError::ConfigNotFound) => RegistryAuth::Anonymous,
             Err(CredentialRetrievalError::NoCredentialConfigured) => RegistryAuth::Anonymous,
             Err(e) => {
-                println!("Error handling docker configuration file: {}", e);
+                warn!("Error handling docker configuration file: {}", e);
                 RegistryAuth::Anonymous
             }
             Ok(DockerCredential::UsernamePassword(username, password)) => {
-                println!("Found docker credentials");
+                debug!("Found docker credentials");
                 RegistryAuth::Basic(username, password)
             }
             Ok(DockerCredential::IdentityToken(_)) => {
-                println!(
+                warn!(
                     "Cannot use contents of docker config, identity token not supported. Using anonymous auth"
                 );
                 RegistryAuth::Anonymous

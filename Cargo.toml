@@ -16,10 +16,9 @@ members = [
     "src/api",
     "src/cli",
     "src/client",
-    "src/tools/convert-image",
 ]
 
-default-members = [".", "src/cli", "src/tools/convert-image"]
+default-members = [".", "src/cli"]
 
 [[bin]]
 name = "ignition_demo"

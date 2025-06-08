@@ -11,6 +11,7 @@ use util::{
     },
     encoding::codec,
     result::{Result, bail},
+    tracing::{debug, warn},
     uuid,
 };
 
@@ -129,14 +130,107 @@ impl Volume {
         Ok(())
     }
 
-    pub async fn format_as_ext4_volume_from_dir(&self, dir: impl AsRef<Path>) -> Result<()> {
-        let dir_path = dir.as_ref();
+    pub async fn create_copy_for_instance(&self, instance_id: &str) -> Result<Volume> {
+        debug!("Creating sparse overlay for instance: {}", instance_id);
+
+        // Create a new volume with the same size
+        let copy_volume = Volume {
+            id: format!("{}-{}", self.id, instance_id),
+            name: Some(format!(
+                "{}-instance-{}",
+                self.name.as_ref().unwrap_or(&"unnamed".to_string()),
+                instance_id
+            )),
+            size_mib: self.size_mib,
+            path: format!("{}-sparse-{}", self.path, instance_id),
+            read_only: false, // Instance volumes should be writable
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        };
+
+        debug!(
+            "Creating sparse overlay from {} to {}",
+            self.path, copy_volume.path
+        );
+
+        // Create a sparse file that starts as the same size but takes no space
+        // We'll use a simple approach: create the file and then use a script to
+        // make it behave like an overlay
+
+        // First, create a sparse file of the same size
+        let sparse_result = Command::new("truncate")
+            .arg("-s")
+            .arg(format!("{}M", self.size_mib))
+            .arg(&copy_volume.path)
+            .output()
+            .await;
+
+        match sparse_result {
+            Ok(output) if output.status.success() => {
+                debug!(
+                    "Sparse overlay created: {} ({}MB)",
+                    copy_volume.path, self.size_mib
+                );
+
+                // Copy the base image content to the sparse file
+                // This is more efficient than cp for large sparse files
+                let dd_result = Command::new("dd")
+                    .arg(format!("if={}", self.path))
+                    .arg(format!("of={}", copy_volume.path))
+                    .arg("bs=1M")
+                    .arg("conv=sparse")
+                    .output()
+                    .await;
+
+                match dd_result {
+                    Ok(dd_output) if dd_output.status.success() => {
+                        debug!("Sparse copy completed successfully");
+                    }
+                    _ => {
+                        warn!("dd sparse copy failed, falling back to regular copy");
+                        // Fallback to regular copy
+                        let fallback_result = Command::new("cp")
+                            .arg(&self.path)
+                            .arg(&copy_volume.path)
+                            .output()
+                            .await?;
+
+                        if !fallback_result.status.success() {
+                            let stderr = String::from_utf8_lossy(&fallback_result.stderr);
+                            bail!("Failed to copy volume: {}", stderr);
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Fallback to regular copy if truncate fails
+                warn!("Sparse file creation failed, falling back to regular copy");
+                let fallback_result = Command::new("cp")
+                    .arg(&self.path)
+                    .arg(&copy_volume.path)
+                    .output()
+                    .await?;
+
+                if !fallback_result.status.success() {
+                    let stderr = String::from_utf8_lossy(&fallback_result.stderr);
+                    bail!("Failed to copy volume: {}", stderr);
+                }
+                debug!("Volume copy created successfully: {}", copy_volume.path);
+            }
+        }
+
+        Ok(copy_volume)
+    }
+
+    pub async fn format_as_ext4_volume_from_dir(&self, source_dir: &Path) -> Result<()> {
         let image_path = Path::new(&self.path);
 
         let output = Command::new("mkfs.ext4")
             .arg("-F")
             .arg("-d")
-            .arg(dir_path)
+            .arg(source_dir)
             .arg(image_path)
             .output()
             .await?;
