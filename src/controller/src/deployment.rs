@@ -53,6 +53,7 @@ pub struct Instance {
     pub status: InstanceStatus,
     pub tap_name: String,
     pub ip_addr: String,
+    pub log_file_path: String,
     pub created_at: u128,
     pub image_id: Option<String>,
     pub rootfs_volume_id: Option<String>,
@@ -247,6 +248,7 @@ impl Deployment {
         image_pool: Arc<ImagePool>,
         tap_pool: TapPool,
         ip_pool: IpPool,
+        logs_dir_path: String,
     ) -> Result<()> {
         debug!(
             "Progressing deployment '{}' from {:?}",
@@ -328,11 +330,13 @@ impl Deployment {
                         "deployment_{}_{}",
                         self.config.name, instance_id
                     ))?;
+                    let log_file_path = format!("{}/{}", logs_dir_path, instance_id);
 
                     let instance = Instance {
                         id: instance_id.clone(),
                         status: InstanceStatus::New,
                         tap_name,
+                        log_file_path,
                         ip_addr: ip_addr.addr.to_string(),
                         created_at: std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
@@ -459,7 +463,7 @@ impl Deployment {
             let instance_volume = base_volume.create_copy_for_instance(&instance_id).await?;
 
             // Update the instance to track its volume and get its data
-            let (tap_name, ip_addr) = {
+            let (tap_name, ip_addr, log_file_path) = {
                 if let Some(instance) = self.instances.get_mut(&instance_id) {
                     instance.image_id =
                         Some(format!("{}@{}", base_image.reference, base_image.digest));
@@ -472,7 +476,11 @@ impl Deployment {
                         instance.rootfs_volume_id.as_ref().unwrap()
                     );
 
-                    (instance.tap_name.clone(), instance.ip_addr.clone())
+                    (
+                        instance.tap_name.clone(),
+                        instance.ip_addr.clone(),
+                        instance.log_file_path.clone(),
+                    )
                 } else {
                     continue; // Instance was removed, skip
                 }
@@ -487,7 +495,7 @@ impl Deployment {
                 gateway: self.gateway.clone(),
                 netmask: self.netmask.clone(),
                 envs: self.config.envs.clone(),
-                log_file_path: format!("/tmp/{}_{}.log", self.config.name, instance_id),
+                log_file_path,
             };
 
             debug!(

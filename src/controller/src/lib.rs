@@ -56,14 +56,7 @@ impl From<&Deployment> for StoredDeployment {
 #[derive(Clone)]
 pub struct ControllerConfig {
     pub reconcile_interval_secs: u64,
-}
-
-impl Default for ControllerConfig {
-    fn default() -> Self {
-        Self {
-            reconcile_interval_secs: 5,
-        }
-    }
+    pub log_dir_path: String,
 }
 
 pub struct Controller {
@@ -403,6 +396,7 @@ impl Controller {
                     self.image_pool.clone(),
                     self.tap_pool.clone(),
                     self.ip_pool.clone(),
+                    self.config.log_dir_path.clone(),
                 )
                 .await?;
         } else {

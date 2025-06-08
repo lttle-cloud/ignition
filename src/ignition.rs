@@ -79,6 +79,7 @@ async fn create_and_start_controller(store: Store) -> Result<Arc<Controller>> {
     let controller = Controller::new(
         ControllerConfig {
             reconcile_interval_secs: 2, // slow for demo and testing
+            log_dir_path: "./data/logs".to_string(),
         },
         store.clone(),
         image_pool,
