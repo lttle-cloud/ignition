@@ -124,6 +124,13 @@ impl TryFrom<&MachineConfig> for Config {
                 .join(":")
         );
 
+        let listen_trigger_count = match config.spark_snapshot_policy {
+            Some(SparkSnapshotPolicy::Manual | SparkSnapshotPolicy::OnUserspaceReady) | None => {
+                u32::MAX
+            }
+            Some(SparkSnapshotPolicy::OnNthListenSyscall(n)) => n,
+        };
+
         let config = Config::new()
             .memory(MemoryConfig::new(config.memory_size_mib))
             .vcpu(VcpuConfig::new(config.vcpu_count))
@@ -144,7 +151,7 @@ impl TryFrom<&MachineConfig> for Config {
                     config.gateway.clone(),
                     mac_addr,
                 )
-                .with_listen_trigger_count(300),
+                .with_listen_trigger_count(listen_trigger_count),
             )
             .with_block(BlockConfig::new(config.rootfs_path.clone()).writeable())
             .with_log_file_path(config.log_file_path.clone())

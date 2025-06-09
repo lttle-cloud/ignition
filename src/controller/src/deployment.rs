@@ -1,8 +1,9 @@
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, path::Path, sync::Arc};
 
 use oci_client::Reference;
 use util::{
     async_runtime::{
+        fs::create_dir_all,
         sync::Mutex,
         task::{self, JoinHandle},
     },
@@ -26,6 +27,7 @@ pub enum DeploymentStatus {
     CreatingInstances,
     WaitingForInstances,
     Ready,
+    ReadyToResume, // Spark: instances suspended, ready for fast resume
     Suspended,
     Stopping,
     Stopped,
@@ -41,6 +43,7 @@ pub enum InstanceStatus {
     Starting,
     Running,
     Ready,
+    Suspended, // Synced when machine goes to MachineStatus::Suspended
     Stopping,
     Stopped,
     Error(String),
@@ -139,6 +142,19 @@ impl DeploymentConfig {
 
         format!("{:x}", hasher.finish())
     }
+
+    pub fn validate(&self) -> Result<()> {
+        // Spark deployments can have at most one instance
+        if let DeploymentMode::Spark { .. } = self.mode {
+            if self.replicas != 1 {
+                bail!(
+                    "Spark deployments must have exactly 1 replica, got {}",
+                    self.replicas
+                );
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Deployment {
@@ -205,7 +221,7 @@ impl Deployment {
 
             // Handle different deployment states
             match self.status {
-                DeploymentStatus::Ready => {
+                DeploymentStatus::Ready | DeploymentStatus::ReadyToResume => {
                     info!("Triggering instance replacement due to config change");
                     self.status = DeploymentStatus::Replacing;
                 }
@@ -220,7 +236,10 @@ impl Deployment {
                     for instance_id in instance_ids {
                         if let Some(instance) = self.instances.get(&instance_id) {
                             // Only cleanup instances that are not ready yet
-                            if !matches!(instance.status, InstanceStatus::Ready) {
+                            if !matches!(
+                                instance.status,
+                                InstanceStatus::Ready | InstanceStatus::Suspended
+                            ) {
                                 debug!("Cleaning up partial instance: {}", instance_id);
                                 // Remove from instances map - cleanup will happen in next progress cycle
                                 self.instances.remove(&instance_id);
@@ -276,7 +295,8 @@ impl Deployment {
                         "Cleaning up {} partial instances from previous attempt",
                         self.instances.len()
                     );
-                    self.cleanup_partial_instances(image_pool.clone()).await?;
+                    self.cleanup_partial_instances(image_pool.clone(), &tap_pool)
+                        .await?;
                 }
 
                 self.status = DeploymentStatus::PullingImage;
@@ -341,7 +361,7 @@ impl Deployment {
                         "deployment_{}_{}",
                         self.config.name, instance_id
                     ))?;
-                    let log_file_path = format!("{}/{}", logs_dir_path, instance_id);
+                    let log_file_path = format!("{}/{}.log", logs_dir_path, instance_id);
 
                     let instance = Instance {
                         id: instance_id.clone(),
@@ -375,7 +395,7 @@ impl Deployment {
 
                     for instance_id in instances_to_remove {
                         debug!("Removing excess instance: {}", instance_id);
-                        self.cleanup_instance(&instance_id, image_pool.clone())
+                        self.cleanup_instance(&instance_id, image_pool.clone(), &tap_pool)
                             .await?;
                     }
                 }
@@ -394,11 +414,18 @@ impl Deployment {
                 self.check_instance_health().await?;
             }
 
+            DeploymentStatus::ReadyToResume => {
+                // Spark deployment is suspended and ready for connections
+                // No active reconciliation needed
+                debug!("Spark deployment is ready to resume");
+            }
+
             DeploymentStatus::Replacing => {
                 debug!("Replacing all instances due to configuration change");
 
                 // Clean up all current instances (stops machines and deletes volumes)
-                self.cleanup_all_instances(image_pool.clone()).await?;
+                self.cleanup_all_instances(image_pool.clone(), &tap_pool)
+                    .await?;
 
                 // Clear any remaining tasks
                 self.tasks.instance_tasks.clear();
@@ -417,7 +444,8 @@ impl Deployment {
 
                 // Cancel all tasks and clean up all instances
                 self.tasks.cancel_all();
-                self.cleanup_all_instances(image_pool.clone()).await?;
+                self.cleanup_all_instances(image_pool.clone(), &tap_pool)
+                    .await?;
 
                 self.status = DeploymentStatus::Stopped;
                 debug!("Deployment stopped");
@@ -442,15 +470,6 @@ impl Deployment {
             bail!("Image not found after pull");
         };
 
-        // Get the base volume to use as template
-        let Some(base_volume) = image_pool.get_volume(&base_image.volume_id).await? else {
-            error!("Volume not found for image");
-            self.status = DeploymentStatus::Stopped;
-            bail!("Volume not found for image");
-        };
-
-        debug!("Using base rootfs path as template: {}", base_volume.path);
-
         let instance_ids_to_process: Vec<String> = self
             .instances
             .iter()
@@ -471,7 +490,10 @@ impl Deployment {
 
             // Create a unique volume for this instance by copying the base volume
             debug!("Creating unique volume for instance {}", instance_id);
-            let instance_volume = base_volume.create_copy_for_instance(&instance_id).await?;
+            let instance_volume = image_pool
+                .get_volume_pool()
+                .create_copy_of_volume(&base_image.volume_id, &instance_id)
+                .await?;
 
             // Update the instance to track its volume and get its data
             let (tap_name, ip_addr, log_file_path) = {
@@ -497,12 +519,10 @@ impl Deployment {
                 }
             };
 
-            let spark_snapshot_policy = match &self.config.mode {
-                DeploymentMode::Spark {
-                    snapshot_policy, ..
-                } => Some(snapshot_policy.clone()),
-                _ => None,
-            };
+            let log_dir_path = Path::new(&log_file_path).parent().unwrap();
+            if !log_dir_path.exists() {
+                create_dir_all(log_dir_path).await?;
+            }
 
             let machine_config = MachineConfig {
                 memory_size_mib: self.config.memory_mib,
@@ -514,7 +534,12 @@ impl Deployment {
                 netmask: self.netmask.clone(),
                 envs: self.config.envs.clone(),
                 log_file_path,
-                spark_snapshot_policy,
+                spark_snapshot_policy: match &self.config.mode {
+                    DeploymentMode::Spark {
+                        snapshot_policy, ..
+                    } => Some(snapshot_policy.clone()),
+                    _ => None,
+                },
             };
 
             debug!(
@@ -583,8 +608,20 @@ impl Deployment {
                 match result {
                     Ok(Ok(())) => {
                         if let Some(instance) = self.instances.get_mut(&instance_id) {
-                            instance.status = InstanceStatus::Ready;
-                            debug!("Instance {} is ready!", instance_id);
+                            // Only set to Ready if the instance hasn't already progressed past Ready
+                            // (e.g., for Spark instances that auto-suspend)
+                            if matches!(
+                                instance.status,
+                                InstanceStatus::Starting | InstanceStatus::Running
+                            ) {
+                                instance.status = InstanceStatus::Ready;
+                                debug!("Instance {} is ready!", instance_id);
+                            } else {
+                                debug!(
+                                    "Instance {} task finished, but status is already {:?}",
+                                    instance_id, instance.status
+                                );
+                            }
                         }
                     }
                     Ok(Err(e)) => {
@@ -605,7 +642,11 @@ impl Deployment {
 
         // Count ready instances
         for instance in self.instances.values() {
-            if instance.status == InstanceStatus::Ready {
+            // For Spark deployments, both Ready and Suspended count as "ready"
+            // since auto-suspension is expected behavior
+            if instance.status == InstanceStatus::Ready
+                || (self.is_spark() && instance.status == InstanceStatus::Suspended)
+            {
                 ready_count += 1;
             }
         }
@@ -615,10 +656,16 @@ impl Deployment {
             ready_count, self.config.replicas
         );
 
-        // Check if all instances are ready
+        // Check if all instances are ready (or suspended for Spark)
         if ready_count == self.config.replicas {
-            info!("All instances are ready! Deployment is now READY!");
-            self.status = DeploymentStatus::Ready;
+            if self.is_spark() {
+                // Let update_spark_status() handle the proper transition
+                debug!("All Spark instances ready/suspended, checking Spark status");
+                self.status = DeploymentStatus::Ready;
+            } else {
+                info!("All instances are ready! Deployment is now READY!");
+                self.status = DeploymentStatus::Ready;
+            }
         } else if self.tasks.instance_tasks.is_empty() {
             // All tasks finished but not all are ready - check for errors
             let error_count = self
@@ -658,14 +705,14 @@ impl Deployment {
     pub fn is_finished(&self) -> bool {
         matches!(
             self.status,
-            DeploymentStatus::Ready | DeploymentStatus::Stopped
+            DeploymentStatus::Ready | DeploymentStatus::ReadyToResume | DeploymentStatus::Stopped
         )
     }
 
     pub fn get_ready_instance_count(&self) -> usize {
         self.instances
             .values()
-            .filter(|i| i.status == InstanceStatus::Ready)
+            .filter(|i| matches!(i.status, InstanceStatus::Ready | InstanceStatus::Suspended))
             .count()
     }
 
@@ -673,10 +720,133 @@ impl Deployment {
         self.instances.len()
     }
 
+    pub fn is_spark(&self) -> bool {
+        matches!(self.config.mode, DeploymentMode::Spark { .. })
+    }
+
+    pub fn get_machine(&self, instance_id: &str) -> Option<&Machine> {
+        self.machines.get(instance_id)
+    }
+
+    pub async fn sync_instance_status(
+        &mut self,
+        instance_id: &str,
+        machine_status: crate::machine::MachineStatus,
+    ) {
+        if let Some(instance) = self.instances.get_mut(instance_id) {
+            let new_status = match machine_status {
+                crate::machine::MachineStatus::New => InstanceStatus::New,
+                crate::machine::MachineStatus::Running => InstanceStatus::Running,
+                crate::machine::MachineStatus::Ready => InstanceStatus::Ready,
+                crate::machine::MachineStatus::Suspended => InstanceStatus::Suspended,
+                crate::machine::MachineStatus::Stopping => InstanceStatus::Stopping,
+                crate::machine::MachineStatus::Stopped => InstanceStatus::Stopped,
+                crate::machine::MachineStatus::Error(e) => InstanceStatus::Error(e),
+            };
+
+            if instance.status != new_status {
+                debug!(
+                    "Instance {} status: {:?} -> {:?}",
+                    instance_id, instance.status, new_status
+                );
+                instance.status = new_status;
+            }
+        }
+    }
+
+    pub async fn update_spark_status(&mut self) {
+        if !self.is_spark() {
+            return;
+        }
+
+        let all_suspended = self
+            .instances
+            .values()
+            .all(|i| i.status == InstanceStatus::Suspended);
+        let all_ready = self
+            .instances
+            .values()
+            .all(|i| i.status == InstanceStatus::Ready);
+
+        match self.status {
+            DeploymentStatus::Ready => {
+                if all_suspended {
+                    debug!("All instances suspended, deployment now ReadyToResume");
+                    self.status = DeploymentStatus::ReadyToResume;
+                }
+            }
+            DeploymentStatus::ReadyToResume => {
+                if all_ready {
+                    debug!("All instances ready, deployment now Ready");
+                    self.status = DeploymentStatus::Ready;
+                }
+            }
+            DeploymentStatus::WaitingForInstances => {
+                if all_ready {
+                    debug!("All instances ready for initial snapshot");
+                    self.status = DeploymentStatus::Ready;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub async fn get_spark_instance_ip(&self) -> Option<String> {
+        if !self.is_spark() {
+            return None;
+        }
+
+        // Spark deployments have exactly one instance
+        self.instances.values().next().map(|i| i.ip_addr.clone())
+    }
+
+    pub async fn resume_spark_instance(&mut self) -> Result<()> {
+        if !self.is_spark() {
+            bail!("Cannot resume non-Spark deployment");
+        }
+
+        let instance_id = self.instances.keys().next().cloned();
+        let Some(instance_id) = instance_id else {
+            bail!("No instances in Spark deployment");
+        };
+
+        if let Some(machine) = self.machines.get(&instance_id) {
+            debug!("Resuming Spark instance: {}", instance_id);
+            machine.start().await?;
+        } else {
+            bail!("Machine not found for instance: {}", instance_id);
+        }
+
+        Ok(())
+    }
+
+    pub async fn suspend_spark_instance(&mut self) -> Result<()> {
+        if !self.is_spark() {
+            bail!("Cannot suspend non-Spark deployment");
+        }
+
+        let instance_id = self.instances.keys().next().cloned();
+        let Some(instance_id) = instance_id else {
+            bail!("No instances in Spark deployment");
+        };
+
+        if let Some(machine) = self.machines.get(&instance_id) {
+            debug!("Suspending Spark instance: {}", instance_id);
+            machine
+                .stop(crate::machine::MachineStopReason::Suspend)
+                .await?;
+        } else {
+            bail!("Machine not found for instance: {}", instance_id);
+        }
+
+        Ok(())
+    }
+
     async fn cleanup_instance(
         &mut self,
         instance_id: &str,
         image_pool: Arc<ImagePool>,
+        tap_pool: &crate::net::tap::TapPool,
     ) -> Result<()> {
         debug!("Cleaning up instance: {}", instance_id);
 
@@ -688,7 +858,7 @@ impl Deployment {
                 .await;
         }
 
-        // Remove and clean up the instance volume
+        // Remove and clean up the instance
         if let Some(instance) = self.instances.remove(instance_id) {
             if let Some(image_id) = &instance.image_id {
                 debug!("Instance {} was using image: {}", instance_id, image_id);
@@ -700,13 +870,16 @@ impl Deployment {
                     instance_id, volume_id
                 );
 
-                // Get volume by id and delete it
-                if let Some(volume) = image_pool.get_volume(volume_id).await? {
-                    volume.delete().await?;
-                    debug!("Volume deleted successfully: {}", volume_id);
-                } else {
-                    warn!("Volume not found: {}", volume_id);
-                }
+                image_pool
+                    .get_volume_pool()
+                    .delete_volume(volume_id)
+                    .await?;
+            }
+
+            // Clean up TAP device
+            debug!("Deleting TAP device for instance: {}", instance.tap_name);
+            if let Err(e) = tap_pool.delete_tap(&instance.tap_name).await {
+                warn!("Failed to delete TAP device {}: {}", instance.tap_name, e);
             }
         }
 
@@ -718,7 +891,11 @@ impl Deployment {
         Ok(())
     }
 
-    async fn cleanup_partial_instances(&mut self, image_pool: Arc<ImagePool>) -> Result<()> {
+    async fn cleanup_partial_instances(
+        &mut self,
+        image_pool: Arc<ImagePool>,
+        tap_pool: &crate::net::tap::TapPool,
+    ) -> Result<()> {
         debug!("Cleaning up partial instances during cancellation");
 
         // Get instances that are not ready (partial instances)
@@ -740,20 +917,43 @@ impl Deployment {
         );
 
         for instance_id in partial_instance_ids {
-            self.cleanup_instance(&instance_id, image_pool.clone())
+            self.cleanup_instance(&instance_id, image_pool.clone(), tap_pool)
                 .await?;
         }
 
         Ok(())
     }
 
-    pub async fn cleanup_all_instances(&mut self, image_pool: Arc<ImagePool>) -> Result<()> {
+    pub async fn cleanup_all_instances(
+        &mut self,
+        image_pool: Arc<ImagePool>,
+        tap_pool: &crate::net::tap::TapPool,
+    ) -> Result<()> {
         debug!("Cleaning up all instances for deployment");
         let instance_ids: Vec<_> = self.instances.keys().cloned().collect();
 
         for instance_id in instance_ids {
-            self.cleanup_instance(&instance_id, image_pool.clone())
+            self.cleanup_instance(&instance_id, image_pool.clone(), tap_pool)
                 .await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn sync_machine_status_changes(&mut self) -> Result<()> {
+        // Collect status updates first to avoid borrowing conflicts
+        let mut status_updates = Vec::new();
+
+        for (instance_id, machine) in &self.machines {
+            if let Ok(machine_status) = machine.status().await {
+                status_updates.push((instance_id.clone(), machine_status));
+            }
+        }
+
+        // Now apply the status updates
+        for (instance_id, machine_status) in status_updates {
+            self.sync_instance_status(&instance_id, machine_status)
+                .await;
         }
 
         Ok(())

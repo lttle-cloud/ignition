@@ -142,8 +142,8 @@ impl ImagePool {
         Ok(image)
     }
 
-    pub async fn get_volume(&self, volume_id: &str) -> Result<Option<crate::volume::Volume>> {
-        self.volume_pool.get(volume_id).await
+    pub fn get_volume_pool(&self) -> &VolumePool {
+        &self.volume_pool
     }
 
     pub async fn create_oci_client(&self, reference: &Reference) -> Result<(Client, RegistryAuth)> {

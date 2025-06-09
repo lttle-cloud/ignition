@@ -4,7 +4,14 @@ pub mod machine;
 pub mod net;
 pub mod volume;
 
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
+    time::Duration,
+};
 
 use dashmap::DashMap;
 use deployment::{Deployment, DeploymentConfig, DeploymentRef};
@@ -12,9 +19,13 @@ use image::ImagePool;
 use net::{ip::IpPool, tap::TapPool};
 use sds::{Collection, Store};
 use util::{
-    async_runtime::time::sleep,
+    async_runtime::{
+        sync::Mutex,
+        task::{self, JoinHandle},
+        time::sleep,
+    },
     encoding::codec,
-    result::Result,
+    result::{Result, bail},
     tracing::{debug, error, info, warn},
 };
 
@@ -59,6 +70,72 @@ pub struct ControllerConfig {
     pub log_dir_path: String,
 }
 
+struct SparkConnectionState {
+    active_count: AtomicU32,
+    timeout_task: Mutex<Option<JoinHandle<()>>>,
+    deployment_name: String,
+    cached_ip: Mutex<Option<String>>,
+}
+
+impl SparkConnectionState {
+    fn new(deployment_name: String) -> Self {
+        Self {
+            active_count: AtomicU32::new(0),
+            timeout_task: Mutex::new(None),
+            deployment_name,
+            cached_ip: Mutex::new(None),
+        }
+    }
+
+    async fn cancel_timeout(&self) {
+        if let Some(task) = self.timeout_task.lock().await.take() {
+            task.abort();
+            debug!("Cancelled timeout for deployment: {}", self.deployment_name);
+        }
+    }
+
+    async fn get_timeout_ms(&self, controller: &Controller) -> u64 {
+        // Get timeout from deployment config
+        if let Ok(Some(stored)) = controller.get_deployment(&self.deployment_name).await {
+            if let deployment::DeploymentMode::Spark { timeout_ms, .. } = stored.config.mode {
+                return timeout_ms;
+            }
+        }
+        // Default timeout
+        10000 // 10 seconds
+    }
+
+    async fn start_timeout(&self, controller: Arc<Controller>) {
+        let deployment_name = self.deployment_name.clone();
+        let timeout_ms = self.get_timeout_ms(&controller).await;
+
+        debug!(
+            "Starting timeout for deployment '{}': {}ms",
+            deployment_name, timeout_ms
+        );
+
+        let task = task::spawn(async move {
+            sleep(Duration::from_millis(timeout_ms)).await;
+            debug!(
+                "Timeout reached for deployment '{}', suspending instance",
+                deployment_name
+            );
+
+            if let Some(deployment_ref) = controller.active_deployments.get(&deployment_name) {
+                let mut deployment = deployment_ref.lock().await;
+                if let Err(e) = deployment.suspend_spark_instance().await {
+                    error!(
+                        "Failed to suspend Spark instance for '{}': {}",
+                        deployment_name, e
+                    );
+                }
+            }
+        });
+
+        *self.timeout_task.lock().await = Some(task);
+    }
+}
+
 pub struct Controller {
     config: ControllerConfig,
     store: Store,
@@ -68,6 +145,8 @@ pub struct Controller {
     deployments_collection: Collection<StoredDeployment>,
     // Active deployments being reconciled
     active_deployments: DashMap<String, DeploymentRef>,
+    // Spark connection management
+    spark_connections: DashMap<String, Arc<SparkConnectionState>>,
 }
 
 impl Controller {
@@ -88,10 +167,14 @@ impl Controller {
             ip_pool,
             deployments_collection,
             active_deployments: DashMap::new(),
+            spark_connections: DashMap::new(),
         }))
     }
 
     pub async fn deploy(&self, config: DeploymentConfig) -> Result<StoredDeployment> {
+        // Validate the deployment config
+        config.validate()?;
+
         info!("Processing deployment: {}", config.name);
         debug!("Image: {}", config.image);
         debug!(
@@ -240,10 +323,16 @@ impl Controller {
 
             // Force cleanup all instances (this will delete volumes)
             deployment
-                .cleanup_all_instances(self.image_pool.clone())
+                .cleanup_all_instances(self.image_pool.clone(), &self.tap_pool)
                 .await?;
 
             debug!("Active deployment cleaned up");
+        }
+
+        // Clean up Spark connection state and cancel any pending timeouts
+        if let Some((_key, spark_state)) = self.spark_connections.remove(id) {
+            spark_state.cancel_timeout().await;
+            debug!("Spark connection state cleaned up for deployment: {}", id);
         }
 
         // Remove from persistent storage
@@ -386,6 +475,14 @@ impl Controller {
             deployment.config.name, deployment.status
         );
 
+        // First, sync machine status changes with deployment instance status
+        deployment.sync_machine_status_changes().await?;
+
+        // Update Spark-specific status transitions based on instance states
+        if deployment.is_spark() {
+            deployment.update_spark_status().await;
+        }
+
         if !deployment.is_finished() {
             debug!(
                 "Progressing deployment {} (not finished)",
@@ -407,5 +504,199 @@ impl Controller {
         }
 
         Ok(())
+    }
+
+    /// Open a connection to a Spark deployment, ensuring the instance is running
+    pub async fn open_connection(self: &Arc<Self>, deployment_name: String) -> Result<String> {
+        let start_time = std::time::Instant::now();
+
+        // Get or create connection state
+        let spark_state = self
+            .spark_connections
+            .entry(deployment_name.clone())
+            .or_insert_with(|| Arc::new(SparkConnectionState::new(deployment_name.clone())));
+
+        // Cancel any pending timeout
+        spark_state.cancel_timeout().await;
+
+        // Increment connection counter
+        let count = spark_state.active_count.fetch_add(1, Ordering::SeqCst);
+        debug!(
+            "Opening connection to '{}', active count: {} -> {}",
+            deployment_name,
+            count,
+            count + 1
+        );
+
+        // If first connection, ensure instance is running
+        if count == 0 {
+            self.ensure_spark_instance_running(&deployment_name).await?;
+        }
+
+        // Get IP address (from cache or fresh)
+        let ip = self
+            .get_spark_instance_ip(&deployment_name, &spark_state)
+            .await?;
+
+        let duration = start_time.elapsed();
+        info!(
+            "🚀 Connection opened to '{}' in {:.2}ms (IP: {})",
+            deployment_name,
+            duration.as_secs_f64() * 1000.0,
+            ip
+        );
+
+        Ok(ip)
+    }
+
+    /// Close a connection to a Spark deployment, starting timeout if it was the last connection
+    pub async fn close_connection(self: &Arc<Self>, deployment_name: String) -> Result<()> {
+        if let Some(spark_state) = self.spark_connections.get(&deployment_name) {
+            let count = spark_state.active_count.fetch_sub(1, Ordering::SeqCst);
+            debug!(
+                "Closing connection to '{}', active count: {} -> {}",
+                deployment_name,
+                count,
+                count - 1
+            );
+
+            if count == 1 {
+                // Was 1, now 0
+                debug!(
+                    "Last connection closed for '{}', starting timeout",
+                    deployment_name
+                );
+                spark_state.start_timeout(self.clone()).await;
+            }
+        } else {
+            warn!(
+                "Attempted to close connection to unknown deployment: {}",
+                deployment_name
+            );
+        }
+        Ok(())
+    }
+
+    async fn ensure_spark_instance_running(&self, deployment_name: &str) -> Result<()> {
+        debug!(
+            "Ensuring Spark instance is running for deployment: {}",
+            deployment_name
+        );
+
+        let Some(deployment_ref) = self.active_deployments.get(deployment_name) else {
+            bail!("Deployment not found: {}", deployment_name);
+        };
+
+        let mut deployment = deployment_ref.lock().await;
+
+        // Verify this is a Spark deployment
+        if !deployment.is_spark() {
+            bail!("Deployment '{}' is not in Spark mode", deployment_name);
+        }
+
+        // Check the actual instance status, not just deployment status
+        let needs_resume = match deployment.status {
+            deployment::DeploymentStatus::ReadyToResume => {
+                debug!("Deployment is in ReadyToResume state");
+                true
+            }
+            deployment::DeploymentStatus::Ready => {
+                // Even if deployment is Ready, check if instance is actually suspended
+                let instance_suspended = deployment
+                    .instances
+                    .values()
+                    .any(|i| matches!(i.status, crate::deployment::InstanceStatus::Suspended));
+
+                if instance_suspended {
+                    debug!("Deployment is Ready but instance is suspended, needs resume");
+                    true
+                } else {
+                    debug!("Spark instance already running for '{}'", deployment_name);
+                    false
+                }
+            }
+            _ => {
+                bail!(
+                    "Deployment '{}' is not ready for connections (status: {:?})",
+                    deployment_name,
+                    deployment.status
+                );
+            }
+        };
+
+        if needs_resume {
+            debug!(
+                "Resuming suspended Spark instance for '{}'",
+                deployment_name
+            );
+            deployment.resume_spark_instance().await?;
+
+            // Wait for the machine to actually be ready
+            let instance_id = deployment.instances.keys().next().cloned();
+            if let Some(instance_id) = instance_id {
+                if let Some(machine) = deployment.get_machine(&instance_id) {
+                    let mut rx = machine.status_rx().await;
+
+                    loop {
+                        match rx.recv().await {
+                            Ok(status) => {
+                                debug!("Machine status during resume: {:?}", status);
+                                if matches!(status, crate::machine::MachineStatus::Ready) {
+                                    debug!("Machine is ready after resume");
+                                    break;
+                                }
+                                if matches!(status, crate::machine::MachineStatus::Error(_)) {
+                                    bail!("Machine failed during resume: {:?}", status);
+                                }
+                            }
+                            Err(_) => {
+                                // ignore
+                            }
+                        }
+                    }
+
+                    // Now sync the status changes
+                    deployment.sync_machine_status_changes().await?;
+                    if deployment.is_spark() {
+                        deployment.update_spark_status().await;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn get_spark_instance_ip(
+        &self,
+        deployment_name: &str,
+        spark_state: &SparkConnectionState,
+    ) -> Result<String> {
+        // Check cache first
+        {
+            let cached_ip = spark_state.cached_ip.lock().await;
+            if let Some(ip) = &*cached_ip {
+                return Ok(ip.clone());
+            }
+        }
+
+        // Get IP from deployment
+        let Some(deployment_ref) = self.active_deployments.get(deployment_name) else {
+            bail!("Deployment not found: {}", deployment_name);
+        };
+
+        let deployment = deployment_ref.lock().await;
+        let Some(ip) = deployment.get_spark_instance_ip().await else {
+            bail!("No IP found for Spark deployment: {}", deployment_name);
+        };
+
+        // Cache the IP
+        {
+            let mut cached_ip = spark_state.cached_ip.lock().await;
+            *cached_ip = Some(ip.clone());
+        }
+
+        debug!("Got IP for '{}': {}", deployment_name, ip);
+        Ok(ip)
     }
 }
