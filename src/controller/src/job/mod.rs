@@ -7,6 +7,7 @@ use util::{
     result::{Result, bail},
 };
 
+#[allow(async_fn_in_trait)]
 pub trait Job: Send + Sync + Sized {
     type Output: Send + Sync + Sized;
 
