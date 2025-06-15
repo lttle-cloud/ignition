@@ -24,8 +24,8 @@ use kvm_ioctls::{Kvm, VcpuExit, VcpuFd, VmFd};
 use libc::{c_int, siginfo_t, SIGRTMIN};
 use std::cell::RefCell;
 use std::sync::{Arc, Barrier, Condvar, Mutex};
-use tracing::{info, warn};
 use util::result::{bail, Result};
+use util::tracing::{info, warn};
 use vm_device::{
     bus::{MmioAddress, PioAddress},
     device_manager::{MmioManager, PioManager},

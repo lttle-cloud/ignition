@@ -3,7 +3,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tracing::{error, info};
 use tracing_subscriber::FmtSubscriber;
 use util::{
     async_runtime::{
@@ -13,6 +12,7 @@ use util::{
         task, time,
     },
     result::{bail, Context, Result},
+    tracing::{self, error, info},
 };
 
 use vmm::{
@@ -42,7 +42,8 @@ impl VmController {
     pub fn new(config: Config) -> Result<Self> {
         let (state, memory) = {
             let start_time = std::time::Instant::now();
-            let mut vm = Vmm::new(config.clone()).context("Failed to create Vmm")?;
+            let memory = Vmm::create_memory_from_config(&config)?;
+            let mut vm = Vmm::new(config.clone(), memory)?;
             let elapsed_us = start_time.elapsed().as_micros();
             info!("Initial VM creation took {}µs", elapsed_us);
 
@@ -325,7 +326,6 @@ impl VmController {
                     error!("VM failed to start properly. Current status: {:?}", status);
                     bail!("VM failed to start properly");
                 }
-                _ => {}
             };
 
             // Use a timeout to avoid infinite wait
@@ -411,6 +411,7 @@ async fn ignition() -> Result<()> {
             "06:00:AC:10:00:02",
         ))
         .with_block(BlockConfig::new(rootfs_path).writeable())
+        .with_snapshot_policy(vmm::config::SnapshotPolicy::OnNthListenSyscall(1))
         .into();
 
     info!("Initializing VM Controller.");

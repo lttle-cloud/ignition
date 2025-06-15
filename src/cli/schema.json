@@ -5,18 +5,30 @@
     {
       "type": "object",
       "required": [
-        "deployment"
+        "machine"
       ],
       "properties": {
-        "deployment": {
-          "$ref": "#/definitions/Deployment"
+        "machine": {
+          "$ref": "#/definitions/Machine"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "service"
+      ],
+      "properties": {
+        "service": {
+          "$ref": "#/definitions/Service"
         }
       },
       "additionalProperties": false
     }
   ],
   "definitions": {
-    "Deployment": {
+    "Machine": {
       "type": "object",
       "required": [
         "image",
@@ -31,7 +43,7 @@
             "null"
           ],
           "items": {
-            "$ref": "#/definitions/DeploymentEnvironmentVariable"
+            "$ref": "#/definitions/MachineEnvironmentVariable"
           }
         },
         "image": {
@@ -42,37 +54,18 @@
           "format": "uint64",
           "minimum": 0.0
         },
-        "mode": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/DeploymentMode"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "name": {
           "type": "string"
         },
-        "scaling": {
+        "snapshot-policy": {
           "anyOf": [
             {
-              "$ref": "#/definitions/DeploymentScaling"
+              "$ref": "#/definitions/MachineSnapshotPolicy"
             },
             {
               "type": "null"
             }
           ]
-        },
-        "services": {
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "$ref": "#/definitions/DeploymentService"
-          }
         },
         "vcpus": {
           "type": "integer",
@@ -81,7 +74,7 @@
         }
       }
     },
-    "DeploymentEnvironmentVariable": {
+    "MachineEnvironmentVariable": {
       "type": "object",
       "required": [
         "name",
@@ -96,157 +89,75 @@
         }
       }
     },
-    "DeploymentExternalSErviceTlsTerminationMode": {
-      "type": "string",
-      "enum": [
-        "passthrough",
-        "reencrypt"
-      ]
-    },
-    "DeploymentExternalServiceIngress": {
-      "type": "object",
-      "required": [
-        "host"
-      ],
-      "properties": {
-        "cert": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/IngressCertificate"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "host": {
-          "type": "string"
-        }
-      }
-    },
-    "DeploymentExternalServiceProtocol": {
-      "type": "string",
-      "enum": [
-        "http",
-        "tcp/tls"
-      ]
-    },
-    "DeploymentInternalServiceProtocol": {
-      "type": "string",
-      "enum": [
-        "http",
-        "tcp"
-      ]
-    },
-    "DeploymentMode": {
+    "MachineSnapshotPolicy": {
       "oneOf": [
         {
           "type": "string",
           "enum": [
-            "always-on"
+            "on-userspace-ready",
+            "manual"
           ]
         },
         {
           "type": "object",
           "required": [
-            "on-demand"
+            "on-nth-listen-syscall"
           ],
           "properties": {
-            "on-demand": {
-              "type": "object",
-              "required": [
-                "snapshot"
-              ],
-              "properties": {
-                "allow_idle_connection": {
-                  "type": [
-                    "boolean",
-                    "null"
-                  ]
-                },
-                "snapshot": {
-                  "$ref": "#/definitions/OnDemandSnapshot"
-                }
-              }
-            }
-          },
-          "additionalProperties": false
-        }
-      ]
-    },
-    "DeploymentScaling": {
-      "anyOf": [
-        {
-          "type": "object",
-          "required": [
-            "replicas"
-          ],
-          "properties": {
-            "replicas": {
+            "on-nth-listen-syscall": {
               "type": "integer",
               "format": "uint32",
               "minimum": 0.0
             }
-          }
+          },
+          "additionalProperties": false
         },
         {
           "type": "object",
           "required": [
-            "max",
-            "min"
+            "on-listen-on-port"
           ],
           "properties": {
-            "max": {
+            "on-listen-on-port": {
               "type": "integer",
-              "format": "uint32",
+              "format": "uint16",
               "minimum": 0.0
-            },
-            "min": {
-              "type": "integer",
-              "format": "uint32",
-              "minimum": 0.0
-            }
-          }
-        }
-      ]
-    },
-    "DeploymentService": {
-      "oneOf": [
-        {
-          "type": "object",
-          "required": [
-            "internal"
-          ],
-          "properties": {
-            "internal": {
-              "type": "object",
-              "required": [
-                "name",
-                "port"
-              ],
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "port": {
-                  "type": "integer",
-                  "format": "uint16",
-                  "minimum": 0.0
-                },
-                "protocol": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/DeploymentInternalServiceProtocol"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              }
             }
           },
           "additionalProperties": false
+        }
+      ]
+    },
+    "Service": {
+      "type": "object",
+      "required": [
+        "mode",
+        "name",
+        "protocol",
+        "target"
+      ],
+      "properties": {
+        "mode": {
+          "$ref": "#/definitions/ServiceMode"
+        },
+        "name": {
+          "type": "string"
+        },
+        "protocol": {
+          "$ref": "#/definitions/ServiceProtocol"
+        },
+        "target": {
+          "$ref": "#/definitions/ServiceTarget"
+        }
+      }
+    },
+    "ServiceMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "internal"
+          ]
         },
         {
           "type": "object",
@@ -257,47 +168,11 @@
             "external": {
               "type": "object",
               "required": [
-                "name",
-                "port"
+                "host"
               ],
               "properties": {
-                "ingress": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/DeploymentExternalServiceIngress"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "name": {
+                "host": {
                   "type": "string"
-                },
-                "port": {
-                  "type": "integer",
-                  "format": "uint16",
-                  "minimum": 0.0
-                },
-                "protocol": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/DeploymentExternalServiceProtocol"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "tls_termination": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/DeploymentExternalSErviceTlsTerminationMode"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
                 }
               }
             }
@@ -306,48 +181,76 @@
         }
       ]
     },
-    "IngressCertificate": {
-      "anyOf": [
+    "ServiceProtocol": {
+      "oneOf": [
         {
-          "type": "null"
+          "type": "string",
+          "enum": [
+            "http"
+          ]
         },
         {
           "type": "object",
           "required": [
-            "name"
+            "tcp"
           ],
           "properties": {
-            "name": {
-              "type": "string"
+            "tcp": {
+              "type": "object",
+              "required": [
+                "port"
+              ],
+              "properties": {
+                "port": {
+                  "type": "integer",
+                  "format": "uint16",
+                  "minimum": 0.0
+                }
+              }
             }
-          }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "tls"
+          ],
+          "properties": {
+            "tls": {
+              "type": "object",
+              "required": [
+                "port"
+              ],
+              "properties": {
+                "port": {
+                  "type": "integer",
+                  "format": "uint16",
+                  "minimum": 0.0
+                }
+              }
+            }
+          },
+          "additionalProperties": false
         }
       ]
     },
-    "OnDemandSnapshot": {
+    "ServiceTarget": {
       "type": "object",
       "required": [
-        "strategy"
+        "name",
+        "port"
       ],
       "properties": {
-        "stateful": {
-          "type": [
-            "boolean",
-            "null"
-          ]
+        "name": {
+          "type": "string"
         },
-        "strategy": {
-          "$ref": "#/definitions/SnapshotStrategy"
+        "port": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0.0
         }
       }
-    },
-    "SnapshotStrategy": {
-      "type": "string",
-      "enum": [
-        "none",
-        "boot",
-        "net"
-      ]
     }
   }
 }

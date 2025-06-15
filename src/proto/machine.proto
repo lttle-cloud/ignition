@@ -1,0 +1,106 @@
+syntax = "proto3";
+package ignition.machine;
+
+import "util.proto";
+
+message MachineEnvironmentVariable {
+  string name = 1;
+  string value = 2;
+}
+
+
+message OnNthListenSyscall {
+  uint32 n = 1;
+}
+
+message OnListenOnPort {
+  uint32 port = 1;
+}
+
+message OnUserspaceReady {}
+
+message Manual {}
+
+message MachineSnapshotPolicy {
+  oneof policy {
+    OnNthListenSyscall on_nth_listen_syscall = 1;
+    OnListenOnPort on_listen_on_port = 2;
+    OnUserspaceReady on_userspace_ready = 3;
+    Manual manual = 4;
+  }
+}
+
+message Machine {
+  string name = 1;
+  string image = 2;
+  uint64 memory = 3;
+  uint32 vcpus = 4;
+  repeated MachineEnvironmentVariable environment = 5;
+  MachineSnapshotPolicy snapshot_policy = 6;
+}
+
+enum MachineStatus {
+  NEW = 0;
+  RUNNING = 1;
+  READY = 2;
+  STOPPING = 3;
+  SUSPENDED = 4;
+  STOPPED = 5;
+  ERROR = 6;
+}
+
+message MachineInfo {
+  string id = 1;
+  string name = 2;
+  MachineStatus status = 3;
+  string image_reference = 4;
+  MachineSnapshotPolicy snapshot_policy = 5;
+  optional string ip_addr = 6;
+}
+
+message DeployMachineRequest {
+  Machine machine = 1;
+}
+
+message DeployMachineResponse {
+  MachineInfo machine = 1;
+}
+
+message DeleteMachineRequest {
+  string id = 1;
+}
+
+message DeleteMachineResponse {}
+
+message GetMachineRequest {
+  string id = 1;
+}
+
+message GetMachineResponse {
+  MachineInfo machine = 1;
+}
+
+message ListMachinesResponse {
+  repeated MachineInfo machines = 1;
+}
+
+message StartMachineRequest {
+  string id = 1;
+}
+
+message StartMachineResponse {}
+
+message StopMachineRequest {
+  string id = 1;
+}
+
+message StopMachineResponse {}
+
+message GetLogsRequest {
+  string id = 1;
+}
+
+message GetLogsResponse {
+  string logs = 1;
+}
+

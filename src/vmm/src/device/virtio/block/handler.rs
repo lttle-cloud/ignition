@@ -1,8 +1,8 @@
 use std::{fs::File, ops::Deref, sync::Arc};
 
 use event_manager::{EventOps, EventSet, Events, MutEventSubscriber};
-use tracing::warn;
 use util::result::{anyhow, Result};
+use util::tracing::warn;
 use virtio_blk::{request::Request, stdio_executor::StdIoBackend};
 use virtio_queue::{Queue, QueueOwnedT, QueueState, QueueT};
 use vmm_sys_util::eventfd::EventFd;

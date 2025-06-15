@@ -3,8 +3,8 @@ package ignition;
 
 import "util.proto";
 import "admin.proto";
-import "image.proto";
-import "deployment.proto";
+import "machine.proto";
+import "service.proto";
 
 service Admin {
   rpc ListUsers(ignition.util.Empty) returns (ignition.admin.ListUsersResponse);
@@ -13,20 +13,19 @@ service Admin {
   rpc CreateUserToken(ignition.admin.CreateUserTokenRequest) returns (ignition.admin.CreateUserTokenResponse);
 }
 
-service Image {
-  rpc CreatePullSecret(ignition.image.CreatePullSecretRequest) returns (ignition.image.CreatePullSecretResponse);
-  rpc DeletePullSecret(ignition.image.DeletePullSecretRequest) returns (ignition.util.Empty);
-  rpc ListPullSecrets(ignition.util.Empty) returns (ignition.image.ListPullSecretsResponse);
-
-  rpc Upload(stream ignition.image.ImageUploadRequest) returns (ignition.image.ImageUploadResponse);
-  rpc Import(ignition.image.ImportImageRequest) returns (ignition.image.ImportImageResponse);
-
-  rpc ListImages(ignition.util.Empty) returns (ignition.image.ListImagesResponse);
+service Machine {
+  rpc Deploy(ignition.machine.DeployMachineRequest) returns (ignition.machine.DeployMachineResponse);
+  rpc Delete(ignition.machine.DeleteMachineRequest) returns (ignition.machine.DeleteMachineResponse);
+  rpc Get(ignition.machine.GetMachineRequest) returns (ignition.machine.GetMachineResponse);
+  rpc List(ignition.util.Empty) returns (ignition.machine.ListMachinesResponse);
+  rpc Start(ignition.machine.StartMachineRequest) returns (ignition.machine.StartMachineResponse);
+  rpc Stop(ignition.machine.StopMachineRequest) returns (ignition.machine.StopMachineResponse);
+  rpc GetLogs(ignition.machine.GetLogsRequest) returns (ignition.machine.GetLogsResponse);
 }
 
-/* service Deployment {
-  rpc Apply(ignition.deployment.ApplyConfigRequest) returns (ignition.deployment.ApplyConfigResponse);
-  rpc GetDeployment(ignition.deployment.GetDeploymentRequest) returns (ignition.deployment.GetDeploymentResponse);
-  rpc DeleteDeployment(ignition.deployment.DeleteDeploymentRequest) returns (ignition.deployment.DeleteDeploymentResponse);
-  rpc ListDeployments(ignition.deployment.ListDeploymentsRequest) returns (ignition.deployment.ListDeploymentsResponse);
-} */
+service Service {
+  rpc Deploy(ignition.service.DeployServiceRequest) returns (ignition.service.DeployServiceResponse);
+  rpc Delete(ignition.service.DeleteServiceRequest) returns (ignition.service.DeleteServiceResponse);
+  rpc Get(ignition.service.GetServiceRequest) returns (ignition.service.GetServiceResponse);
+  rpc List(ignition.util.Empty) returns (ignition.service.ListServicesResponse);
+}

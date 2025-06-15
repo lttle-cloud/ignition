@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 
 BIN_PATH="$1"; shift
-
-if [[ "$BIN_PATH" == */deps/* ]]; then
-  # this preserves LD_LIBRARY_PATH, PATH, CARGO_HOME, etc.
-  exec sudo -E -- "$BIN_PATH" "$@"
-else
-  exec "$BIN_PATH" "$@"
-fi
+echo "Setting capabilities for $BIN_PATH"
+sudo setcap 'cap_net_admin+ep cap_dac_override+ep cap_net_bind_service+ep' "$BIN_PATH"
+exec "$BIN_PATH" "$@"

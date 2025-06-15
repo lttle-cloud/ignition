@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use linux_loader::loader::Cmdline;
-use util::result::Result;
+use util::{encoding::codec, result::Result};
 
 use crate::constants::CMDLINE_CAPACITY;
 
@@ -80,7 +80,6 @@ pub struct NetConfig {
     pub netmask: String,
     pub gateway: String,
     pub mac_addr: String,
-    pub listen_trigger_count: u32,
 }
 
 impl NetConfig {
@@ -97,13 +96,7 @@ impl NetConfig {
             netmask: netmask.as_ref().to_string(),
             gateway: gateway.as_ref().to_string(),
             mac_addr: mac_addr.as_ref().to_string(),
-            listen_trigger_count: 1,
         }
-    }
-
-    pub fn with_listen_trigger_count(mut self, value: u32) -> Self {
-        self.listen_trigger_count = value;
-        self
     }
 }
 
@@ -148,10 +141,21 @@ pub struct Config {
     pub kernel: KernelConfig,
     pub net: Option<NetConfig>,
     pub block: Vec<BlockConfig>,
+    pub log_file_path: Option<String>,
+    pub snapshot_policy: Option<SnapshotPolicy>,
 }
 
 pub struct Set;
 pub struct NotSet;
+
+#[codec]
+#[derive(Clone, Debug)]
+pub enum SnapshotPolicy {
+    OnNthListenSyscall(u32),
+    OnListenOnPort(u16),
+    OnUserspaceReady,
+    Manual,
+}
 
 pub struct ConfigBuilder<V, M, K> {
     memory: Option<MemoryConfig>,
@@ -159,7 +163,8 @@ pub struct ConfigBuilder<V, M, K> {
     kernel: Option<KernelConfig>,
     net: Option<NetConfig>,
     block: Vec<BlockConfig>,
-
+    log_file_path: Option<String>,
+    snapshot_policy: Option<SnapshotPolicy>,
     _marker: std::marker::PhantomData<(V, M, K)>,
 }
 
@@ -171,6 +176,8 @@ impl<M, V, K> ConfigBuilder<M, V, K> {
             kernel: self.kernel,
             net: self.net,
             block: self.block,
+            log_file_path: self.log_file_path,
+            snapshot_policy: self.snapshot_policy,
             _marker: std::marker::PhantomData,
         }
     }
@@ -182,6 +189,8 @@ impl<M, V, K> ConfigBuilder<M, V, K> {
             kernel: self.kernel,
             net: self.net,
             block: self.block,
+            log_file_path: self.log_file_path,
+            snapshot_policy: self.snapshot_policy,
             _marker: std::marker::PhantomData,
         }
     }
@@ -193,6 +202,8 @@ impl<M, V, K> ConfigBuilder<M, V, K> {
             kernel: Some(kernel),
             net: self.net,
             block: self.block,
+            log_file_path: self.log_file_path,
+            snapshot_policy: self.snapshot_policy,
             _marker: std::marker::PhantomData,
         }
     }
@@ -204,6 +215,8 @@ impl<M, V, K> ConfigBuilder<M, V, K> {
             kernel: self.kernel,
             net: Some(net),
             block: self.block,
+            log_file_path: self.log_file_path,
+            snapshot_policy: self.snapshot_policy,
             _marker: std::marker::PhantomData,
         }
     }
@@ -217,8 +230,20 @@ impl<M, V, K> ConfigBuilder<M, V, K> {
             kernel: self.kernel,
             net: self.net,
             block: self.block,
+            log_file_path: self.log_file_path,
+            snapshot_policy: self.snapshot_policy,
             _marker: std::marker::PhantomData,
         }
+    }
+
+    pub fn with_log_file_path(mut self, value: impl AsRef<str>) -> Self {
+        self.log_file_path = Some(value.as_ref().to_string());
+        self
+    }
+
+    pub fn with_snapshot_policy(mut self, policy: SnapshotPolicy) -> Self {
+        self.snapshot_policy = Some(policy);
+        self
     }
 }
 
@@ -230,6 +255,8 @@ impl From<ConfigBuilder<Set, Set, Set>> for Config {
             kernel: builder.kernel.unwrap(),
             net: builder.net,
             block: builder.block,
+            log_file_path: builder.log_file_path,
+            snapshot_policy: builder.snapshot_policy,
         }
     }
 }
@@ -242,6 +269,8 @@ impl Config {
             kernel: None,
             net: None,
             block: Vec::new(),
+            log_file_path: None,
+            snapshot_policy: None,
             _marker: std::marker::PhantomData,
         }
     }

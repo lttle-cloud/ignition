@@ -1,4 +1,4 @@
-use ignition_proto::{admin_client::AdminClient, image_client::ImageClient};
+use ignition_proto::admin_client::AdminClient;
 use tonic::{
     service::interceptor::InterceptedService,
     transport::{Channel, Endpoint},
@@ -14,11 +14,11 @@ pub mod ignition_proto {
     pub mod admin {
         tonic::include_proto!("ignition.admin");
     }
-    pub mod image {
-        tonic::include_proto!("ignition.image");
+    pub mod service {
+        tonic::include_proto!("ignition.service");
     }
-    pub mod deployment {
-        tonic::include_proto!("ignition.deployment");
+    pub mod machine {
+        tonic::include_proto!("ignition.machine");
     }
 }
 
@@ -43,19 +43,19 @@ impl Client {
         })
     }
 
-    pub fn image(
-        &self,
-    ) -> ImageClient<InterceptedService<Channel, impl Fn(Request<()>) -> Result<Request<()>, Status>>>
-    {
-        let token = self.token.clone();
-        let interceptor = move |mut req: Request<()>| {
-            req.metadata_mut()
-                .insert("authorization", token.parse().unwrap());
-            Ok(req)
-        };
+    // pub fn image(
+    //     &self,
+    // ) -> ImageClient<InterceptedService<Channel, impl Fn(Request<()>) -> Result<Request<()>, Status>>>
+    // {
+    //     let token = self.token.clone();
+    //     let interceptor = move |mut req: Request<()>| {
+    //         req.metadata_mut()
+    //             .insert("authorization", token.parse().unwrap());
+    //         Ok(req)
+    //     };
 
-        ImageClient::with_interceptor(self.transport.clone(), interceptor)
-    }
+    //     ImageClient::with_interceptor(self.transport.clone(), interceptor)
+    // }
 }
 
 pub struct PrivilegedClient {

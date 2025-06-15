@@ -20,8 +20,8 @@ use std::{
     thread::spawn,
     time::Duration,
 };
-use tracing::{error, info};
 use util::result::{bail, Error};
+use util::tracing::{self, error, info};
 use util::{
     async_runtime::{self, fs, time::sleep},
     result::Result,

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use nix::libc;
 use rtnetlink::{Handle, new_connection, packet_route::link::LinkAttribute};
 use util::{
@@ -8,17 +10,17 @@ use util::{
 };
 
 const SIOCBRADDIF: libc::Ioctl = 0x89a2;
-
-const DEV_NET_TUN: *const libc::c_char = b"/dev/net/tun\0".as_ptr() as *const libc::c_char;
 const TAP_PREFIX: &str = "tap_lt_";
 
 pub struct TapPoolConfig {
     pub bridge_name: String,
 }
 
+#[derive(Clone)]
 pub struct TapPool {
     bridge_name: String,
-    nl_connection_task: JoinHandle<()>,
+    #[allow(dead_code)]
+    nl_connection_task: Arc<JoinHandle<()>>,
     nl_handle: Handle,
 }
 
@@ -33,7 +35,7 @@ fn str_to_const_ifname(name: &str) -> [libc::c_char; libc::IFNAMSIZ] {
 impl TapPool {
     pub async fn new(config: TapPoolConfig) -> Result<Self> {
         let (connection, handle, _) = new_connection()?;
-        let nl_connection_task = spawn(connection);
+        let nl_connection_task = Arc::new(spawn(connection));
 
         Ok(Self {
             bridge_name: config.bridge_name,
@@ -134,7 +136,12 @@ impl TapPool {
             },
         };
 
-        let fd = unsafe { libc::open(DEV_NET_TUN, libc::O_RDWR | libc::O_CLOEXEC) };
+        let fd = unsafe {
+            libc::open(
+                b"/dev/net/tun\0".as_ptr() as *const libc::c_char,
+                libc::O_RDWR | libc::O_CLOEXEC,
+            )
+        };
         if fd == -1 {
             bail!(
                 "failed to open /dev/net/tun: {}",
@@ -228,6 +235,18 @@ impl TapPool {
             .del(link.header.index)
             .execute()
             .await?;
+
+        Ok(())
+    }
+
+    pub async fn garbage_collect(&self, used_tap_names: Vec<String>) -> Result<()> {
+        let existing_tap_names = self.list_taps().await?;
+
+        for tap_name in existing_tap_names {
+            if !used_tap_names.contains(&tap_name) {
+                self.delete_tap(&tap_name).await?;
+            }
+        }
 
         Ok(())
     }

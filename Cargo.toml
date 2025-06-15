@@ -16,10 +16,9 @@ members = [
     "src/api",
     "src/cli",
     "src/client",
-    "src/tools/convert-image",
 ]
 
-default-members = [".", "src/cli", "src/tools/convert-image"]
+default-members = [".", "src/cli"]
 
 [[bin]]
 name = "ignition_demo"
@@ -33,9 +32,9 @@ path = "src/ignition.rs"
 axum = { version = "0.8.1", features = ["macros"] }
 futures = "0.3.31"
 reqwest = { version = "0.12.12", default-features = false }
-tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 util = { path = "src/util" }
 api = { path = "src/api" }
 vmm = { path = "src/vmm" }
 sds = { path = "src/sds" }
+controller = { path = "src/controller" }

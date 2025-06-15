@@ -1,5 +1,5 @@
 use std::convert::TryInto;
-use tracing::warn;
+use util::tracing::warn;
 use vm_device::bus::{PioAddress, PioAddressOffset};
 use vm_device::MutDevicePio;
 use vm_superio::I8042Device;
