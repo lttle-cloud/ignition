@@ -21,7 +21,7 @@ use util::{
     tracing::{debug, error, info},
 };
 
-use crate::volume::{VolumeConfig, VolumePool};
+use crate::volume::{Volume, VolumeConfig, VolumePool};
 
 fn dir_size_in_bytes_recursive(dir_path: impl AsRef<Path>) -> Result<u64> {
     let dir_path = dir_path.as_ref();
@@ -77,6 +77,7 @@ const SUPPORTED_LAYER_MEDIA_TYPES: &[&str] = &[
 
 #[codec]
 pub struct Image {
+    pub id: String,
     pub reference: String,
     pub digest: String,
     pub size_mib: u64,
@@ -87,14 +88,6 @@ pub struct Image {
 pub struct ImagePoolConfig {
     pub volume_pool: VolumePool,
     pub credentials_provider: Arc<dyn OciCredentialsProvider + Send + Sync>,
-}
-
-#[codec]
-#[derive(Clone, Debug)]
-pub enum PullPolicy {
-    Always,
-    IfNotPresent,
-    IfChanged,
 }
 
 #[derive(Clone)]
@@ -122,15 +115,17 @@ impl ImagePool {
         reference: &Reference,
         digest: &str,
     ) -> Result<Option<Image>> {
+        let image_id = format!("{}@{}", reference.to_string(), digest);
+        self.get_by_id(&image_id).await
+    }
+
+    pub async fn get_by_id(&self, id: &str) -> Result<Option<Image>> {
         let txn = self.store.read_txn()?;
-        let image = txn.get(
-            &self.images_collection,
-            &format!("{}:{}", reference.to_string(), digest),
-        );
+        let image = txn.get(&self.images_collection, id);
         Ok(image)
     }
 
-    pub async fn get_by_reference(&self, reference: &Reference) -> Result<Option<Image>> {
+    pub async fn get_latest_by_reference(&self, reference: &Reference) -> Result<Option<Image>> {
         let txn = self.store.read_txn()?;
         let images = txn.get_all_values_prefix(&self.images_collection, &reference.to_string())?;
         // find the image with the latest created_at
@@ -142,8 +137,23 @@ impl ImagePool {
         Ok(image)
     }
 
+    pub async fn get_clone_image_volume(&self, image: &Image, copy_suffix: &str) -> Result<Volume> {
+        let volume = self
+            .volume_pool
+            .create_copy_of_volume(&image.volume_id, copy_suffix)
+            .await?;
+
+        Ok(volume)
+    }
+
     pub fn get_volume_pool(&self) -> &VolumePool {
         &self.volume_pool
+    }
+
+    pub fn get_all_images(&self) -> Result<Vec<Image>> {
+        let txn = self.store.read_txn()?;
+        let images = txn.get_all_values(&self.images_collection)?;
+        Ok(images)
     }
 
     pub async fn create_oci_client(&self, reference: &Reference) -> Result<(Client, RegistryAuth)> {
@@ -176,16 +186,8 @@ impl ImagePool {
         Ok((manifest, digest, config))
     }
 
-    pub async fn pull_image_if_needed(
-        &self,
-        reference: &Reference,
-        policy: PullPolicy,
-    ) -> Result<Image> {
-        match policy {
-            PullPolicy::Always => self.pull_image_always(reference).await,
-            PullPolicy::IfNotPresent => self.pull_image_if_not_present(reference).await,
-            PullPolicy::IfChanged => self.pull_image_if_changed(reference).await,
-        }
+    pub async fn pull_image_if_needed(&self, reference: &Reference) -> Result<(Image, bool)> {
+        self.pull_image_if_changed(reference).await
     }
 
     async fn pull_image_always(&self, reference: &Reference) -> Result<Image> {
@@ -194,27 +196,22 @@ impl ImagePool {
             .await
     }
 
-    async fn pull_image_if_not_present(&self, reference: &Reference) -> Result<Image> {
-        let image = self.get_by_reference(reference).await?;
-        match image {
-            Some(image) => Ok(image),
-            None => self.pull_image_always(reference).await,
-        }
-    }
-
-    async fn pull_image_if_changed(&self, reference: &Reference) -> Result<Image> {
-        let image = self.get_by_reference(reference).await?;
+    async fn pull_image_if_changed(&self, reference: &Reference) -> Result<(Image, bool)> {
+        let image = self.get_latest_by_reference(reference).await?;
         let Some(image) = image else {
-            return self.pull_image_always(reference).await;
+            let image = self.pull_image_always(reference).await?;
+            return Ok((image, true));
         };
 
         let (manifest, digest, config) = self.fetch_manifest(reference).await?;
 
         if image.digest == digest {
-            Ok(image)
+            Ok((image, false))
         } else {
-            self.pull_image_from_manifest(reference, manifest, digest, config)
-                .await
+            let image = self
+                .pull_image_from_manifest(reference, manifest, digest, config)
+                .await?;
+            Ok((image, true))
         }
     }
 
@@ -395,7 +392,10 @@ impl ImagePool {
         drop(temp_dir);
         info!("Temporary directory cleaned up");
 
+        let image_id = format!("{}@{}", reference.to_string(), digest);
+
         let image = Image {
+            id: image_id.clone(),
             reference: reference.to_string(),
             digest,
             size_mib: sparse_image_size_mb,
@@ -408,15 +408,7 @@ impl ImagePool {
         info!("Storing image metadata in database");
         let mut txn = self.store.write_txn()?;
 
-        // Store by reference for quick lookup
-        txn.put(&self.images_collection, &reference.to_string(), &image)?;
-
-        // Also store by reference:digest for specific version lookup
-        txn.put(
-            &self.images_collection,
-            &format!("{}:{}", reference.to_string(), image.digest),
-            &image,
-        )?;
+        txn.put(&self.images_collection, &image_id, &image)?;
 
         txn.commit().map_err(|e| {
             error!("Failed to commit image to database: {}", e);
@@ -431,5 +423,53 @@ impl ImagePool {
         );
 
         Ok(image)
+    }
+
+    pub async fn delete_image(&self, image: &Image) -> Result<()> {
+        let volume = self.volume_pool.get(&image.volume_id).await?;
+        if let Some(volume) = volume {
+            self.volume_pool.delete_volume(&volume.id).await?;
+        }
+
+        let mut txn = self.store.write_txn()?;
+        txn.del(&self.images_collection, &image.id)?;
+        txn.commit().map_err(|e| {
+            error!("Failed to delete image from database: {}", e);
+            e
+        })?;
+
+        Ok(())
+    }
+
+    pub async fn garbage_collect_images(&self, used_image_ids: &Vec<String>) -> Result<()> {
+        let images = self.get_all_images()?;
+
+        for image in images {
+            if !used_image_ids.contains(&image.id) {
+                self.delete_image(&image).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn garbage_collect_image_copy_volumes(
+        &self,
+        used_image_ids: &Vec<String>,
+        used_image_volume_ids: &Vec<String>,
+    ) -> Result<()> {
+        let mut all_used_image_volume_ids = used_image_volume_ids.clone();
+        for image_id in used_image_ids {
+            let image = self.get_by_id(&image_id).await?;
+            if let Some(image) = image {
+                all_used_image_volume_ids.push(image.volume_id);
+            }
+        }
+
+        self.volume_pool
+            .garbage_collect_volumes(all_used_image_volume_ids)
+            .await?;
+
+        Ok(())
     }
 }

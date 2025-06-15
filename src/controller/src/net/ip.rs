@@ -199,6 +199,18 @@ impl IpPool {
 
         Ok(())
     }
+
+    pub fn garbage_collect(&self, used_ips: Vec<String>) -> Result<()> {
+        let existing_ips = self.get_reserved_ips()?;
+
+        for ip in existing_ips {
+            if !used_ips.contains(&ip.addr) {
+                self.release(&ip.addr)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

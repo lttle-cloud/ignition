@@ -1,25 +1,37 @@
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use api::{start_api_server, ApiServerConfig};
 use controller::image::credentials::DockerCredentialsProvider;
 use controller::image::{ImagePool, ImagePoolConfig};
+use controller::logs::{LogsPool, LogsPoolConfig};
+use controller::machine::MachinePool;
 use controller::net::ip::{IpPool, IpPoolConfig};
 use controller::net::tap::{TapPool, TapPoolConfig};
-use controller::volume::VolumePoolConfig;
-use controller::{Controller, ControllerConfig};
-use futures::executor::block_on;
-use reqwest;
+use controller::proxy::{
+    Proxy, ProxyConfig, ProxyServiceBinding, ProxyServiceTarget, ProxyServiceType,
+    ProxyTlsTerminationConfig,
+};
+use controller::service::ServicePool;
+use controller::volume::{VolumePool, VolumePoolConfig};
+use controller::{
+    Controller, ControllerConfig, DeployMachineInput, DeployServiceInput, ServiceMode,
+    ServiceProtocol, ServiceTarget,
+};
 use sds::{Store, StoreConfig};
 use tracing_subscriber::FmtSubscriber;
-use util::tracing::{self, info, warn};
+use util::async_runtime::task;
+use util::async_runtime::time::sleep;
+use util::tracing::{self, info};
 use util::{
-    async_runtime::{self, task::spawn_blocking},
+    async_runtime,
     result::{Context, Result},
 };
 
 async fn ignition() -> Result<()> {
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(tracing::Level::DEBUG)
+        .with_max_level(tracing::Level::INFO)
         .finish();
     tracing::subscriber::set_global_default(subscriber)
         .context("Failed to set global default subscriber")?;
@@ -47,7 +59,7 @@ async fn ignition() -> Result<()> {
 }
 
 async fn create_and_start_controller(store: Store) -> Result<Arc<Controller>> {
-    let image_volume_pool = controller::volume::VolumePool::new(
+    let image_volume_pool = VolumePool::new(
         store.clone(),
         VolumePoolConfig {
             name: "image".to_string(),
@@ -63,213 +75,163 @@ async fn create_and_start_controller(store: Store) -> Result<Arc<Controller>> {
         },
     )?);
 
-    let tap_pool = TapPool::new(TapPoolConfig {
-        bridge_name: "ltbr0".to_string(),
-    })
-    .await?;
+    let tap_pool = Arc::new(
+        TapPool::new(TapPoolConfig {
+            bridge_name: "ltbr0".to_string(),
+        })
+        .await?,
+    );
 
-    let ip_pool = IpPool::new(
+    let vm_ip_pool = Arc::new(IpPool::new(
         IpPoolConfig {
             name: "vm".to_string(),
             cidr: "10.0.0.0/16".to_string(),
         },
         store.clone(),
-    )?;
+    )?);
 
-    // Create controller
-    let controller = Controller::new(
-        ControllerConfig {
-            reconcile_interval_secs: 2, // slow for demo and testing
-            log_dir_path: "./data/logs".to_string(),
+    let svc_ip_pool = Arc::new(IpPool::new(
+        IpPoolConfig {
+            name: "svc".to_string(),
+            cidr: "10.1.0.0/16".to_string(),
         },
         store.clone(),
+    )?);
+
+    let logs_pool = Arc::new(
+        LogsPool::new(LogsPoolConfig {
+            base_path: "./data/logs".to_string(),
+        })
+        .await?,
+    );
+
+    let machine_pool = Arc::new(MachinePool::new(store.clone())?);
+
+    let service_pool = Arc::new(ServicePool::new(store.clone())?);
+
+    let controller = Controller::new(
+        ControllerConfig {
+            garbage_collection_interval_secs: 60 * 5, // 5 minutes
+            default_tls_termination: ProxyTlsTerminationConfig {
+                ssl_cert_path: PathBuf::from("./certs/server.cert"),
+                ssl_key_path: PathBuf::from("./certs/server.key"),
+            },
+        },
         image_pool,
         tap_pool.clone(),
-        ip_pool,
+        vm_ip_pool,
+        svc_ip_pool,
+        logs_pool,
+        machine_pool,
+        service_pool,
     )?;
 
-    // Start reconciliation in background
-    let reconcile_controller = controller.clone();
-    spawn_blocking(move || {
-        block_on(async {
-            let _ = reconcile_controller.run_reconciliation().await;
-        });
-    });
+    let proxy = Proxy::new(
+        ProxyConfig {
+            external_host: "151.80.18.214".to_string(),
+            http_port: 80,
+            https_port: 443,
+        },
+        controller.clone(),
+    )
+    .await?;
+    controller.set_proxy(proxy.clone()).await;
 
-    info!("Controller reconciliation started");
+    controller.bring_up().await?;
+
+    let garbage_collection_controller = controller.clone();
+    task::spawn(async move {
+        garbage_collection_controller
+            .garbage_collection_task()
+            .await;
+    });
+    info!("Garbage collection task started");
+
+    let machines = controller.list_machines().await?;
+    println!("Machines: {:?}", machines);
 
     // Test basic deployment functionality
-    test_deployment_workflow(controller.clone()).await?;
-
-    // Test resource tracking
-    let (tracked_images, tracked_volumes) = controller.list_tracked_resources().await?;
-    info!(
-        "Current tracked resources: {} images, {} volumes",
-        tracked_images.len(),
-        tracked_volumes.len()
-    );
+    // test_deployment_workflow(controller.clone()).await?;
 
     Ok(controller)
 }
 
 async fn test_deployment_workflow(controller: Arc<Controller>) -> Result<()> {
-    info!("🧪 Running Spark deployment workflow test...");
+    info!("Testing deployment workflow");
 
-    let test_config = controller::deployment::DeploymentConfig {
-        name: "test-spark".to_string(),
-        image: "nginx:latest".to_string(),
-        mode: controller::deployment::DeploymentMode::Spark {
-            timeout_ms: 5000, // 5 second timeout for testing
-            snapshot_policy: controller::machine::SparkSnapshotPolicy::OnUserspaceReady,
-        },
-        image_pull_policy: controller::image::PullPolicy::IfNotPresent,
-        vcpu_count: 1,
-        memory_mib: 512,
-        envs: vec!["TEST_ENV=spark".to_string()],
-        replicas: 1, // Spark deployments must have exactly 1 replica
-    };
+    info!("pulling nginx:latest");
 
-    // Test Spark deployment creation
-    info!("Creating Spark deployment...");
-    let deployment = controller.deploy(test_config.clone()).await?;
-    info!("Created Spark deployment: {}", deployment.id);
+    controller.pull_image_if_needed("nginx:latest").await?;
 
-    // Wait for deployment to be ready
-    info!("⏳ Waiting 20 seconds for Spark deployment to be ready...");
-    util::async_runtime::time::sleep(std::time::Duration::from_secs(20)).await;
+    info!("deploying machine");
 
-    // Check if deployment is ready
-    let retrieved = controller.get_deployment(&deployment.id).await?;
-    if let Some(retrieved) = retrieved {
-        info!("📊 Spark deployment status: {:?}", retrieved.status);
-        info!("🏭 Instances: {}", retrieved.instances.len());
+    let machine_info = controller
+        .deploy_machine(DeployMachineInput {
+            name: "test".to_string(),
+            image_name: "nginx:latest".to_string(),
+            vcpu_count: 1,
+            memory_size_mib: 128,
+            envs: vec![],
+            snapshot_policy: None,
+        })
+        .await?;
 
-        for instance in &retrieved.instances {
-            info!(
-                "  Instance {}: {:?} (IP: {})",
-                instance.id, instance.status, instance.ip_addr
-            );
-        }
-    }
+    info!("Deployed machine: {:?}", machine_info);
 
-    // Test Spark connection management
-    info!("Testing Spark connection system...");
+    controller
+        .deploy_service(DeployServiceInput {
+            name: "test".to_string(),
+            protocol: ServiceProtocol::Http,
+            mode: ServiceMode::External {
+                host: "test-proxy.alpha1.ovh-rbx.lttle.host".into(),
+            },
+            target: ServiceTarget {
+                name: "test".into(),
+                port: 80,
+            },
+        })
+        .await?;
 
-    // Open first connection (should ensure instance is running)
-    info!("Opening first connection...");
-    let ip1 = controller.open_connection(deployment.id.clone()).await?;
-    info!("Got IP from first connection: {}", ip1);
+    // proxy
+    // .bind_service(ProxyServiceBinding {
+    //     service_name: "test".into(),
+    //     service_type: ProxyServiceType::ExternalHttps {
+    //         host: ,
+    //         tls_termination: ProxyTlsTerminationConfig {
+    //             ssl_cert_path: PathBuf::from("./certs/server.cert"),
+    //             ssl_key_path: PathBuf::from("./certs/server.key"),
+    //         },
+    //     },
+    //     service_target: ProxyServiceTarget {
+    //         machine_name: "test".into(),
+    //         port: 80,
+    //     },
+    // })
+    // .await?;
 
-    // Test HTTP connectivity to the nginx instance
-    info!("Testing HTTP connectivity to nginx...");
-    let url = format!("http://{}:80", ip1);
+    // let machine_info_2 = controller
+    //     .deploy_machine(DeployMachineInput {
+    //         name: "test".to_string(),
+    //         image_name: "nginx:latest".to_string(),
+    //         vcpu_count: 1,
+    //         memory_size_mib: 128,
+    //         envs: vec![],
+    //         snapshot_policy: None,
+    //     })
+    //     .await?;
 
-    // Retry HTTP requests since nginx takes time to start up inside the container
-    let mut retry_count = 0;
-    let max_retries = 5;
-    loop {
-        match reqwest::get(&url).await {
-            Ok(response) => {
-                let status = response.status();
-                let body = response.text().await.unwrap_or_default();
-                info!("HTTP GET {}: {} ({} bytes)", url, status, body.len());
-                if body.contains("nginx") || body.contains("Welcome") {
-                    info!("Confirmed nginx is serving content!");
-                }
-                break;
-            }
-            Err(e) => {
-                retry_count += 1;
-                if retry_count <= max_retries {
-                    warn!(
-                        "HTTP request attempt {}/{} failed: {}",
-                        retry_count, max_retries, e
-                    );
-                    info!("Waiting 2s before retry (nginx might still be starting up)...");
-                    util::async_runtime::time::sleep(std::time::Duration::from_secs(2)).await;
-                } else {
-                    warn!("HTTP request failed after {} attempts: {}", max_retries, e);
-                    break;
-                }
-            }
-        }
-    }
+    // for _ in 0..10 {
+    //     let machines = controller.list_machines().await?;
+    //     info!("Machines: {:?}", machines);
+    //     sleep(Duration::from_secs(1)).await;
+    // }
 
-    // Open second connection (should reuse running instance)
-    info!("Opening second connection...");
-    let ip2 = controller.open_connection(deployment.id.clone()).await?;
-    info!("Got IP from second connection: {}", ip2);
+    // info!("Deleting machine");
+    // controller.delete_machine(&machine_info_2.id).await?;
 
-    if ip1 == ip2 {
-        info!("Both connections got same IP (correct!)");
-    } else {
-        warn!("Different IPs returned: {} vs {}", ip1, ip2);
-    }
+    // info!("Running garbage collection round");
+    // controller.run_garbage_collection_round().await?;
 
-    // Test HTTP again to ensure consistency
-    info!("Testing HTTP on second connection...");
-    let url2 = format!("http://{}:80", ip2);
-    match reqwest::get(&url2).await {
-        Ok(response) => {
-            info!("HTTP GET {}: {}", url2, response.status());
-        }
-        Err(e) => {
-            warn!("Second HTTP request failed: {}", e);
-        }
-    }
-
-    // Close first connection (instance should stay running)
-    info!("Closing first connection...");
-    controller.close_connection(deployment.id.clone()).await?;
-    info!("First connection closed, instance should still be running");
-
-    // Close second connection (should start timeout)
-    info!("Closing second connection...");
-    controller.close_connection(deployment.id.clone()).await?;
-    info!("Second connection closed, timeout should start (5s)");
-
-    // Wait for timeout to trigger suspension
-    info!("Waiting 7 seconds for timeout to trigger suspension...");
-    util::async_runtime::time::sleep(std::time::Duration::from_secs(7)).await;
-
-    // Check if instance was suspended
-    let retrieved = controller.get_deployment(&deployment.id).await?;
-    if let Some(retrieved) = retrieved {
-        info!("📊 Status after timeout: {:?}", retrieved.status);
-
-        if matches!(
-            retrieved.status,
-            controller::deployment::DeploymentStatus::ReadyToResume
-        ) {
-            info!("Spark instance suspended correctly!");
-        } else {
-            warn!("Expected ReadyToResume status, got {:?}", retrieved.status);
-        }
-    }
-
-    // Test resume by opening another connection
-    info!("Opening connection to test resume...");
-    let ip3 = controller.open_connection(deployment.id.clone()).await?;
-    info!("Got IP from resume connection: {}", ip3);
-
-    // Wait a moment for instance to be fully ready
-    util::async_runtime::time::sleep(std::time::Duration::from_secs(3)).await;
-
-    // Check final status
-    let retrieved = controller.get_deployment(&deployment.id).await?;
-    if let Some(retrieved) = retrieved {
-        info!("📊 Final status: {:?}", retrieved.status);
-    }
-
-    // Close the connection
-    controller.close_connection(deployment.id.clone()).await?;
-
-    // Clean up
-    info!("Cleaning up Spark deployment...");
-    controller.delete_deployment(&deployment.id).await?;
-    info!("Spark deployment deleted");
-
-    info!("Spark deployment workflow test completed successfully!");
     Ok(())
 }
 

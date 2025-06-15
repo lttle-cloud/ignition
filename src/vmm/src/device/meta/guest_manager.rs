@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use util::async_runtime;
 use util::tracing::{debug, warn};
 
+use crate::config::SnapshotPolicy;
 use crate::{
     constants::{MMIO_LEN, MMIO_START},
     vmm::{
@@ -74,7 +75,7 @@ pub struct GuestManagerDevice {
     start_time: std::time::Instant,
     should_exit_immediately: bool,
     boot_ready_time: Option<std::time::Duration>,
-    target_listen_trigger_count: u32,
+    snapshot_policy: Option<SnapshotPolicy>,
     listen_trigger_count: u32,
     exit_enabled: bool,
 }
@@ -91,14 +92,14 @@ impl GuestManagerDevice {
     pub fn new(
         exit_handler: SharedExitEventHandler,
         state_controller: VmmStateController,
-        target_listen_trigger_count: u32,
+        snapshot_policy: Option<SnapshotPolicy>,
     ) -> Arc<Mutex<Self>> {
         let guest_manager = Self {
             exit_handler,
             start_time: std::time::Instant::now(),
             should_exit_immediately: false,
             boot_ready_time: None,
-            target_listen_trigger_count,
+            snapshot_policy,
             listen_trigger_count: 0,
             exit_enabled: true,
         };
@@ -173,9 +174,16 @@ impl GuestManagerDevice {
         match trigger_data.code {
             TriggerCode::AfterListen => {
                 self.listen_trigger_count += 1;
-                if self.listen_trigger_count < self.target_listen_trigger_count {
+
+                if let Some(SnapshotPolicy::OnNthListenSyscall(count)) = self.snapshot_policy {
+                    if self.listen_trigger_count < count {
+                        return;
+                    }
+                } else {
                     return;
                 }
+
+                // TODO(@laurci): handle other snapshot policies
 
                 self.exit_handler
                     .trigger_exit(ExitHandlerReason::Snapshot)
@@ -187,6 +195,6 @@ impl GuestManagerDevice {
                 self.set_boot_ready();
             }
             _ => {}
-        }
+        };
     }
 }

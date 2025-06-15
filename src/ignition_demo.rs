@@ -411,6 +411,7 @@ async fn ignition() -> Result<()> {
             "06:00:AC:10:00:02",
         ))
         .with_block(BlockConfig::new(rootfs_path).writeable())
+        .with_snapshot_policy(vmm::config::SnapshotPolicy::OnNthListenSyscall(1))
         .into();
 
     info!("Initializing VM Controller.");

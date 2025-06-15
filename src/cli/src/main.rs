@@ -1,7 +1,6 @@
 use ignition_client::{
     ignition_proto::{
         admin::{CreateUserRequest, CreateUserTokenRequest, SetStatusRequest},
-        image::{CreatePullSecretRequest, DeletePullSecretRequest},
         util::Empty,
     },
     Client, ClientConfig, PrivilegedClient,
@@ -128,31 +127,31 @@ async fn ignition() -> Result<()> {
             .token,
     };
 
-    let client = Client::new(client_config).await?;
+    // let client = Client::new(client_config).await?;
 
-    let secret = client
-        .image()
-        .create_pull_secret(CreatePullSecretRequest {
-            name: "test_secret".into(),
-            username: "test_user".into(),
-            password: "test_password".into(),
-        })
-        .await?;
+    // let secret = client
+    //     .image()
+    //     .create_pull_secret(CreatePullSecretRequest {
+    //         name: "test_secret".into(),
+    //         username: "test_user".into(),
+    //         password: "test_password".into(),
+    //     })
+    //     .await?;
 
-    info!("Created secret: {:?}", secret);
+    // info!("Created secret: {:?}", secret);
 
-    let secrets = client.image().list_pull_secrets(Empty {}).await?;
-    info!("Secrets: {:?}", secrets);
+    // let secrets = client.image().list_pull_secrets(Empty {}).await?;
+    // info!("Secrets: {:?}", secrets);
 
-    client
-        .image()
-        .delete_pull_secret(DeletePullSecretRequest {
-            name: "test_secret".into(),
-        })
-        .await?;
+    // client
+    //     .image()
+    //     .delete_pull_secret(DeletePullSecretRequest {
+    //         name: "test_secret".into(),
+    //     })
+    //     .await?;
 
-    let secrets = client.image().list_pull_secrets(Empty {}).await?;
-    info!("Secrets: {:?}", secrets);
+    // let secrets = client.image().list_pull_secrets(Empty {}).await?;
+    // info!("Secrets: {:?}", secrets);
 
     Ok(())
 }

@@ -1,139 +1,73 @@
+use std::collections::HashMap;
+
 use util::encoding::{codec, schemars};
 
 #[codec(schema = true)]
-#[derive(Default)]
-pub enum SnapshotStrategy {
-    #[default]
-    #[serde(rename = "none")]
-    None,
-    #[serde(rename = "boot")]
-    Boot,
-    #[serde(rename = "net")]
-    Net,
-}
-
-#[codec(schema = true)]
-pub struct OnDemandSnapshot {
-    strategy: SnapshotStrategy,
-    stateful: Option<bool>,
-}
-
-#[codec(schema = true)]
-pub enum DeploymentMode {
-    #[serde(rename = "always-on")]
-    AlwaysOn,
-    #[serde(rename = "on-demand")]
-    OnDemand {
-        snapshot: OnDemandSnapshot,
-        allow_idle_connection: Option<bool>,
-    },
-}
-
-impl Default for DeploymentMode {
-    fn default() -> Self {
-        DeploymentMode::AlwaysOn
-    }
-}
-
-#[codec(schema = true)]
-#[serde(untagged)]
-pub enum DeploymentScaling {
-    Fixed { replicas: u32 },
-    Auto { min: u32, max: u32 },
-}
-
-impl Default for DeploymentScaling {
-    fn default() -> Self {
-        DeploymentScaling::Fixed { replicas: 1 }
-    }
-}
-
-#[codec(schema = true)]
-pub struct DeploymentEnvironmentVariable {
-    name: String,
-    value: String,
-}
-
-#[codec(schema = true)]
-pub enum DeploymentInternalServiceProtocol {
-    #[serde(rename = "http")]
-    Http,
-
-    #[serde(rename = "tcp")]
-    Tcp,
-}
-
-#[codec(schema = true)]
-pub enum DeploymentExternalServiceProtocol {
-    #[serde(rename = "http")]
-    Http,
-
-    #[serde(rename = "tcp/tls")]
-    TcpTls,
-}
-
-#[codec(schema = true)]
-#[derive(Default)]
-pub enum DeploymentExternalSErviceTlsTerminationMode {
-    #[serde(rename = "passthrough")]
-    Passthrough,
-
-    #[serde(rename = "reencrypt")]
-    #[default]
-    Reencrypt,
-}
-
-#[codec(schema = true)]
-#[derive(Default)]
-#[serde(untagged)]
-pub enum IngressCertificate {
-    #[default]
-    #[serde(rename = "auto")]
-    Auto,
-
+pub enum MachineSnapshotPolicy {
+    #[serde(rename = "on-nth-listen-syscall")]
+    OnNthListenSyscall(u32),
+    #[serde(rename = "on-listen-on-port")]
+    OnListenOnPort(u16),
+    #[serde(rename = "on-userspace-ready")]
+    OnUserspaceReady,
     #[serde(rename = "manual")]
-    Manual { name: String },
+    Manual,
 }
 
 #[codec(schema = true)]
-pub struct DeploymentExternalServiceIngress {
-    host: String,
-    cert: Option<IngressCertificate>,
+pub struct MachineEnvironmentVariable {
+    pub name: String,
+    pub value: String,
 }
 
 #[codec(schema = true)]
-pub enum DeploymentService {
+pub enum ServiceProtocol {
+    #[serde(rename = "tcp")]
+    Tcp { port: u16 },
+    #[serde(rename = "tls")]
+    Tls { port: u16 },
+    #[serde(rename = "http")]
+    Http,
+}
+
+#[codec(schema = true)]
+pub enum ServiceMode {
     #[serde(rename = "internal")]
-    Internal {
-        name: String,
-        port: u16,
-        protocol: Option<DeploymentInternalServiceProtocol>,
-    },
+    Internal,
     #[serde(rename = "external")]
-    External {
-        name: String,
-        port: u16,
-        protocol: Option<DeploymentExternalServiceProtocol>,
-        tls_termination: Option<DeploymentExternalSErviceTlsTerminationMode>,
-        ingress: Option<DeploymentExternalServiceIngress>,
-    },
+    External { host: String },
 }
 
 #[codec(schema = true)]
-pub struct Deployment {
+pub struct ServiceTarget {
+    pub name: String,
+    pub port: u16,
+}
+
+#[codec(schema = true)]
+pub struct Service {
+    pub name: String,
+    pub target: ServiceTarget,
+    pub protocol: ServiceProtocol,
+    pub mode: ServiceMode,
+}
+
+#[codec(schema = true)]
+pub struct Machine {
     pub name: String,
     pub image: String,
     pub memory: u64,
     pub vcpus: u8,
-    pub mode: Option<DeploymentMode>,
-    pub scaling: Option<DeploymentScaling>,
-    pub environment: Option<Vec<DeploymentEnvironmentVariable>>,
-    pub services: Option<Vec<DeploymentService>>,
+    pub environment: Option<Vec<MachineEnvironmentVariable>>,
+    #[serde(rename = "snapshot-policy")]
+    pub snapshot_policy: Option<MachineSnapshotPolicy>,
 }
 
 #[codec(schema = true)]
 #[schemars(title = "Ignition Resources")]
 pub enum Resource {
-    #[serde(rename = "deployment")]
-    Deployment(Deployment),
+    #[serde(rename = "machine")]
+    Machine(Machine),
+    #[serde(rename = "service")]
+    Service(Service),
 }

@@ -5,29 +5,22 @@ use util::{
         sync::{RwLock, broadcast},
         task::{self, JoinHandle},
     },
-    encoding::codec,
     result::{Result, bail},
     tracing::{info, warn},
 };
 use vmm::{
-    config::{BlockConfig, Config, KernelConfig, MemoryConfig, NetConfig, VcpuConfig},
+    config::{
+        BlockConfig, Config, KernelConfig, MemoryConfig, NetConfig, SnapshotPolicy, VcpuConfig,
+    },
     memory::Memory,
     state::VmmState,
     vmm::{Vmm, VmmStateController, VmmStateControllerMessage},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum MachineStopReason {
     Suspend,
     Shutdown,
-}
-
-#[codec]
-#[derive(Clone, Debug)]
-pub enum SparkSnapshotPolicy {
-    OnNthListenSyscall(u32),
-    OnUserspaceReady,
-    Manual,
 }
 
 #[derive(Clone)]
@@ -53,7 +46,7 @@ pub enum MachineState {
     Error(String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MachineStatus {
     New,
     Running,
@@ -94,6 +87,8 @@ impl std::fmt::Debug for MachineState {
 
 #[derive(Clone)]
 pub struct MachineConfig {
+    pub name: String,
+    pub id: String,
     pub memory_size_mib: usize,
     pub vcpu_count: u8,
     pub rootfs_path: String,
@@ -103,7 +98,7 @@ pub struct MachineConfig {
     pub netmask: String,
     pub envs: Vec<String>,
     pub log_file_path: String,
-    pub spark_snapshot_policy: Option<SparkSnapshotPolicy>,
+    pub snapshot_policy: Option<SnapshotPolicy>,
 }
 
 impl TryFrom<&MachineConfig> for Config {
@@ -124,14 +119,7 @@ impl TryFrom<&MachineConfig> for Config {
                 .join(":")
         );
 
-        let listen_trigger_count = match config.spark_snapshot_policy {
-            Some(SparkSnapshotPolicy::Manual | SparkSnapshotPolicy::OnUserspaceReady) | None => {
-                u32::MAX
-            }
-            Some(SparkSnapshotPolicy::OnNthListenSyscall(n)) => n,
-        };
-
-        let config = Config::new()
+        let mut config_builder = Config::new()
             .memory(MemoryConfig::new(config.memory_size_mib))
             .vcpu(VcpuConfig::new(config.vcpu_count))
             .kernel(
@@ -143,27 +131,27 @@ impl TryFrom<&MachineConfig> for Config {
                     )?
                     .with_init_envs(config.envs.clone())?,
             )
-            .with_net(
-                NetConfig::new(
-                    config.tap_name.clone(),
-                    config.ip_addr.clone(),
-                    config.netmask.clone(),
-                    config.gateway.clone(),
-                    mac_addr,
-                )
-                .with_listen_trigger_count(listen_trigger_count),
-            )
+            .with_net(NetConfig::new(
+                config.tap_name.clone(),
+                config.ip_addr.clone(),
+                config.netmask.clone(),
+                config.gateway.clone(),
+                mac_addr,
+            ))
             .with_block(BlockConfig::new(config.rootfs_path.clone()).writeable())
-            .with_log_file_path(config.log_file_path.clone())
-            .into();
+            .with_log_file_path(config.log_file_path.clone());
 
-        Ok(config)
+        if let Some(snapshot_policy) = &config.snapshot_policy {
+            config_builder = config_builder.with_snapshot_policy(snapshot_policy.clone());
+        }
+
+        Ok(config_builder.into())
     }
 }
 
 #[derive(Clone)]
 pub struct Machine {
-    config: MachineConfig,
+    pub config: MachineConfig,
     evt: Arc<broadcast::Sender<MachineStatus>>,
     memory: Arc<Memory>,
     state: Arc<RwLock<MachineState>>,
@@ -255,21 +243,23 @@ impl Machine {
         }
     }
 
-    pub async fn wait_for_ready(&self) -> Result<()> {
-        let state_guard = self.state.read().await;
-        let state = state_guard.clone();
-        drop(state_guard);
-
-        if let MachineState::Ready { .. } = state {
+    pub async fn wait_for_status(&self, status: MachineStatus) -> Result<()> {
+        let current_status = self.status().await?;
+        if current_status == status {
             return Ok(());
         }
 
         let mut rx = self.status_rx().await;
 
         loop {
-            let status = rx.recv().await;
-            if let Ok(MachineStatus::Ready) = status {
-                return Ok(());
+            if let Ok(new_status) = rx.recv().await {
+                match new_status {
+                    MachineStatus::Error(e) => {
+                        bail!("Machine entered error state: {}", e);
+                    }
+                    _ if new_status == status => return Ok(()),
+                    _ => {}
+                }
             }
         }
     }
@@ -301,6 +291,7 @@ impl Machine {
                             .await;
                     }
                     VmmStateControllerMessage::Stopped(new_state) => {
+                        println!("Stopped message received");
                         let stop_reason = {
                             let state = msg_handler_state_guard.read().await;
                             if let MachineState::Stopping { stop_reason } = &*state {
@@ -310,6 +301,7 @@ impl Machine {
                             }
                         };
 
+                        println!("Stop reason: {:?}", stop_reason);
                         match stop_reason {
                             Some(MachineStopReason::Shutdown) => {
                                 msg_handler_state_guard

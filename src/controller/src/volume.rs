@@ -62,6 +62,12 @@ impl VolumePool {
         Ok(volume)
     }
 
+    pub async fn get_all_volumes(&self) -> Result<Vec<Volume>> {
+        let txn = self.store.read_txn()?;
+        let volumes = txn.get_all_values(&self.volumes_collection)?;
+        Ok(volumes)
+    }
+
     pub async fn create_volume(&self, config: VolumeConfig) -> Result<Volume> {
         let id = uuid::Uuid::new_v4().to_string();
 
@@ -241,6 +247,18 @@ impl VolumePool {
         let mut txn = self.store.write_txn()?;
         txn.del(&self.volumes_collection, volume_id)?;
         txn.commit()?;
+
+        Ok(())
+    }
+
+    pub async fn garbage_collect_volumes(&self, used_volume_ids: Vec<String>) -> Result<()> {
+        let volumes = self.get_all_volumes().await?;
+
+        for volume in volumes {
+            if !used_volume_ids.contains(&volume.id) {
+                self.delete_volume(&volume.id).await?;
+            }
+        }
 
         Ok(())
     }

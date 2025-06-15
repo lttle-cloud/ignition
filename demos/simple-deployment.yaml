@@ -1,36 +1,15 @@
-deployment:
-  name: abcd
-  # image: string => image manually imported by user
+machine:
+  name: nginx-test
   image: nginx:latest
-  #  mode: always_on
   memory: 128 # Mib
   vcpus: 1
+---
+service:
+  name: nginx-pub-http
+  target:
+    name: nginx-test
+    port: 80
+  protocol: http
   mode:
-    on-demand:
-      snapshot:
-        strategy: net # boot, net, none
-        stateful: true
-      allow_idle_connection: true
-  scaling:
-    replicas: 1
-    # min: 1
-    # max: 1
-  environment:
-    - name: SOME_VAR
-      value: some-var-value
-  service:
-    - internal:
-        name: grpc
-        port: 5001
-        protocol: tcp
-    - internal:
-        name: something_else
-        port: 5002
-        protocol: http # defaults to tcp
-    - external:
-        name: http
-        port: 80
-        protocol: http
-        ingress:
-          host: example-nginx.ciobanu.dev
-          cert: auto # try to get cert from letsencrypt, can be manually specified as a cert name as string
+    external:
+      host: test-proxy.alpha1.ovh-rbx.lttle.host

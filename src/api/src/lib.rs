@@ -1,10 +1,8 @@
 use controller::Controller;
 use ignition_proto::admin_server::AdminServer;
-use ignition_proto::image_server::ImageServer;
 use sds::Store;
 use services::admin::{admin_auth_interceptor, AdminService, AdminServiceConfig};
 use services::auth::{AuthInterceptor, AuthInterceptorConfig};
-use services::image::ImageService;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tonic::transport::Server;
@@ -22,11 +20,11 @@ pub(crate) mod ignition_proto {
     pub mod admin {
         tonic::include_proto!("ignition.admin");
     }
-    pub mod image {
-        tonic::include_proto!("ignition.image");
+    pub mod service {
+        tonic::include_proto!("ignition.service");
     }
-    pub mod deployment {
-        tonic::include_proto!("ignition.deployment");
+    pub mod machine {
+        tonic::include_proto!("ignition.machine");
     }
 }
 
@@ -59,16 +57,16 @@ pub async fn start_api_server(config: ApiServerConfig) -> Result<()> {
         },
     )?;
 
-    let image_service = ImageService::new(config.store.clone())?;
-    let image_server = ImageServer::with_interceptor(image_service, move |req| {
-        auth_interceptor.validate_request(req)
-    });
+    // let image_service = ImageService::new(config.store.clone())?;
+    // let image_server = ImageServer::with_interceptor(image_service, move |req| {
+    //     auth_interceptor.validate_request(req)
+    // });
 
     info!("api server listening on {:?}", config.addr);
 
     Server::builder()
         .add_service(admin_server)
-        .add_service(image_server)
+        // .add_service(image_server)
         .serve(config.addr)
         .await?;
 

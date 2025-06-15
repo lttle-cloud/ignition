@@ -116,16 +116,10 @@ impl Vmm {
         let vm_config = VmConfig::new(&kvm, config.vcpu.num)?;
         let exit_handler = SharedExitEventHandler::new()?;
 
-        let trigger_listen_count = if let Some(net_config) = &config.net {
-            net_config.listen_trigger_count
-        } else {
-            1
-        };
-
         let guest_manger = GuestManagerDevice::new(
             exit_handler.clone(),
             state_controller.clone(),
-            trigger_listen_count,
+            config.snapshot_policy.clone(),
         );
 
         let vm = Vm::new(
@@ -175,16 +169,10 @@ impl Vmm {
         let state_controller = VmmStateController::new();
         let exit_handler = SharedExitEventHandler::new()?;
 
-        let trigger_listen_count = if let Some(net_config) = &state.config.net {
-            net_config.listen_trigger_count
-        } else {
-            1
-        };
-
         let guest_manger = GuestManagerDevice::new(
             exit_handler.clone(),
             state_controller.clone(),
-            trigger_listen_count,
+            state.config.snapshot_policy.clone(),
         );
 
         {

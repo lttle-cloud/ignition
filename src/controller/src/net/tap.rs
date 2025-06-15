@@ -238,6 +238,18 @@ impl TapPool {
 
         Ok(())
     }
+
+    pub async fn garbage_collect(&self, used_tap_names: Vec<String>) -> Result<()> {
+        let existing_tap_names = self.list_taps().await?;
+
+        for tap_name in existing_tap_names {
+            if !used_tap_names.contains(&tap_name) {
+                self.delete_tap(&tap_name).await?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

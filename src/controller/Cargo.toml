@@ -7,12 +7,15 @@ edition = "2024"
 util = { path = "../util" }
 sds = { path = "../sds" }
 vmm = { path = "../vmm" }
-rtnetlink = "0.16.0"
+rtnetlink = "0.17.0"
 nix = "0.30.1"
 tempfile = "3.20.0"
 docker_credential = "1.3.1"
 flate2 = "1.1.1"
-oci-client = "0.14.0"
+oci-client = "0.15.0"
 serde_json = "1.0.140"
 tar = "0.4.44"
-dashmap = "6.1.0"
+papaya = "0.2.1"
+rustls = "0.23.27"
+tokio-rustls = "0.26.2"
+rustls-pemfile = "2.2.0"
