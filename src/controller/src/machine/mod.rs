@@ -1,6 +1,7 @@
 mod machine;
 
 pub use machine::*;
+pub use vmm::config::SnapshotPolicy;
 
 use papaya::HashMap;
 use sds::{Collection, Store};
@@ -8,7 +9,6 @@ use util::{
     result::{Result, bail},
     tracing::info,
 };
-use vmm::config::SnapshotPolicy;
 
 use crate::model::machine::StoredMachine;
 
@@ -81,8 +81,7 @@ impl MachinePool {
     }
 
     pub async fn get_machines_info(&self) -> Result<Vec<MachineInfo>> {
-        let tx = self.store.read_txn()?;
-        let stored_machines = tx.get_all_values(&self.collection)?;
+        let stored_machines = self.get_stored_machines().await?;
 
         let mut machines_info = Vec::new();
 
@@ -155,9 +154,11 @@ impl MachinePool {
     pub async fn set_partial_machine(&self, stored_machine: StoredMachine) -> Result<()> {
         let key = format!("{}:{}", stored_machine.name, stored_machine.id);
 
-        let mut tx = self.store.write_txn()?;
-        tx.put(&self.collection, &key, &stored_machine)?;
-        tx.commit()?;
+        {
+            let mut tx = self.store.write_txn()?;
+            tx.put(&self.collection, &key, &stored_machine)?;
+            tx.commit()?;
+        }
 
         Ok(())
     }
@@ -165,9 +166,11 @@ impl MachinePool {
     pub async fn set_machine(&self, stored_machine: StoredMachine, machine: Machine) -> Result<()> {
         let key = format!("{}:{}", stored_machine.name, stored_machine.id);
 
-        let mut tx = self.store.write_txn()?;
-        tx.put(&self.collection, &key, &stored_machine)?;
-        tx.commit()?;
+        {
+            let mut tx = self.store.write_txn()?;
+            tx.put(&self.collection, &key, &stored_machine)?;
+            tx.commit()?;
+        }
 
         let machines = self.machines.pin();
         machines.insert(stored_machine.id, machine);
@@ -204,9 +207,11 @@ impl MachinePool {
 
         let key = format!("{}:{}", machine.config.name, machine.config.id);
 
-        let mut tx = self.store.write_txn()?;
-        tx.del(&self.collection, &key)?;
-        tx.commit()?;
+        {
+            let mut tx = self.store.write_txn()?;
+            tx.del(&self.collection, &key)?;
+            tx.commit()?;
+        }
 
         let machines = self.machines.pin();
         machines.remove(id);

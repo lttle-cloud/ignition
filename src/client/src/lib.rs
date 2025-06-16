@@ -6,6 +6,11 @@ use tonic::{
 };
 use util::result::Result;
 
+use crate::ignition_proto::{
+    image_client::ImageClient, machine_client::MachineClient, service::Service,
+    service_client::ServiceClient,
+};
+
 pub mod ignition_proto {
     tonic::include_proto!("ignition");
     pub mod util {
@@ -13,6 +18,9 @@ pub mod ignition_proto {
     }
     pub mod admin {
         tonic::include_proto!("ignition.admin");
+    }
+    pub mod image {
+        tonic::include_proto!("ignition.image");
     }
     pub mod service {
         tonic::include_proto!("ignition.service");
@@ -43,19 +51,49 @@ impl Client {
         })
     }
 
-    // pub fn image(
-    //     &self,
-    // ) -> ImageClient<InterceptedService<Channel, impl Fn(Request<()>) -> Result<Request<()>, Status>>>
-    // {
-    //     let token = self.token.clone();
-    //     let interceptor = move |mut req: Request<()>| {
-    //         req.metadata_mut()
-    //             .insert("authorization", token.parse().unwrap());
-    //         Ok(req)
-    //     };
+    pub fn image(
+        &self,
+    ) -> ImageClient<InterceptedService<Channel, impl Fn(Request<()>) -> Result<Request<()>, Status>>>
+    {
+        let token = self.token.clone();
+        let interceptor = move |mut req: Request<()>| {
+            req.metadata_mut()
+                .insert("authorization", token.parse().unwrap());
+            Ok(req)
+        };
 
-    //     ImageClient::with_interceptor(self.transport.clone(), interceptor)
-    // }
+        ImageClient::with_interceptor(self.transport.clone(), interceptor)
+    }
+
+    pub fn machine(
+        &self,
+    ) -> MachineClient<
+        InterceptedService<Channel, impl Fn(Request<()>) -> Result<Request<()>, Status>>,
+    > {
+        let token = self.token.clone();
+        let interceptor = move |mut req: Request<()>| {
+            req.metadata_mut()
+                .insert("authorization", token.parse().unwrap());
+            Ok(req)
+        };
+
+        MachineClient::with_interceptor(self.transport.clone(), interceptor)
+    }
+
+    pub fn service(
+        &self,
+    ) -> ServiceClient<
+        InterceptedService<Channel, impl Fn(Request<()>) -> Result<Request<()>, Status>>,
+    > {
+        let token = self.token.clone();
+        let interceptor = move |mut req: Request<()>| {
+            req.metadata_mut()
+                .insert("authorization", token.parse().unwrap());
+            Ok(req)
+        };
+
+        ServiceClient::with_interceptor(self.transport.clone(), interceptor)
+    }
 }
 
 pub struct PrivilegedClient {

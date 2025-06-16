@@ -30,14 +30,14 @@ use crate::{
     },
     logs::LogsPool,
     machine::{MachineInfo, MachinePool},
-    model::{machine::StoredMachineState, service::Service},
+    model::machine::StoredMachineState,
     proxy::{
         Proxy, ProxyServiceBinding, ProxyServiceTarget, ProxyServiceType, ProxyTlsTerminationConfig,
     },
     service::ServicePool,
 };
 
-pub use model::service::{ServiceMode, ServiceProtocol, ServiceTarget};
+pub use model::service::{Service, ServiceMode, ServiceProtocol, ServiceTarget};
 
 pub struct ControllerConfig {
     pub garbage_collection_interval_secs: u64,
@@ -56,6 +56,7 @@ pub struct Controller {
     proxy: RwLock<Option<Arc<Proxy>>>,
 }
 
+#[derive(Clone)]
 pub struct DeployMachineInput {
     pub name: String,
     pub image_name: String,
@@ -83,7 +84,7 @@ impl Controller {
         machine_pool: Arc<MachinePool>,
         service_pool: Arc<ServicePool>,
     ) -> Result<Arc<Self>> {
-        Ok(Arc::new(Self {
+        let ctrl = Arc::new(Self {
             config,
             image_pool,
             tap_pool,
@@ -93,7 +94,9 @@ impl Controller {
             machine_pool,
             service_pool,
             proxy: RwLock::new(None),
-        }))
+        });
+
+        Ok(ctrl)
     }
 
     pub async fn set_proxy(&self, proxy: Arc<Proxy>) {
@@ -273,7 +276,7 @@ impl Controller {
         }
     }
 
-    pub async fn deploy_service(&self, input: DeployServiceInput) -> Result<()> {
+    pub async fn deploy_service(&self, input: DeployServiceInput) -> Result<Service> {
         let proxy = self.proxy.read().await;
         let Some(proxy) = proxy.as_ref() else {
             bail!("Proxy is not set");
@@ -328,7 +331,7 @@ impl Controller {
             }
         };
 
-        self.service_pool.insert_service(service)?;
+        self.service_pool.insert_service(service.clone())?;
 
         let service_binding = ProxyServiceBinding {
             service_name: input.name.clone(),
@@ -340,7 +343,7 @@ impl Controller {
         };
         proxy.bind_service(service_binding).await?;
 
-        Ok(())
+        Ok(service)
     }
 
     pub async fn get_service(&self, name: &str) -> Result<Option<Service>> {

@@ -3,6 +3,7 @@ package ignition;
 
 import "util.proto";
 import "admin.proto";
+import "image.proto";
 import "machine.proto";
 import "service.proto";
 
@@ -11,6 +12,10 @@ service Admin {
   rpc CreateUser(ignition.admin.CreateUserRequest) returns (ignition.admin.CreateUserResponse);
   rpc SetStatus(ignition.admin.SetStatusRequest) returns (ignition.admin.SetStatusResponse);
   rpc CreateUserToken(ignition.admin.CreateUserTokenRequest) returns (ignition.admin.CreateUserTokenResponse);
+}
+
+service Image {
+  rpc Pull(ignition.image.PullImageRequest) returns (ignition.image.PullImageResponse);
 }
 
 service Machine {

@@ -12,4 +12,4 @@ service:
   protocol: http
   mode:
     external:
-      host: test-proxy.alpha1.ovh-rbx.lttle.host
+      host: nginx-test.alpha1.ovh-rbx.lttle.host
