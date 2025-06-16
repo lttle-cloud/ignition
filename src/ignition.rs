@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use api::{start_api_server, ApiServerConfig};
 use controller::image::credentials::DockerCredentialsProvider;
@@ -9,20 +8,13 @@ use controller::logs::{LogsPool, LogsPoolConfig};
 use controller::machine::MachinePool;
 use controller::net::ip::{IpPool, IpPoolConfig};
 use controller::net::tap::{TapPool, TapPoolConfig};
-use controller::proxy::{
-    Proxy, ProxyConfig, ProxyServiceBinding, ProxyServiceTarget, ProxyServiceType,
-    ProxyTlsTerminationConfig,
-};
+use controller::proxy::{Proxy, ProxyConfig, ProxyTlsTerminationConfig};
 use controller::service::ServicePool;
 use controller::volume::{VolumePool, VolumePoolConfig};
-use controller::{
-    Controller, ControllerConfig, DeployMachineInput, DeployServiceInput, ServiceMode,
-    ServiceProtocol, ServiceTarget,
-};
+use controller::{Controller, ControllerConfig};
 use sds::{Store, StoreConfig};
 use tracing_subscriber::FmtSubscriber;
 use util::async_runtime::task;
-use util::async_runtime::time::sleep;
 use util::tracing::{self, info};
 use util::{
     async_runtime,
@@ -150,89 +142,7 @@ async fn create_and_start_controller(store: Store) -> Result<Arc<Controller>> {
     let machines = controller.list_machines().await?;
     println!("Machines: {:?}", machines);
 
-    // Test basic deployment functionality
-    // test_deployment_workflow(controller.clone()).await?;
-
     Ok(controller)
-}
-
-async fn test_deployment_workflow(controller: Arc<Controller>) -> Result<()> {
-    info!("Testing deployment workflow");
-
-    info!("pulling nginx:latest");
-
-    controller.pull_image_if_needed("nginx:latest").await?;
-
-    info!("deploying machine");
-
-    let machine_info = controller
-        .deploy_machine(DeployMachineInput {
-            name: "test".to_string(),
-            image_name: "nginx:latest".to_string(),
-            vcpu_count: 1,
-            memory_size_mib: 128,
-            envs: vec![],
-            snapshot_policy: None,
-        })
-        .await?;
-
-    info!("Deployed machine: {:?}", machine_info);
-
-    controller
-        .deploy_service(DeployServiceInput {
-            name: "test".to_string(),
-            protocol: ServiceProtocol::Http,
-            mode: ServiceMode::External {
-                host: "test-proxy.alpha1.ovh-rbx.lttle.host".into(),
-            },
-            target: ServiceTarget {
-                name: "test".into(),
-                port: 80,
-            },
-        })
-        .await?;
-
-    // proxy
-    // .bind_service(ProxyServiceBinding {
-    //     service_name: "test".into(),
-    //     service_type: ProxyServiceType::ExternalHttps {
-    //         host: ,
-    //         tls_termination: ProxyTlsTerminationConfig {
-    //             ssl_cert_path: PathBuf::from("./certs/server.cert"),
-    //             ssl_key_path: PathBuf::from("./certs/server.key"),
-    //         },
-    //     },
-    //     service_target: ProxyServiceTarget {
-    //         machine_name: "test".into(),
-    //         port: 80,
-    //     },
-    // })
-    // .await?;
-
-    // let machine_info_2 = controller
-    //     .deploy_machine(DeployMachineInput {
-    //         name: "test".to_string(),
-    //         image_name: "nginx:latest".to_string(),
-    //         vcpu_count: 1,
-    //         memory_size_mib: 128,
-    //         envs: vec![],
-    //         snapshot_policy: None,
-    //     })
-    //     .await?;
-
-    // for _ in 0..10 {
-    //     let machines = controller.list_machines().await?;
-    //     info!("Machines: {:?}", machines);
-    //     sleep(Duration::from_secs(1)).await;
-    // }
-
-    // info!("Deleting machine");
-    // controller.delete_machine(&machine_info_2.id).await?;
-
-    // info!("Running garbage collection round");
-    // controller.run_garbage_collection_round().await?;
-
-    Ok(())
 }
 
 fn main() -> Result<()> {

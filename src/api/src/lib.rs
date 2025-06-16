@@ -1,13 +1,21 @@
 use controller::Controller;
 use ignition_proto::admin_server::AdminServer;
 use sds::Store;
-use services::admin::{admin_auth_interceptor, AdminService, AdminServiceConfig};
+use services::admin::{admin_auth_interceptor, AdminApi, AdminApiConfig};
 use services::auth::{AuthInterceptor, AuthInterceptorConfig};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tonic::transport::Server;
 use util::result::Result;
 use util::tracing::info;
+
+use crate::ignition_proto::image_server::ImageServer;
+use crate::ignition_proto::machine_server::MachineServer;
+use crate::ignition_proto::service_server::ServiceServer;
+use crate::services::auth::user_auth_interceptor;
+use crate::services::image::{ImageApi, ImageApiConfig};
+use crate::services::machine::{MachineApi, MachineApiConfig};
+use crate::services::service::{ServiceApi, ServiceApiConfig};
 
 pub(crate) mod data;
 pub(crate) mod services;
@@ -19,6 +27,9 @@ pub(crate) mod ignition_proto {
     }
     pub mod admin {
         tonic::include_proto!("ignition.admin");
+    }
+    pub mod image {
+        tonic::include_proto!("ignition.image");
     }
     pub mod service {
         tonic::include_proto!("ignition.service");
@@ -39,9 +50,9 @@ pub struct ApiServerConfig {
 
 pub async fn start_api_server(config: ApiServerConfig) -> Result<()> {
     let admin_token = config.admin_token.clone();
-    let admin_service = AdminService::new(
+    let admin_service = AdminApi::new(
         config.store.clone(),
-        AdminServiceConfig {
+        AdminApiConfig {
             jwt_secret: config.jwt_secret.clone(),
             default_token_duration: config.default_token_duration,
         },
@@ -57,16 +68,29 @@ pub async fn start_api_server(config: ApiServerConfig) -> Result<()> {
         },
     )?;
 
-    // let image_service = ImageService::new(config.store.clone())?;
-    // let image_server = ImageServer::with_interceptor(image_service, move |req| {
-    //     auth_interceptor.validate_request(req)
-    // });
+    let image_api = ImageApi::new(config.controller.clone(), ImageApiConfig {})?;
+    let image_server =
+        ImageServer::with_interceptor(image_api, user_auth_interceptor(auth_interceptor.clone()));
+
+    let machine_api = MachineApi::new(config.controller.clone(), MachineApiConfig {})?;
+    let machine_server = MachineServer::with_interceptor(
+        machine_api,
+        user_auth_interceptor(auth_interceptor.clone()),
+    );
+
+    let service_api = ServiceApi::new(config.controller.clone(), ServiceApiConfig {})?;
+    let service_server = ServiceServer::with_interceptor(
+        service_api,
+        user_auth_interceptor(auth_interceptor.clone()),
+    );
 
     info!("api server listening on {:?}", config.addr);
 
     Server::builder()
         .add_service(admin_server)
-        // .add_service(image_server)
+        .add_service(image_server)
+        .add_service(machine_server)
+        .add_service(service_server)
         .serve(config.addr)
         .await?;
 

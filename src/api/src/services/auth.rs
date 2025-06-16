@@ -73,7 +73,7 @@ impl AuthInterceptor {
 
 pub fn user_auth_interceptor(
     interceptor: AuthInterceptor,
-) -> impl Fn(Request<()>) -> Result<Request<()>, Status> {
+) -> impl Fn(Request<()>) -> Result<Request<()>, Status> + Clone {
     move |req| {
         let interceptor = interceptor.clone();
         interceptor.validate_request(req)

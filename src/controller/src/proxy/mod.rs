@@ -1,4 +1,9 @@
-use std::{fmt::Debug, net::Ipv4Addr, path::PathBuf, sync::Arc};
+use std::{
+    fmt::Debug,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use papaya::HashMap;
 use rustls::{
@@ -12,7 +17,7 @@ use tokio_rustls::TlsAcceptor;
 use util::{
     async_runtime::{
         self,
-        net::{TcpListener, TcpStream},
+        net::{TcpListener, TcpSocket, TcpStream},
         task::{self, JoinHandle},
     },
     result::{Result, bail},
@@ -250,11 +255,14 @@ impl Proxy {
             .service_type
             .get_listener_task_key(&self.config);
 
+        if listener_task_key.1 == self.config.https_port
+            || listener_task_key.1 == self.config.http_port
+        {
+            return Ok(());
+        }
+
         for (_, val) in service_bindings.iter() {
             let other_listener_task_key = val.service_type.get_listener_task_key(&self.config);
-            if other_listener_task_key == listener_task_key {
-                continue;
-            };
 
             if other_listener_task_key == listener_task_key {
                 // we can't remove the listener task key because there are still services bound to it
@@ -331,7 +339,14 @@ impl Proxy {
             &listener_task_key
         );
 
-        let listener = TcpListener::bind(&listener_task_key).await?;
+        let socket = TcpSocket::new_v4()?;
+        socket.set_reuseaddr(true)?;
+        socket.set_reuseport(true)?;
+        socket.bind(SocketAddr::V4(SocketAddrV4::new(
+            listener_task_key.0.parse()?,
+            listener_task_key.1,
+        )))?;
+        let listener = socket.listen(1024)?;
 
         let service_cache = self.service_cache.clone();
         let tls_acceptor = self.tls_acceptor.clone();

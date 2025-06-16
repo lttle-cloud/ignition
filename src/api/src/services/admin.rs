@@ -13,19 +13,19 @@ use crate::ignition_proto::admin::{
 use crate::ignition_proto::admin_server::Admin;
 use crate::ignition_proto::util::Empty;
 
-pub struct AdminServiceConfig {
+pub struct AdminApiConfig {
     pub jwt_secret: String,
     pub default_token_duration: u32,
 }
 
-pub struct AdminService {
+pub struct AdminApi {
     store: Store,
     user_collection: Collection<User>,
-    config: AdminServiceConfig,
+    config: AdminApiConfig,
 }
 
-impl AdminService {
-    pub fn new(store: Store, config: AdminServiceConfig) -> Result<Self> {
+impl AdminApi {
+    pub fn new(store: Store, config: AdminApiConfig) -> Result<Self> {
         let user_collection = store.collection("users")?;
 
         Ok(Self {
@@ -37,7 +37,7 @@ impl AdminService {
 }
 
 #[tonic::async_trait]
-impl Admin for AdminService {
+impl Admin for AdminApi {
     async fn list_users(
         &self,
         _request: Request<Empty>,
