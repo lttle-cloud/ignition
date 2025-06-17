@@ -3,6 +3,7 @@ mod deploy;
 mod login;
 mod machine;
 mod service;
+mod user;
 
 use std::path::PathBuf;
 
@@ -19,6 +20,7 @@ use crate::{
         login::run_login,
         machine::run_machine_list,
         service::run_service_list,
+        user::run_who_am_i,
     },
     config::Config,
 };
@@ -232,7 +234,9 @@ pub async fn run_cli(config: Config) -> Result<()> {
         Command::Login { token } => {
             return run_login(config, token).await;
         }
-        Command::Whoami => println!("Showing current user info"),
+        Command::Whoami => {
+            return run_who_am_i(config).await;
+        }
     };
 
     Ok(())

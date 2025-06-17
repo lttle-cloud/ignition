@@ -3,9 +3,14 @@ package ignition;
 
 import "util.proto";
 import "admin.proto";
+import "user.proto";
 import "image.proto";
 import "machine.proto";
 import "service.proto";
+
+service User {
+  rpc WhoAmI(ignition.util.Empty) returns (ignition.user.WhoAmIResponse);
+}
 
 service Admin {
   rpc ListUsers(ignition.util.Empty) returns (ignition.admin.ListUsersResponse);

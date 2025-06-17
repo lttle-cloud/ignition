@@ -28,61 +28,6 @@ async fn ignition() -> Result<()> {
         std::process::exit(1);
     };
 
-    // let client = Client::new(client_config).await?;
-
-    // info!("Pulling image");
-    // let image = client
-    //     .image()
-    //     .pull(PullImageRequest {
-    //         image: "nginx:latest".into(),
-    //     })
-    //     .await?;
-    // info!("Image: {:?}", image);
-
-    // let machines = client.machine().list(Empty {}).await?;
-    // info!("Machines: {:?}", machines);
-
-    // client
-    //     .machine()
-    //     .deploy(DeployMachineRequest {
-    //         machine: Some(Machine {
-    //             name: "test".into(),
-    //             image: "nginx:latest".into(),
-    //             memory: 128,
-    //             vcpus: 1,
-    //             environment: vec![],
-    //             snapshot_policy: None,
-    //         }),
-    //     })
-    //     .await?;
-
-    // let machines = client.machine().list(Empty {}).await?;
-    // info!("Machines: {:?}", machines);
-
-    // let secret = client
-    //     .image()
-    //     .create_pull_secret(CreatePullSecretRequest {
-    //         name: "test_secret".into(),
-    //         username: "test_user".into(),
-    //         password: "test_password".into(),
-    //     })
-    //     .await?;
-
-    // info!("Created secret: {:?}", secret);
-
-    // let secrets = client.image().list_pull_secrets(Empty {}).await?;
-    // info!("Secrets: {:?}", secrets);
-
-    // client
-    //     .image()
-    //     .delete_pull_secret(DeletePullSecretRequest {
-    //         name: "test_secret".into(),
-    //     })
-    //     .await?;
-
-    // let secrets = client.image().list_pull_secrets(Empty {}).await?;
-    // info!("Secrets: {:?}", secrets);
-
     Ok(())
 }
 

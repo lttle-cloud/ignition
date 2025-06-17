@@ -7,8 +7,8 @@ use tonic::{
 use util::result::Result;
 
 use crate::ignition_proto::{
-    image_client::ImageClient, machine_client::MachineClient, service::Service,
-    service_client::ServiceClient,
+    image_client::ImageClient, machine_client::MachineClient, service_client::ServiceClient,
+    user_client::UserClient,
 };
 
 pub mod ignition_proto {
@@ -18,6 +18,9 @@ pub mod ignition_proto {
     }
     pub mod admin {
         tonic::include_proto!("ignition.admin");
+    }
+    pub mod user {
+        tonic::include_proto!("ignition.user");
     }
     pub mod image {
         tonic::include_proto!("ignition.image");
@@ -49,6 +52,20 @@ impl Client {
             transport,
             token: config.token,
         })
+    }
+
+    pub fn user(
+        &self,
+    ) -> UserClient<InterceptedService<Channel, impl Fn(Request<()>) -> Result<Request<()>, Status>>>
+    {
+        let token = self.token.clone();
+        let interceptor = move |mut req: Request<()>| {
+            req.metadata_mut()
+                .insert("authorization", token.parse().unwrap());
+            Ok(req)
+        };
+
+        UserClient::with_interceptor(self.transport.clone(), interceptor)
     }
 
     pub fn image(
