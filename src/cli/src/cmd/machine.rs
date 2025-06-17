@@ -8,7 +8,7 @@ use ignition_client::ignition_proto::{
 use util::result::Result;
 
 pub async fn run_machine_list(config: Config) -> Result<()> {
-    let client = get_client(config).await?;
+    let client = get_client(&config).await?;
 
     let machines = client.machine().list(Empty {}).await?.into_inner();
 

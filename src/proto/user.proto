@@ -1,0 +1,9 @@
+syntax = "proto3";
+package ignition.user;
+
+import "util.proto";
+import "admin.proto";
+
+message WhoAmIResponse {
+  ignition.admin.User user = 1;
+}

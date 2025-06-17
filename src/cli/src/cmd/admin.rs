@@ -21,7 +21,7 @@ pub async fn run_admin_login(config: Config, admin_token: String) -> Result<()> 
 }
 
 pub async fn run_admin_user_create(config: Config, username: String) -> Result<()> {
-    let client = get_admin_client(config).await?;
+    let client = get_admin_client(&config).await?;
     let Ok(response) = client
         .admin()
         .create_user(CreateUserRequest { name: username })
@@ -40,7 +40,7 @@ pub async fn run_admin_user_create(config: Config, username: String) -> Result<(
 }
 
 pub async fn run_admin_user_list(config: Config) -> Result<()> {
-    let client = get_admin_client(config).await?;
+    let client = get_admin_client(&config).await?;
     let Ok(response) = client.admin().list_users(Empty {}).await else {
         bail!("Failed to list users");
     };
@@ -61,7 +61,7 @@ pub async fn run_admin_user_list(config: Config) -> Result<()> {
 }
 
 pub async fn run_admin_user_disable(config: Config, username: String) -> Result<()> {
-    let client = get_admin_client(config).await?;
+    let client = get_admin_client(&config).await?;
     let Ok(response) = client
         .admin()
         .set_status(SetStatusRequest {
@@ -83,7 +83,7 @@ pub async fn run_admin_user_disable(config: Config, username: String) -> Result<
 }
 
 pub async fn run_admin_user_enable(config: Config, username: String) -> Result<()> {
-    let client = get_admin_client(config).await?;
+    let client = get_admin_client(&config).await?;
     let Ok(response) = client
         .admin()
         .set_status(SetStatusRequest {
@@ -105,7 +105,7 @@ pub async fn run_admin_user_enable(config: Config, username: String) -> Result<(
 }
 
 pub async fn run_admin_user_sign(config: Config, username: String) -> Result<()> {
-    let client = get_admin_client(config).await?;
+    let client = get_admin_client(&config).await?;
     let Ok(response) = client
         .admin()
         .create_user_token(CreateUserTokenRequest {

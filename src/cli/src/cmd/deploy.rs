@@ -41,7 +41,7 @@ pub async fn run_deploy(config: Config, file: PathBuf) -> Result<()> {
         })
         .collect::<Vec<_>>();
 
-    let client = get_client(config).await?;
+    let client = get_client(&config).await?;
 
     for image in images {
         info!("Pulling image: {}", image);

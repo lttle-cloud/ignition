@@ -12,10 +12,12 @@ use util::tracing::info;
 use crate::ignition_proto::image_server::ImageServer;
 use crate::ignition_proto::machine_server::MachineServer;
 use crate::ignition_proto::service_server::ServiceServer;
+use crate::ignition_proto::user_server::UserServer;
 use crate::services::auth::user_auth_interceptor;
 use crate::services::image::{ImageApi, ImageApiConfig};
 use crate::services::machine::{MachineApi, MachineApiConfig};
 use crate::services::service::{ServiceApi, ServiceApiConfig};
+use crate::services::user::{UserApi, UserApiConfig};
 
 pub(crate) mod data;
 pub(crate) mod services;
@@ -27,6 +29,9 @@ pub(crate) mod ignition_proto {
     }
     pub mod admin {
         tonic::include_proto!("ignition.admin");
+    }
+    pub mod user {
+        tonic::include_proto!("ignition.user");
     }
     pub mod image {
         tonic::include_proto!("ignition.image");
@@ -68,6 +73,10 @@ pub async fn start_api_server(config: ApiServerConfig) -> Result<()> {
         },
     )?;
 
+    let user_api = UserApi::new(UserApiConfig {})?;
+    let user_server =
+        UserServer::with_interceptor(user_api, user_auth_interceptor(auth_interceptor.clone()));
+
     let image_api = ImageApi::new(config.controller.clone(), ImageApiConfig {})?;
     let image_server =
         ImageServer::with_interceptor(image_api, user_auth_interceptor(auth_interceptor.clone()));
@@ -88,6 +97,7 @@ pub async fn start_api_server(config: ApiServerConfig) -> Result<()> {
 
     Server::builder()
         .add_service(admin_server)
+        .add_service(user_server)
         .add_service(image_server)
         .add_service(machine_server)
         .add_service(service_server)
