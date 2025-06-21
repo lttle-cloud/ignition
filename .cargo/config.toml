@@ -1,2 +1,5 @@
 [target.'cfg(all())']
 runner = [".cargo/runner.sh"]
+
+[alias]
+build-takeoff = "build --bin takeoff"

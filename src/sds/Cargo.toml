@@ -1,9 +1,0 @@
-[package]
-name = "sds"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-heed = "0.21.0"
-serde_json = "1.0.138"
-util = { path = "../util" }
