@@ -1,40 +1,38 @@
 [package]
 name = "ignition"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
-[workspace]
-resolver = "2"
-members = [
-    ".",
-    "src/util",
-    "src/takeoff",
-    "src/vmm",
-    "src/sds",
-    "src/meta",
-    "src/controller",
-    "src/api",
-    "src/cli",
-    "src/client",
-]
-
-default-members = [".", "src/cli"]
-
-[[bin]]
-name = "ignition_demo"
-path = "src/ignition_demo.rs"
+[lib]
+name = "ignition"
+path = "src/lib.rs"
 
 [[bin]]
 name = "ignitiond"
-path = "src/ignition.rs"
+path = "src/daemon/main.rs"
+
+[[bin]]
+name = "takeoff"
+path = "src/takeoff/main.rs"
+
+[[bin]]
+name = "lttle"
+path = "src/cli/main.rs"
 
 [dependencies]
-axum = { version = "0.8.1", features = ["macros"] }
-futures = "0.3.31"
-reqwest = { version = "0.12.12", default-features = false }
+anyhow = "1.0.98"
+axum = "0.8.4"
+base62 = "2.2.1"
+futures-util = "0.3.31"
+heed = { version = "0.22.0", default-features = false }
+nix = "0.30.1"
+papaya = { version = "0.2.1", features = ["serde"] }
+rand = "0.9.1"
+rtnetlink = "0.17.0"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+tempfile = "3.20.0"
+tokio = { version = "1.45.1", features = ["full"] }
+tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
-util = { path = "src/util" }
-api = { path = "src/api" }
-vmm = { path = "src/vmm" }
-sds = { path = "src/sds" }
-controller = { path = "src/controller" }
+uuid = { version = "1.17.0", features = ["v4", "fast-rng"] }
