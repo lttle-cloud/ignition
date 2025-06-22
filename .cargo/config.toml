@@ -2,4 +2,5 @@
 runner = [".cargo/runner.sh"]
 
 [alias]
-build-takeoff = "build --bin takeoff"
+test-long = "test -- --ignored"
+test-all = "test -- --include-ignored"
