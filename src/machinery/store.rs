@@ -28,6 +28,10 @@ impl<MN, MK, T, C, N, K, D> KeyBuilder<MN, MK, T, C, N, K, D>
 where
     D: Serialize + DeserializeOwned,
 {
+    pub fn as_ref(&self) -> &KeyBuilder<MN, MK, T, C, N, K, D> {
+        self
+    }
+
     pub fn tenant(self, tenant: impl AsRef<str>) -> KeyBuilder<MN, MK, Set, C, N, K, D> {
         KeyBuilder {
             tenant: Some(tenant.as_ref().to_string()),
@@ -142,22 +146,6 @@ where
     }
 }
 
-impl<D> From<&KeyBuilder<NotSet, NotSet, Set, Set, NotSet, NotSet, D>> for PartialKey<D>
-where
-    D: Serialize + DeserializeOwned,
-{
-    fn from(builder: &KeyBuilder<NotSet, NotSet, Set, Set, NotSet, NotSet, D>) -> Self {
-        PartialKey::<D>(
-            format!(
-                "{}/{}",
-                builder.tenant.as_ref().unwrap(),
-                builder.collection.as_ref().unwrap(),
-            ),
-            PhantomData,
-        )
-    }
-}
-
 impl<D> From<&KeyBuilder<Set, Set, Set, Set, Set, Set, D>> for Key<D>
 where
     D: Serialize + DeserializeOwned,
@@ -176,20 +164,31 @@ where
     }
 }
 
-impl<D> From<&KeyBuilder<Set, NotSet, Set, Set, Set, NotSet, D>> for PartialKey<D>
+impl<D, MN, N> From<&KeyBuilder<MN, NotSet, Set, Set, N, NotSet, D>> for PartialKey<D>
 where
     D: Serialize + DeserializeOwned,
 {
-    fn from(builder: &KeyBuilder<Set, NotSet, Set, Set, Set, NotSet, D>) -> Self {
-        PartialKey::<D>(
-            format!(
-                "{}/{}/{}",
-                builder.tenant.as_ref().unwrap(),
-                builder.collection.as_ref().unwrap(),
-                builder.namespace.as_ref().unwrap(),
-            ),
-            PhantomData,
-        )
+    fn from(builder: &KeyBuilder<MN, NotSet, Set, Set, N, NotSet, D>) -> Self {
+        if let Some(namespace) = &builder.namespace {
+            PartialKey::<D>(
+                format!(
+                    "{}/{}/{}/",
+                    builder.tenant.as_ref().unwrap(),
+                    builder.collection.as_ref().unwrap(),
+                    namespace
+                ),
+                PhantomData,
+            )
+        } else {
+            PartialKey::<D>(
+                format!(
+                    "{}/{}/",
+                    builder.tenant.as_ref().unwrap(),
+                    builder.collection.as_ref().unwrap(),
+                ),
+                PhantomData,
+            )
+        }
     }
 }
 
@@ -207,6 +206,24 @@ where
             ),
             PhantomData,
         )
+    }
+}
+
+impl<D> ToString for Key<D>
+where
+    D: Serialize + DeserializeOwned,
+{
+    fn to_string(&self) -> String {
+        self.0.clone()
+    }
+}
+
+impl<D> ToString for PartialKey<D>
+where
+    D: Serialize + DeserializeOwned,
+{
+    fn to_string(&self) -> String {
+        self.0.clone()
     }
 }
 

@@ -3,6 +3,8 @@ name = "ignition"
 version = "0.1.0"
 edition = "2024"
 
+build = "src/build.rs"
+
 [lib]
 name = "ignition"
 path = "src/lib.rs"
@@ -19,7 +21,12 @@ path = "src/takeoff/main.rs"
 name = "lttle"
 path = "src/cli/main.rs"
 
+[workspace]
+members = ["meta", "."]
+resolver = "2"
+
 [dependencies]
+meta = { path = "meta" }
 anyhow = "1.0.98"
 axum = "0.8.4"
 base62 = "2.2.1"
@@ -27,6 +34,7 @@ docker_credential = "1.3.2"
 flate2 = "1.1.2"
 futures-util = "0.3.31"
 heed = { version = "0.22.0", default-features = false }
+tokio = { version = "1.45.1", features = ["full"] }
 nix = "0.30.1"
 oci-client = "0.15.0"
 papaya = { version = "0.2.1", features = ["serde"] }
@@ -36,7 +44,14 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 tar = "0.4.44"
 tempfile = "3.20.0"
-tokio = { version = "1.45.1", features = ["full"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 uuid = { version = "1.17.0", features = ["v4", "fast-rng"] }
+
+[build-dependencies]
+meta = { path = "meta" }
+serde = { version = "1.0.219", features = ["derive"] }
+anyhow = "1.0.98"
+heed = { version = "0.22.0", default-features = false }
+tokio = { version = "1.45.1", features = ["full"] }
+serde_json = "1.0.140"

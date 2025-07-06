@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod machinery;
+pub mod resources;
 pub(crate) mod utils;
 
 pub fn greet(name: impl AsRef<str>) {
