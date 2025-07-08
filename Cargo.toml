@@ -28,7 +28,7 @@ resolver = "2"
 [dependencies]
 meta = { path = "meta" }
 anyhow = "1.0.98"
-axum = "0.8.4"
+axum = { version = "0.8.4", features = ["macros"] }
 base62 = "2.2.1"
 docker_credential = "1.3.2"
 flate2 = "1.1.2"

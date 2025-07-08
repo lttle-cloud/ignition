@@ -83,9 +83,12 @@ where
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Key<D>(String, PhantomData<D>)
 where
     D: Serialize + DeserializeOwned;
+
+#[derive(Clone, Debug)]
 pub struct PartialKey<D>(String, PhantomData<D>)
 where
     D: Serialize + DeserializeOwned;

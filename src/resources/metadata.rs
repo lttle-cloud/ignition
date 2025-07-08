@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-const DEFAULT_NAMESPACE: &str = "default";
+pub const DEFAULT_NAMESPACE: &str = "default";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Metadata {
@@ -9,10 +9,16 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub fn new(name: String, namespace: Option<String>) -> Self {
+    pub fn new(name: impl AsRef<str>, namespace: Option<impl AsRef<str>>) -> Self {
+        let namespace = if let Some(namespace) = namespace {
+            namespace.as_ref().to_string()
+        } else {
+            DEFAULT_NAMESPACE.to_string()
+        };
+
         Self {
-            name,
-            namespace: namespace.unwrap_or_else(|| DEFAULT_NAMESPACE.to_string()),
+            name: name.as_ref().to_string(),
+            namespace,
         }
     }
 }

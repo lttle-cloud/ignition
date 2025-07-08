@@ -1,14 +1,48 @@
+use anyhow::Result;
 use meta::resource;
+
+use crate::resources::{ConvertResource, FromResourceAsync};
 
 #[resource(name = "Machine", tag = "machine")]
 mod machine {
-    #[version]
+    #[version(stored + served)]
     struct V1 {
         bleah: u32,
     }
 
+    #[version(served + latest)]
+    struct V2 {
+        bleah: u32,
+        bleah2: u32,
+    }
+
     #[status]
     struct Status {}
+}
+
+impl ConvertResource<MachineV2> for MachineV1 {
+    fn convert_up(this: Self) -> MachineV2 {
+        MachineV2 {
+            name: this.name,
+            namespace: this.namespace,
+            bleah: this.bleah,
+            bleah2: 0,
+        }
+    }
+
+    fn convert_down(this: MachineV2) -> Self {
+        MachineV1 {
+            namespace: this.namespace,
+            name: this.name,
+            bleah: this.bleah,
+        }
+    }
+}
+
+impl FromResourceAsync<Machine> for MachineStatus {
+    async fn from_resource(_resource: Machine) -> Result<Self> {
+        Ok(MachineStatus {})
+    }
 }
 
 #[cfg(test)]

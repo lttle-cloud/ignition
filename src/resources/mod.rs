@@ -1,3 +1,4 @@
+use anyhow::Result;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
@@ -9,8 +10,26 @@ pub mod machine;
 pub mod metadata;
 
 pub trait ConvertResource<T> {
-    fn up(this: Self) -> T;
-    fn down(other: T) -> Self;
+    fn convert_up(this: Self) -> T;
+    fn convert_down(this: T) -> Self;
+}
+
+pub trait Convert<TLatest, TStored> {
+    fn latest(&self) -> TLatest;
+    fn stored(&self) -> TStored;
+}
+
+impl<TLatest, TStored, T> Convert<Vec<TLatest>, Vec<TStored>> for Vec<T>
+where
+    T: Convert<TLatest, TStored>,
+{
+    fn latest(&self) -> Vec<TLatest> {
+        self.iter().map(|x| x.latest()).collect()
+    }
+
+    fn stored(&self) -> Vec<TStored> {
+        self.iter().map(|x| x.stored()).collect()
+    }
 }
 
 pub trait ProvideMetadata {
@@ -29,6 +48,9 @@ where
 pub struct VersionBuildInfo {
     pub variant_name: &'static str,
     pub struct_name: &'static str,
+    pub stored: bool,
+    pub served: bool,
+    pub latest: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -46,8 +68,68 @@ pub struct ResourceBuildInfo {
     pub crate_path: &'static str,
     pub versions: Vec<VersionBuildInfo>,
     pub status: Option<StatusBuildInfo>,
+    pub configuration: ResourceConfiguration,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResourceConfiguration {
+    pub generate_service: bool,
+    pub generate_service_get: bool,
+    pub generate_service_list: bool,
+    pub generate_service_set: bool,
+    pub generate_service_delete: bool,
+    pub generate_service_get_status: bool,
+}
+
+impl ResourceConfiguration {
+    pub fn new() -> Self {
+        Self {
+            generate_service: true,
+            generate_service_get: true,
+            generate_service_list: true,
+            generate_service_set: true,
+            generate_service_delete: false,
+            generate_service_get_status: true,
+        }
+    }
+
+    pub fn disable_generate_service(mut self) -> Self {
+        self.generate_service = false;
+        self
+    }
+
+    pub fn disable_generate_service_get(mut self) -> Self {
+        self.generate_service_get = false;
+        self
+    }
+
+    pub fn disable_generate_service_list(mut self) -> Self {
+        self.generate_service_list = false;
+        self
+    }
+
+    pub fn disable_generate_service_set(mut self) -> Self {
+        self.generate_service_set = false;
+        self
+    }
+
+    pub fn enable_generate_service_delete(mut self) -> Self {
+        self.generate_service_delete = true;
+        self
+    }
+
+    pub fn disable_generate_service_get_status(mut self) -> Self {
+        self.generate_service_get_status = false;
+        self
+    }
 }
 
 pub trait BuildableResource {
-    fn build_info() -> ResourceBuildInfo;
+    fn build_info(configuration: ResourceConfiguration) -> ResourceBuildInfo;
+}
+
+pub trait FromResourceAsync<T> {
+    fn from_resource(resource: T) -> impl Future<Output = Result<Self>> + Send + Sync
+    where
+        Self: Sized;
 }

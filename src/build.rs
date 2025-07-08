@@ -8,8 +8,10 @@ use build_utils::{cargo, resource};
 pub async fn main() {
     cargo::warn("hello from build.rs");
 
-    resource::ResourcesRepositoryBuilder::new()
-        .resource::<resources::machine::Machine>()
+    resource::ResourcesBuilder::new()
+        .resource_with_config::<resources::machine::Machine>(|cfg| {
+            cfg.disable_generate_service_set()
+        })
         .build()
         .await
         .expect("failed to build resources repository");
