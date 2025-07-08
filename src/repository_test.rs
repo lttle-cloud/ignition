@@ -1,11 +1,10 @@
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
+    use std::sync::{Arc, Weak};
 
     use crate::machinery::store::Store;
     use crate::repository::Repository;
     use crate::resources::machine::{Machine, MachineV1};
-    use crate::resources::metadata::Metadata;
     use crate::resources::{Convert, ProvideMetadata};
 
     #[tokio::test]
@@ -17,7 +16,7 @@ mod test {
 
         let store = Arc::new(store);
 
-        let repository = Repository::new(store);
+        let repository = Repository::new(store, Weak::new());
         let machine_repo = repository.machine("test_tenant");
 
         let machine = Machine::V1(MachineV1 {
@@ -26,7 +25,10 @@ mod test {
             bleah: 12,
         });
 
-        machine_repo.set(machine).expect("failed to set machine");
+        machine_repo
+            .set(machine)
+            .await
+            .expect("failed to set machine");
 
         //list the machines
         let machines = machine_repo.list(None).expect("failed to list machines");

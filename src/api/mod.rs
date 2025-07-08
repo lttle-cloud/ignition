@@ -10,13 +10,15 @@ use tracing::info;
 
 use crate::{
     api::resource_service::{ResourceService, ResourceServiceRouter},
+    controller::scheduler::Scheduler,
     machinery::store::Store,
     repository::Repository,
 };
 
 pub struct ApiState {
     pub store: Arc<Store>,
-    pub repository: Repository,
+    pub repository: Arc<Repository>,
+    pub scheduler: Arc<Scheduler>,
 }
 
 pub struct ApiServerConfig {
@@ -31,11 +33,18 @@ pub struct ApiServer {
 }
 
 impl ApiServer {
-    pub fn new(store: Arc<Store>, config: ApiServerConfig) -> Self {
-        let repository = Repository::new(store.clone());
-
+    pub fn new(
+        store: Arc<Store>,
+        repository: Arc<Repository>,
+        scheduler: Arc<Scheduler>,
+        config: ApiServerConfig,
+    ) -> Self {
         Self {
-            state: Arc::new(ApiState { store, repository }),
+            state: Arc::new(ApiState {
+                store,
+                repository,
+                scheduler,
+            }),
             config,
             routers: vec![],
         }

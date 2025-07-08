@@ -31,6 +31,7 @@ impl ResourcesBuilder {
     }
 
     pub async fn build(self) -> Result<()> {
+        build_resource_index(&self.resources).await?;
         build_repository(&self.resources).await?;
         build_services(&self.resources).await?;
         Ok(())
@@ -41,6 +42,27 @@ pub fn identity(config: ResourceConfiguration) -> ResourceConfiguration {
     config
 }
 
+async fn build_resource_index(resources: &[ResourceBuildInfo]) -> Result<()> {
+    let resource_index_out_path = cargo::out_dir_path("resource_index.rs");
+
+    let mut src = String::new();
+    src.push_str("#[allow(dead_code, unused)]\n");
+    src.push_str("pub mod resource_index {\n");
+
+    src.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n");
+    src.push_str("pub enum ResourceKind {\n");
+
+    for resource in resources {
+        src.push_str(&format!("    {},\n", resource.name));
+    }
+    src.push_str("}\n\n");
+    src.push_str("}\n\n");
+
+    write(&resource_index_out_path, src).await?;
+
+    Ok(())
+}
+
 async fn build_repository(resources: &[ResourceBuildInfo]) -> Result<()> {
     let repository_out_path = cargo::out_dir_path("repository.rs");
 
@@ -48,8 +70,9 @@ async fn build_repository(resources: &[ResourceBuildInfo]) -> Result<()> {
     src.push_str("#[allow(dead_code, unused)]\n");
     src.push_str("pub mod repository {\n");
     src.push_str("use anyhow::Result;\n");
-    src.push_str("use std::sync::Arc;\n\n");
+    src.push_str("use std::sync::{Arc, Weak};\n\n");
     src.push_str("use crate::{\n");
+    src.push_str("    controller::{context::ControllerEvent, scheduler::Scheduler},\n");
     src.push_str("    machinery::store::Store,\n");
     src.push_str("    resources::{Convert, FromResourceAsync, ProvideKey, ProvideMetadata, metadata::Metadata},\n");
 
@@ -72,11 +95,15 @@ async fn build_repository(resources: &[ResourceBuildInfo]) -> Result<()> {
     // Generate Repository struct
     src.push_str("pub struct Repository {\n");
     src.push_str("    store: Arc<Store>,\n");
+    src.push_str("    scheduler: Weak<Scheduler>,\n");
     src.push_str("}\n\n");
 
     src.push_str("impl Repository {\n");
-    src.push_str("    pub fn new(store: Arc<Store>) -> Self {\n");
-    src.push_str("        Self { store }\n");
+    src.push_str("    pub fn new(store: Arc<Store>, scheduler: Weak<Scheduler>) -> Self {\n");
+    src.push_str("        Self { store, scheduler }\n");
+    src.push_str("    }\n\n");
+    src.push_str("    fn get_scheduler(&self) -> Option<Arc<Scheduler>> {\n");
+    src.push_str("        self.scheduler.upgrade()\n");
     src.push_str("    }\n\n");
 
     // Generate repository methods for each resource
@@ -89,7 +116,7 @@ async fn build_repository(resources: &[ResourceBuildInfo]) -> Result<()> {
             resource.collection, repository_name
         ));
         src.push_str(&format!(
-            "        {}::new(self.store.clone(), tenant)\n",
+            "        {}::new(self.store.clone(), tenant, self.scheduler.clone())\n",
             repository_name
         ));
         src.push_str("    }\n\n");
@@ -116,16 +143,22 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
     src.push_str(&format!("pub struct {} {{\n", repository_name));
     src.push_str("    store: Arc<Store>,\n");
     src.push_str("    tenant: String,\n");
+    src.push_str("    scheduler: Weak<Scheduler>,\n");
     src.push_str("}\n\n");
 
     src.push_str(&format!("impl {} {{\n", repository_name));
 
     // Constructor
-    src.push_str("    pub fn new(store: Arc<Store>, tenant: impl AsRef<str>) -> Self {\n");
+    src.push_str("    pub fn new(store: Arc<Store>, tenant: impl AsRef<str>, scheduler: Weak<Scheduler>) -> Self {\n");
     src.push_str("        Self {\n");
     src.push_str("            store: store,\n");
     src.push_str("            tenant: tenant.as_ref().to_string(),\n");
+    src.push_str("            scheduler,\n");
     src.push_str("        }\n");
+    src.push_str("    }\n\n");
+
+    src.push_str("    fn get_scheduler(&self) -> Option<Arc<Scheduler>> {\n");
+    src.push_str("        self.scheduler.upgrade()\n");
     src.push_str("    }\n\n");
 
     // Get method
@@ -144,7 +177,7 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
 
     // Set method
     src.push_str(&format!(
-        "    pub fn set(&self, resource: {}) -> Result<()> {{\n",
+        "    pub async fn set(&self, resource: {}) -> Result<()> {{\n",
         resource_name
     ));
     src.push_str("        let metadata = resource.metadata();\n");
@@ -153,22 +186,36 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
         resource_name
     ));
     src.push_str("        let mut resource = resource.latest();\n");
-    src.push_str("        resource.name = metadata.name;\n");
+    src.push_str("        resource.name = metadata.name.clone();\n");
     if resource.namespaced {
-        src.push_str("        resource.namespace = metadata.namespace.into();\n");
+        src.push_str("        resource.namespace = metadata.namespace.clone().into();\n");
     }
     src.push_str(&format!(
         "        let stored_resource: {} = resource.into();\n",
         resource_name
     ));
     src.push_str("        self.store.put(key, stored_resource)?;\n");
+    src.push_str("        \n");
+    src.push_str("        // Notify scheduler of resource change\n");
+    src.push_str("        if let Some(scheduler) = self.get_scheduler() {\n");
+    src.push_str(&format!(
+            "            let event = ControllerEvent::ResourceChange(crate::resource_index::ResourceKind::{}, metadata);\n",
+            resource_name
+        ));
+    src.push_str("            if let Err(e) = scheduler.push(&self.tenant, event).await {\n");
+    src.push_str("                tracing::warn!(\"Failed to notify scheduler of resource change: {}\", e);\n");
+    src.push_str("            }\n");
+    src.push_str("        }\n");
+    src.push_str("        \n");
     src.push_str("        Ok(())\n");
     src.push_str("    }\n\n");
 
     // Delete method
-    src.push_str("    pub fn delete(&self, namespace: impl AsRef<str>, name: impl AsRef<str>) -> Result<()> {\n");
+    src.push_str("    pub async fn delete(&self, namespace: impl AsRef<str>, name: impl AsRef<str>) -> Result<()> {\n");
+    src.push_str("        let namespace_str = namespace.as_ref().to_string();\n");
+    src.push_str("        let name_str = name.as_ref().to_string();\n");
     src.push_str(&format!(
-        "        let key = {}::key(self.tenant.clone(), Metadata::new(name, Some(namespace)));\n",
+        "        let key = {}::key(self.tenant.clone(), Metadata::new(&name_str, Some(&namespace_str)));\n",
         resource_name
     ));
     src.push_str("        let Some(_resource) = self.store.get(key.clone())? else {\n");
@@ -177,6 +224,19 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
     ));
     src.push_str("        };\n");
     src.push_str("        self.store.delete(key)?;\n");
+    src.push_str("        \n");
+    src.push_str("        // Notify scheduler of resource deletion\n");
+    src.push_str("        if let Some(scheduler) = self.get_scheduler() {\n");
+    src.push_str("            let metadata = Metadata::new(name_str, Some(namespace_str));\n");
+    src.push_str(&format!(
+            "            let event = ControllerEvent::ResourceChange(crate::resource_index::ResourceKind::{}, metadata);\n",
+            resource_name
+        ));
+    src.push_str("            if let Err(e) = scheduler.push(&self.tenant, event).await {\n");
+    src.push_str("                tracing::warn!(\"Failed to notify scheduler of resource deletion: {}\", e);\n");
+    src.push_str("            }\n");
+    src.push_str("        }\n");
+    src.push_str("        \n");
     src.push_str("        Ok(())\n");
     src.push_str("    }\n\n");
 
@@ -220,19 +280,31 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
             "        let status = {}::from_resource(resource).await?;\n",
             status_name
         ));
-        src.push_str("        self.set_status(metadata, status.clone())?;\n");
+        src.push_str("        self.set_status(metadata, status.clone()).await?;\n");
         src.push_str("        Ok(status)\n");
         src.push_str("    }\n\n");
 
         src.push_str(&format!(
-            "    pub fn set_status(&self, metadata: Metadata, status: {}) -> Result<()> {{\n",
+            "    pub async fn set_status(&self, metadata: Metadata, status: {}) -> Result<()> {{\n",
             status_name
         ));
         src.push_str(&format!(
-            "        let key = {}::key(self.tenant.clone(), metadata);\n",
+            "        let key = {}::key(self.tenant.clone(), metadata.clone());\n",
             status_name
         ));
         src.push_str("        self.store.put(key, status)?;\n");
+        src.push_str("        \n");
+        src.push_str("        // Notify scheduler of status change\n");
+        src.push_str("        if let Some(scheduler) = self.get_scheduler() {\n");
+        src.push_str(&format!(
+            "            let event = ControllerEvent::ResourceStatusChange(crate::resource_index::ResourceKind::{}, metadata);\n",
+            resource_name
+        ));
+        src.push_str("            if let Err(e) = scheduler.push(&self.tenant, event).await {\n");
+        src.push_str("                tracing::warn!(\"Failed to notify scheduler of status change: {}\", e);\n");
+        src.push_str("            }\n");
+        src.push_str("        }\n");
+        src.push_str("        \n");
         src.push_str("        Ok(())\n");
         src.push_str("    }\n");
     }
@@ -380,7 +452,7 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
         ));
         src.push_str("        ) -> impl IntoResponse {\n");
         src.push_str(&format!(
-            "            let result = state.repository.{}(ctx.tenant).set(resource);\n\n",
+            "            let result = state.repository.{}(ctx.tenant).set(resource).await;\n\n",
             collection_name
         ));
         src.push_str("            match result {\n");
@@ -400,12 +472,12 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
         if namespaced {
             src.push_str("            let namespace = ctx.namespace.unwrap_or(DEFAULT_NAMESPACE.to_string());\n\n");
             src.push_str(&format!(
-                "            let result = state.repository.{}(ctx.tenant).delete(namespace, name);\n",
+                "            let result = state.repository.{}(ctx.tenant).delete(namespace, name).await;\n",
                 collection_name
             ));
         } else {
             src.push_str(&format!(
-                "            let result = state.repository.{}(ctx.tenant).delete(\"default\", name);\n",
+                "            let result = state.repository.{}(ctx.tenant).delete(\"default\", name).await;\n",
                 collection_name
             ));
         }
