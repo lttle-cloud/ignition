@@ -262,7 +262,7 @@ fn generate_version_struct(
         named.insert(0, syn::parse_quote!(namespace: Option<String>));
     }
 
-    item.attrs = syn::parse_quote!(#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]);
+    item.attrs = syn::parse_quote!(#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]);
 
     item.vis = syn::Visibility::Public(syn::token::Pub {
         span: Span::call_site(),
@@ -310,6 +310,31 @@ fn generate_version_enum_variants(args: &ResourceArgs, versions: &[VersionInfo])
             )
         })
         .collect()
+}
+
+fn generate_schema_enum_variants(args: &ResourceArgs, versions: &[VersionInfo]) -> Vec<Variant> {
+    let mut variants = versions
+        .iter()
+        .map(|version| {
+            let variant_name = version.original_ident.clone();
+            let variant_value = version.generated_ident.clone();
+            let rename = format!("{}.{}", args.tag, version.original_ident).to_lowercase();
+            syn::parse_quote!(
+                #[serde(rename = #rename)]
+                #variant_name (#variant_value)
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let rename = args.tag.clone();
+    let variant_value = syn::Ident::new(&format!("{}Latest", args.name), Span::call_site());
+
+    variants.insert(0, syn::parse_quote!(
+        #[serde(rename = #rename)]
+        Latest (#variant_value)
+    ));
+
+    variants
 }
 
 fn generate_provide_metadata_impls(
@@ -502,6 +527,7 @@ fn generate_status_provide_key_impl(
 fn generate_build_info_impl(analysis: &ResourceAnalysis) -> proc_macro2::TokenStream {
     let enum_name = syn::Ident::new(&analysis.args.name, Span::call_site());
     let enum_name_str = enum_name.to_string();
+    let schema_provider = syn::Ident::new(&format!("{}Schema", enum_name), Span::call_site());
     let namespaced = analysis.args.namespaced;
     let collection_name = analysis.args.tag.clone();
     let crate_path_str = format!("resources::{}", collection_name);
@@ -542,7 +568,9 @@ fn generate_build_info_impl(analysis: &ResourceAnalysis) -> proc_macro2::TokenSt
 
     quote! {
         impl super::BuildableResource for #enum_name {
-            fn build_info(configuration: super::ResourceConfiguration) -> super::ResourceBuildInfo {
+            type SchemaProvider = #schema_provider;
+
+            fn build_info(configuration: super::ResourceConfiguration, schema: schemars::Schema) -> super::ResourceBuildInfo {
                 super::ResourceBuildInfo {
                     name: #enum_name_str,
                     tag: #collection_name,
@@ -552,6 +580,7 @@ fn generate_build_info_impl(analysis: &ResourceAnalysis) -> proc_macro2::TokenSt
                     versions: vec![#(#versions_build_info),*],
                     status: #status_build_info,
                     configuration,
+                    schema,
                 }
             }
         }
@@ -712,6 +741,7 @@ fn generate_output(
     resource_mod: &syn::ItemMod,
 ) -> proc_macro2::TokenStream {
     let enum_name = syn::Ident::new(&analysis.args.name, Span::call_site());
+    let schema_enum_name = syn::Ident::new(&format!("{}Schema", enum_name), Span::call_site());
 
     // Generate version structs
     let version_structs = analysis.versions.iter().map(|version_info| {
@@ -766,6 +796,7 @@ fn generate_output(
     };
 
     let version_enum_variants = generate_version_enum_variants(&analysis.args , &analysis.versions);
+    let schema_enum_variants = generate_schema_enum_variants(&analysis.args , &analysis.versions);
     let version_provide_metadata_impls =
         generate_provide_metadata_impls(&analysis.versions, &analysis.args);
     let provide_key_impl = generate_provide_key_impl(&analysis);
@@ -780,9 +811,14 @@ fn generate_output(
 
         #(#version_provide_metadata_impls)*
 
-        #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
         pub enum #enum_name {
             #(#version_enum_variants),*
+        }
+
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+        pub enum #schema_enum_name {
+            #(#schema_enum_variants),*
         }
 
         #provide_key_impl

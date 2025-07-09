@@ -1,4 +1,5 @@
 use anyhow::Result;
+use schemars::{JsonSchema, Schema};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
@@ -69,6 +70,7 @@ pub struct ResourceBuildInfo {
     pub versions: Vec<VersionBuildInfo>,
     pub status: Option<StatusBuildInfo>,
     pub configuration: ResourceConfiguration,
+    pub schema: Schema,
 }
 
 #[derive(Debug, Clone)]
@@ -125,7 +127,9 @@ impl ResourceConfiguration {
 }
 
 pub trait BuildableResource {
-    fn build_info(configuration: ResourceConfiguration) -> ResourceBuildInfo;
+    type SchemaProvider: JsonSchema;
+
+    fn build_info(configuration: ResourceConfiguration, schema: Schema) -> ResourceBuildInfo;
 }
 
 pub trait FromResourceAsync<T> {

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Resources",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "machine": {
+          "$ref": "#/$defs/MachineV2"
+        }
+      },
+      "required": [
+        "machine"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "machine.v1": {
+          "$ref": "#/$defs/MachineV1"
+        }
+      },
+      "required": [
+        "machine.v1"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "machine.v2": {
+          "$ref": "#/$defs/MachineV2"
+        }
+      },
+      "required": [
+        "machine.v2"
+      ],
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "MachineV1": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "bleah": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "bleah"
+      ]
+    },
+    "MachineV2": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "bleah": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "bleah2": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "bleah",
+        "bleah2"
+      ]
+    }
+  }
+}

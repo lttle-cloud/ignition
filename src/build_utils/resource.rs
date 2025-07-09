@@ -1,4 +1,9 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
+use schemars::{JsonSchema, Schema, SchemaGenerator, generate::SchemaSettings};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use tokio::fs::write;
 
 use crate::{
@@ -8,12 +13,14 @@ use crate::{
 
 pub struct ResourcesBuilder {
     resources: Vec<ResourceBuildInfo>,
+    schema_generator: SchemaGenerator,
 }
 
 impl ResourcesBuilder {
     pub fn new() -> Self {
         Self {
             resources: Vec::new(),
+            schema_generator: SchemaGenerator::new(SchemaSettings::default()),
         }
     }
 
@@ -25,15 +32,18 @@ impl ResourcesBuilder {
         mut self,
         configure: impl FnOnce(ResourceConfiguration) -> ResourceConfiguration,
     ) -> Self {
-        let build_info = R::build_info(configure(ResourceConfiguration::new()));
+        let schema = R::SchemaProvider::json_schema(&mut self.schema_generator);
+
+        let build_info = R::build_info(configure(ResourceConfiguration::new()), schema);
         self.resources.push(build_info);
         self
     }
 
-    pub async fn build(self) -> Result<()> {
+    pub async fn build(mut self) -> Result<()> {
         build_resource_index(&self.resources).await?;
         build_repository(&self.resources).await?;
         build_services(&self.resources).await?;
+        build_schema(&self.resources, &mut self.schema_generator).await?;
         Ok(())
     }
 }
@@ -43,7 +53,7 @@ pub fn identity(config: ResourceConfiguration) -> ResourceConfiguration {
 }
 
 async fn build_resource_index(resources: &[ResourceBuildInfo]) -> Result<()> {
-    let resource_index_out_path = cargo::out_dir_path("resource_index.rs");
+    let resource_index_out_path = cargo::build_out_dir_path("resource_index.rs");
 
     let mut src = String::new();
     src.push_str("#[allow(dead_code, unused)]\n");
@@ -64,7 +74,7 @@ async fn build_resource_index(resources: &[ResourceBuildInfo]) -> Result<()> {
 }
 
 async fn build_repository(resources: &[ResourceBuildInfo]) -> Result<()> {
-    let repository_out_path = cargo::out_dir_path("repository.rs");
+    let repository_out_path = cargo::build_out_dir_path("repository.rs");
 
     let mut src = String::new();
     src.push_str("#[allow(dead_code, unused)]\n");
@@ -313,7 +323,7 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
 }
 
 async fn build_services(resources: &[ResourceBuildInfo]) -> Result<()> {
-    let service_out_path = cargo::out_dir_path("services.rs");
+    let service_out_path = cargo::build_out_dir_path("services.rs");
 
     let mut src = String::new();
     src.push_str("#[allow(dead_code, unused)]\n");
@@ -518,4 +528,90 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
     ));
     src.push_str("    }\n");
     src.push_str("}\n\n");
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct PartialRootSchema {
+    #[serde(rename = "oneOf")]
+    one_of: Vec<Value>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde()]
+struct RootSchema {
+    #[serde(rename = "$schema")]
+    schema: String,
+    title: String,
+    #[serde(rename = "oneOf")]
+    one_of: Vec<Value>,
+    #[serde(rename = "$defs")]
+    defs: HashMap<String, Value>,
+}
+
+impl RootSchema {
+    fn new(name: &str) -> Self {
+        Self {
+            schema: "https://json-schema.org/draft/2020-12/schema".to_string(),
+            title: name.to_string(),
+            one_of: Vec::new(),
+            defs: HashMap::new(),
+        }
+    }
+
+    fn add_one_of(&mut self, schema: &PartialRootSchema) {
+        self.one_of.extend(schema.one_of.clone());
+    }
+
+    fn add_defs(&mut self, defs: &Map<String, Value>) {
+        for (key, value) in defs {
+            self.defs.insert(key.clone(), value.clone());
+        }
+    }
+}
+
+pub fn merge_json_schemas(schemas: Vec<Schema>, schema_generator: &mut SchemaGenerator) -> Value {
+    let schemas = schemas
+        .into_iter()
+        .map(|s| s.to_value())
+        .collect::<Vec<_>>();
+    let schemas = schemas
+        .into_iter()
+        .map(|s| {
+            serde_json::from_value::<PartialRootSchema>(s.clone()).expect(&format!(
+                "Failed to parse partial root schema {}",
+                s.to_string()
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    let mut root_schema = RootSchema::new("Resources");
+
+    for schema in schemas {
+        root_schema.add_one_of(&schema);
+    }
+
+    root_schema.add_defs(schema_generator.definitions());
+
+    serde_json::to_value(root_schema).expect("Failed to convert root schema to value")
+}
+
+async fn build_schema(
+    resources: &[ResourceBuildInfo],
+    schema_generator: &mut SchemaGenerator,
+) -> Result<()> {
+    let schema_out_path = cargo::workspace_root_dir_path("schemas/schema.json").await?;
+
+    let schema = merge_json_schemas(
+        resources
+            .iter()
+            .map(|r| r.schema.clone())
+            .collect::<Vec<_>>(),
+        schema_generator,
+    );
+
+    let src = serde_json::to_string_pretty(&schema)?;
+
+    write(&schema_out_path, src).await?;
+
+    Ok(())
 }
