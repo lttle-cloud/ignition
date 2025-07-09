@@ -74,6 +74,39 @@ async fn build_resource_index(resources: &[ResourceBuildInfo]) -> Result<()> {
         src.push_str(&format!("    {},\n", resource.name));
     }
     src.push_str("}\n\n");
+
+    src.push_str(
+        "#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]\n",
+    );
+    src.push_str("pub enum Resources {\n");
+
+    for resource in resources {
+        let latest_version = resource.versions.iter().find(|v| v.latest);
+
+        if let Some(latest_version) = latest_version {
+            let variant_value = format!(
+                "crate::{}::{}",
+                resource.crate_path, latest_version.struct_name
+            );
+            src.push_str(&format!("#[serde(rename = \"{}\")]\n", resource.tag));
+            src.push_str(&format!("    {}({}),\n", resource.name, variant_value));
+        }
+
+        for version in &resource.versions {
+            if !version.served && !version.latest {
+                continue;
+            }
+
+            let variant_name = format!("{}{}", resource.name, version.variant_name);
+            let variant_value = format!("crate::{}::{}", resource.crate_path, version.struct_name);
+            let tag_name = format!("{}.{}", resource.tag, version.variant_name).to_lowercase();
+
+            src.push_str(&format!("#[serde(rename = \"{}\")]\n", tag_name));
+            src.push_str(&format!("    {}({}),\n", variant_name, variant_value));
+        }
+    }
+    src.push_str("}\n\n");
+
     src.push_str("}\n\n");
 
     write(&resource_index_out_path, src).await?;
@@ -324,6 +357,21 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
         src.push_str("        }\n");
         src.push_str("        \n");
         src.push_str("        Ok(())\n");
+        src.push_str("    }\n\n");
+
+        src.push_str(&format!(
+            "    pub async fn patch_status<F>(&self, metadata: Metadata, mut f: F) -> Result<{}>\n",
+            status_name
+        ));
+        src.push_str("    where\n");
+        src.push_str(&format!("        F: FnMut(&mut {}),\n", status_name));
+        src.push_str("    {\n");
+        src.push_str(&format!(
+            "        let mut status = self.get_status(metadata.clone()).await?;\n"
+        ));
+        src.push_str("        f(&mut status);\n");
+        src.push_str("        self.set_status(metadata.clone(), status.clone()).await?;\n");
+        src.push_str("        Ok(status)\n");
         src.push_str("    }\n");
     }
 
