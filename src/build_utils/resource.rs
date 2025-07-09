@@ -8,6 +8,9 @@ use tokio::fs::write;
 
 use crate::{
     build_utils::cargo,
+    machinery::api_schema::{
+        ApiMethod, ApiPathSegment, ApiRequest, ApiResponse, ApiSchema, ApiService, ApiVerb,
+    },
     resources::{BuildableResource, ResourceBuildInfo, ResourceConfiguration},
 };
 
@@ -33,8 +36,13 @@ impl ResourcesBuilder {
         configure: impl FnOnce(ResourceConfiguration) -> ResourceConfiguration,
     ) -> Self {
         let schema = R::SchemaProvider::json_schema(&mut self.schema_generator);
+        let status_schema = R::StatusSchemaProvider::json_schema(&mut self.schema_generator);
 
-        let build_info = R::build_info(configure(ResourceConfiguration::new()), schema);
+        let build_info = R::build_info(
+            configure(ResourceConfiguration::new()),
+            schema,
+            status_schema,
+        );
         self.resources.push(build_info);
         self
     }
@@ -599,7 +607,175 @@ async fn build_schema(
     resources: &[ResourceBuildInfo],
     schema_generator: &mut SchemaGenerator,
 ) -> Result<()> {
-    let schema_out_path = cargo::workspace_root_dir_path("schemas/schema.json").await?;
+    build_resources_json_schema(resources, schema_generator).await?;
+    build_api_schema(resources, schema_generator).await?;
+
+    Ok(())
+}
+
+async fn build_api_schema(
+    resources: &[ResourceBuildInfo],
+    schema_generator: &mut SchemaGenerator,
+) -> Result<()> {
+    let schema_out_path = cargo::workspace_root_dir_path("schemas/api.json").await?;
+
+    let mut api_schema = ApiSchema::new();
+
+    for resource in resources {
+        if !resource.configuration.generate_service {
+            continue;
+        }
+
+        let latest_version = resource
+            .versions
+            .iter()
+            .find(|v| v.latest)
+            .expect("No latest version found");
+
+        let served_versions = resource
+            .versions
+            .iter()
+            .filter(|v| v.served)
+            .collect::<Vec<_>>();
+
+        let mut service = ApiService {
+            name: resource.name.to_string(),
+            tag: resource.tag.to_string(),
+            namespaced: resource.namespaced,
+            methods: Vec::new(),
+        };
+
+        if resource.configuration.generate_service_get {
+            let method = ApiMethod {
+                name: "get".to_string(),
+                verb: ApiVerb::Get,
+                path: vec![
+                    ApiPathSegment::Static {
+                        value: resource.tag.to_string(),
+                    },
+                    ApiPathSegment::ResourceName,
+                ],
+                request: None,
+                response: Some(ApiResponse::SchemaDefinition {
+                    name: latest_version.struct_name.to_string(),
+                }),
+            };
+
+            service.methods.push(method);
+        }
+
+        if resource.configuration.generate_service_list {
+            let method = ApiMethod {
+                name: "list".to_string(),
+                verb: ApiVerb::Get,
+                path: vec![ApiPathSegment::Static {
+                    value: resource.tag.to_string(),
+                }],
+                request: None,
+                response: Some(ApiResponse::ListOfSchemaDefinition {
+                    name: latest_version.struct_name.to_string(),
+                }),
+            };
+
+            service.methods.push(method);
+        }
+
+        if resource.configuration.generate_service_delete {
+            let method = ApiMethod {
+                name: "delete".to_string(),
+                verb: ApiVerb::Delete,
+                path: vec![ApiPathSegment::Static {
+                    value: resource.tag.to_string(),
+                }],
+                request: None,
+                response: None,
+            };
+
+            service.methods.push(method);
+        }
+
+        if resource.configuration.generate_service_set {
+            let simple_method = ApiMethod {
+                name: "apply".to_string(),
+                verb: ApiVerb::Put,
+                path: vec![ApiPathSegment::Static {
+                    value: resource.tag.to_string(),
+                }],
+                request: Some(ApiRequest::SchemaDefinition {
+                    name: latest_version.struct_name.to_string(),
+                }),
+                response: None,
+            };
+
+            service.methods.push(simple_method);
+
+            for version in served_versions {
+                let method = ApiMethod {
+                    name: format!("apply_{}", version.variant_name).to_lowercase(),
+                    verb: ApiVerb::Put,
+                    path: vec![ApiPathSegment::Static {
+                        value: resource.tag.to_string(),
+                    }],
+                    request: Some(ApiRequest::TaggedSchemaDefinition {
+                        name: version.struct_name.to_string(),
+                        tag: format!("{}.{}", resource.tag, version.variant_name).to_lowercase(),
+                    }),
+                    response: None,
+                };
+
+                service.methods.push(method);
+            }
+        }
+
+        if resource.configuration.generate_service_get_status {
+            if let Some(status) = &resource.status {
+                let method = ApiMethod {
+                    name: "get_status".to_string(),
+                    verb: ApiVerb::Get,
+                    path: vec![
+                        ApiPathSegment::Static {
+                            value: resource.tag.to_string(),
+                        },
+                        ApiPathSegment::ResourceName,
+                        ApiPathSegment::Static {
+                            value: "status".to_string(),
+                        },
+                    ],
+                    request: None,
+                    response: Some(ApiResponse::SchemaDefinition {
+                        name: status.struct_name.to_string(),
+                    }),
+                };
+
+                service.methods.push(method);
+            }
+        }
+
+        api_schema.services.push(service);
+
+        if let Some(status) = &resource.status {
+            api_schema.defs.insert(
+                status.struct_name.to_string(),
+                resource.status_schema.clone().to_value(),
+            );
+        }
+    }
+    api_schema
+        .defs
+        .extend(schema_generator.definitions().clone());
+
+    let src = serde_json::to_string_pretty(&api_schema)?;
+
+    write(&schema_out_path, src).await?;
+
+    Ok(())
+}
+
+async fn build_resources_json_schema(
+    resources: &[ResourceBuildInfo],
+    schema_generator: &mut SchemaGenerator,
+) -> Result<()> {
+    let schema_out_path = cargo::workspace_root_dir_path("schemas/resources.json").await?;
 
     let schema = merge_json_schemas(
         resources

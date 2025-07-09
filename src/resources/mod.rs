@@ -71,6 +71,7 @@ pub struct ResourceBuildInfo {
     pub status: Option<StatusBuildInfo>,
     pub configuration: ResourceConfiguration,
     pub schema: Schema,
+    pub status_schema: Schema,
 }
 
 #[derive(Debug, Clone)]
@@ -128,8 +129,13 @@ impl ResourceConfiguration {
 
 pub trait BuildableResource {
     type SchemaProvider: JsonSchema;
+    type StatusSchemaProvider: JsonSchema;
 
-    fn build_info(configuration: ResourceConfiguration, schema: Schema) -> ResourceBuildInfo;
+    fn build_info(
+        configuration: ResourceConfiguration,
+        schema: Schema,
+        status_schema: Schema,
+    ) -> ResourceBuildInfo;
 }
 
 pub trait FromResourceAsync<T> {

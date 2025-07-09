@@ -1,0 +1,170 @@
+{
+  "services": [
+    {
+      "name": "Machine",
+      "tag": "machine",
+      "namespaced": true,
+      "methods": [
+        {
+          "name": "get",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "machine"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "name": "MachineV2"
+          }
+        },
+        {
+          "name": "list",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "machine"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "list",
+            "name": "MachineV2"
+          }
+        },
+        {
+          "name": "apply",
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "machine"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "MachineV2"
+          },
+          "response": null
+        },
+        {
+          "name": "apply_v1",
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "machine"
+            }
+          ],
+          "request": {
+            "type": "tagged_schema",
+            "name": "MachineV1",
+            "tag": "machine.v1"
+          },
+          "response": null
+        },
+        {
+          "name": "apply_v2",
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "machine"
+            }
+          ],
+          "request": {
+            "type": "tagged_schema",
+            "name": "MachineV2",
+            "tag": "machine.v2"
+          },
+          "response": null
+        },
+        {
+          "name": "get_status",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "machine"
+            },
+            {
+              "type": "resource_name"
+            },
+            {
+              "type": "static",
+              "value": "status"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "name": "MachineStatus"
+          }
+        }
+      ]
+    }
+  ],
+  "defs": {
+    "MachineStatus": {
+      "type": "object"
+    },
+    "MachineV2": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "bleah": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "bleah2": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "bleah",
+        "bleah2"
+      ]
+    },
+    "MachineV1": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "bleah": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "bleah"
+      ]
+    }
+  }
+}

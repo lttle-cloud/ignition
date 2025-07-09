@@ -286,7 +286,7 @@ fn generate_status_struct(
     status_info: &StatusInfo,
 ) -> syn::ItemStruct {
     let mut item = struct_item.clone();
-    item.attrs = syn::parse_quote!(#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]);
+    item.attrs = syn::parse_quote!(#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]);
     item.fields.iter_mut().for_each(|field| {
         field.vis = syn::Visibility::Public(syn::token::Pub { span: field.span() });
     });
@@ -566,11 +566,23 @@ fn generate_build_info_impl(analysis: &ResourceAnalysis) -> proc_macro2::TokenSt
         }
     };
 
+    let status_schema_provider = if let Some(status_info) = &analysis.status {
+        let status_struct_name = status_info.generated_ident.clone();
+        quote! {
+            #status_struct_name
+        }
+    } else {
+        quote! {
+            ()
+        }
+    };
+
     quote! {
         impl super::BuildableResource for #enum_name {
             type SchemaProvider = #schema_provider;
+            type StatusSchemaProvider = #status_schema_provider;
 
-            fn build_info(configuration: super::ResourceConfiguration, schema: schemars::Schema) -> super::ResourceBuildInfo {
+            fn build_info(configuration: super::ResourceConfiguration, schema: schemars::Schema, status_schema: schemars::Schema) -> super::ResourceBuildInfo {
                 super::ResourceBuildInfo {
                     name: #enum_name_str,
                     tag: #collection_name,
@@ -581,6 +593,7 @@ fn generate_build_info_impl(analysis: &ResourceAnalysis) -> proc_macro2::TokenSt
                     status: #status_build_info,
                     configuration,
                     schema,
+                    status_schema,
                 }
             }
         }

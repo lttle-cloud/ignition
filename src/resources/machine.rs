@@ -1,7 +1,7 @@
 use anyhow::Result;
 use meta::resource;
 
-use crate::resources::{ConvertResource, FromResourceAsync};
+use crate::resources::{Convert, ConvertResource, FromResourceAsync};
 
 #[resource(name = "Machine", tag = "machine")]
 mod machine {
@@ -17,7 +17,9 @@ mod machine {
     }
 
     #[status]
-    struct Status {}
+    struct Status {
+        // test: u32,
+    }
 }
 
 impl ConvertResource<MachineV2> for MachineV1 {
@@ -40,8 +42,12 @@ impl ConvertResource<MachineV2> for MachineV1 {
 }
 
 impl FromResourceAsync<Machine> for MachineStatus {
-    async fn from_resource(_resource: Machine) -> Result<Self> {
-        Ok(MachineStatus {})
+    async fn from_resource(resource: Machine) -> Result<Self> {
+        let machine = resource.latest();
+
+        Ok(MachineStatus {
+            // test: machine.bleah + machine.bleah2,
+        })
     }
 }
 

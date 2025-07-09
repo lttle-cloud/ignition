@@ -1,15 +1,4 @@
 machine:
-  name: nginx-test
-  image: nginx:latest
-  memory: 128 # Mib
-  vcpus: 1
----
-service:
-  name: nginx-pub-http
-  target:
-    name: nginx-test
-    port: 80
-  protocol: http
-  mode:
-    external:
-      host: nginx-test.alpha1.ovh-rbx.lttle.host
+  name: machine-1
+  bleah: 1
+  bleah2: 32
