@@ -245,3 +245,96 @@ impl Parse for TableFieldArgs {
         })
     }
 }
+
+// #[name = "name", cell_style? = important | default]
+pub struct SummaryFieldArgs {
+    pub name: String,
+    pub cell_style: Option<SummaryCellStyle>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SummaryCellStyle {
+    Default,
+    Important,
+}
+
+impl FromStr for SummaryCellStyle {
+    type Err = syn::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "default" => Ok(SummaryCellStyle::Default),
+            "important" => Ok(SummaryCellStyle::Important),
+            _ => Err(syn::Error::new(
+                Span::call_site(),
+                "invalid summary cell style",
+            )),
+        }
+    }
+}
+
+impl Parse for SummaryCellStyle {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let ident = input.parse::<syn::Ident>()?;
+        match ident.to_string().as_str() {
+            "default" => Ok(SummaryCellStyle::Default),
+            "important" => Ok(SummaryCellStyle::Important),
+            _ => Err(syn::Error::new(ident.span(), "invalid summary cell style")),
+        }
+    }
+}
+
+impl Parse for SummaryFieldArgs {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let list = input.parse_terminated(syn::MetaNameValue::parse, Token![,])?;
+
+        let mut name = None;
+        let mut cell_style = None;
+
+        for item in list {
+            if item.path.is_ident("name") {
+                let syn::Expr::Lit(syn::ExprLit {
+                    attrs: _,
+                    lit: syn::Lit::Str(lit),
+                    ..
+                }) = item.value
+                else {
+                    return Err(syn::Error::new(item.value.span(), "name must be a string"));
+                };
+
+                name = Some(lit.value());
+            } else if item.path.is_ident("cell_style") {
+                let syn::Expr::Path(syn::ExprPath {
+                    attrs: _,
+                    qself: _,
+                    path: syn::Path { segments, .. },
+                }) = item.value
+                else {
+                    return Err(syn::Error::new(
+                        item.value.span(),
+                        "cell_style must be a identifier",
+                    ));
+                };
+                if segments.len() != 1 {
+                    return Err(syn::Error::new(
+                        item.path.span(),
+                        "cell_style must be a single identifier",
+                    ));
+                }
+
+                let Some(last_segment) = segments.last() else {
+                    return Err(syn::Error::new(
+                        item.path.span(),
+                        "cell_style must be a single identifier",
+                    ));
+                };
+
+                cell_style = Some(last_segment.ident.to_string().parse::<SummaryCellStyle>()?);
+            }
+        }
+
+        let name = name.ok_or(syn::Error::new(Span::call_site(), "name is required"))?;
+
+        Ok(SummaryFieldArgs { name, cell_style })
+    }
+}

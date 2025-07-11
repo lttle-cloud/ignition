@@ -1,10 +1,7 @@
 pub mod cmd;
 pub mod ui;
 
-use crate::{
-    cmd::machine::{MachineTable, MachineTableRow},
-    ui::summary::{Summary, SummaryCellStyle, SummaryRow},
-};
+use crate::cmd::machine::{MachineSummary, MachineTable, MachineTableRow};
 
 fn main() {
     println!("\n\n\n");
@@ -26,40 +23,13 @@ fn main() {
 
     println!("\n\n\n");
 
-    let summary = Summary {
-        rows: vec![
-            SummaryRow {
-                name: "name".to_string(),
-                cell_style: SummaryCellStyle::Default,
-                value: Some("Machine 1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda".to_string()),
-            },
-            SummaryRow {
-                name: "status".to_string(),
-                cell_style: SummaryCellStyle::Important,
-                value: Some("running".to_string()),
-            },
-            SummaryRow {
-                name: "ip".to_string(),
-                cell_style: SummaryCellStyle::Default,
-                value: Some("192.168.1.1".to_string()),
-            },
-            SummaryRow {
-                name: "some long text to test this".to_string(),
-                cell_style: SummaryCellStyle::Default,
-                value: Some("00:00:00:00:00:00".to_string()),
-            },
-            SummaryRow {
-                name: "some empty value".to_string(),
-                cell_style: SummaryCellStyle::Default,
-                value: None,
-            },
-            SummaryRow {
-                name: "image".to_string(),
-                cell_style: SummaryCellStyle::Default,
-                value: Some("ubuntu:22.04".to_string()),
-            },
-        ],
+    let machine_summary = MachineSummary {
+        name: "Machine 1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda1asdfasda".to_string(),
+        status: "running".to_string(),
+        ip: "192.168.1.1".to_string(),
+        mac: "00:00:00:00:00:00".to_string(),
+        version: None,
+        image: "ubuntu:22.04".to_string(),
     };
-
-    summary.print();
+    machine_summary.print();
 }
