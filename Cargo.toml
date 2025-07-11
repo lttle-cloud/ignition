@@ -14,12 +14,12 @@ name = "ignitiond"
 path = "src/daemon/main.rs"
 
 [[bin]]
-name = "takeoff"
-path = "src/takeoff/main.rs"
-
-[[bin]]
 name = "lttle"
 path = "src/cli/main.rs"
+
+[[bin]]
+name = "takeoff"
+path = "src/takeoff/main.rs"
 
 [workspace]
 members = ["meta", "."]
@@ -50,6 +50,7 @@ uuid = { version = "1.17.0", features = ["v4", "fast-rng"] }
 async-trait = "0.1.88"
 async-channel = "2.5.0"
 schemars = "1.0.4"
+reqwest = "0.12.22"
 
 [build-dependencies]
 meta = { path = "meta" }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ApiVerb {
     #[serde(rename = "GET")]
     Get,
@@ -53,6 +53,7 @@ pub struct ApiMethod {
 pub struct ApiService {
     pub name: String,
     pub tag: String,
+    pub crate_path: String,
     pub namespaced: bool,
     pub methods: Vec<ApiMethod>,
 }

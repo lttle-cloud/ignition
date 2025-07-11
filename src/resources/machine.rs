@@ -18,7 +18,7 @@ mod machine {
 
     #[status]
     struct Status {
-        // test: u32,
+        test: u32,
     }
 }
 
@@ -46,7 +46,7 @@ impl FromResourceAsync<Machine> for MachineStatus {
         let machine = resource.latest();
 
         Ok(MachineStatus {
-            // test: machine.bleah + machine.bleah2,
+            test: machine.bleah + machine.bleah2,
         })
     }
 }

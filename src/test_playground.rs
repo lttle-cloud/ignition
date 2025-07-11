@@ -2,6 +2,7 @@
 mod test {
     use std::sync::{Arc, Weak};
 
+    use crate::api_client;
     use crate::machinery::store::Store;
     use crate::repository::Repository;
     use crate::resources::machine::{Machine, MachineV1};
@@ -43,5 +44,20 @@ mod test {
         assert_eq!(machines[0].name, metadata.name);
         assert_eq!(machines[0].namespace, metadata.namespace.into());
         assert_eq!(machines[0].bleah, 12);
+    }
+
+    #[tokio::test]
+    async fn test_api_client() {
+        let client = api_client::ApiClient::new(api_client::ApiClientConfig {
+            base_url: "http://localhost:3000".to_string(),
+        });
+
+        let machines = client
+            .machine()
+            .list("default")
+            .await
+            .expect("failed to list machines");
+
+        println!("{:?}", machines);
     }
 }

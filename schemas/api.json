@@ -3,6 +3,7 @@
     {
       "name": "Machine",
       "tag": "machine",
+      "crate_path": "resources::machine",
       "namespaced": true,
       "methods": [
         {
@@ -49,39 +50,7 @@
           ],
           "request": {
             "type": "schema",
-            "name": "MachineV2"
-          },
-          "response": null
-        },
-        {
-          "name": "apply_v1",
-          "verb": "PUT",
-          "path": [
-            {
-              "type": "static",
-              "value": "machine"
-            }
-          ],
-          "request": {
-            "type": "tagged_schema",
-            "name": "MachineV1",
-            "tag": "machine.v1"
-          },
-          "response": null
-        },
-        {
-          "name": "apply_v2",
-          "verb": "PUT",
-          "path": [
-            {
-              "type": "static",
-              "value": "machine"
-            }
-          ],
-          "request": {
-            "type": "tagged_schema",
-            "name": "MachineV2",
-            "tag": "machine.v2"
+            "name": "Machine"
           },
           "response": null
         },
@@ -111,8 +80,58 @@
     }
   ],
   "defs": {
+    "Machine": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "machine": {
+              "$ref": "#/$defs/MachineV2"
+            }
+          },
+          "required": [
+            "machine"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "machine.v1": {
+              "$ref": "#/$defs/MachineV1"
+            }
+          },
+          "required": [
+            "machine.v1"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "machine.v2": {
+              "$ref": "#/$defs/MachineV2"
+            }
+          },
+          "required": [
+            "machine.v2"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
     "MachineStatus": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "test": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "test"
+      ]
     },
     "MachineV2": {
       "type": "object",
