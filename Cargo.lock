@@ -42,6 +42,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ansi_term"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d52a9bb7ec0cf484c551830a7ce27bd20d67eac647e1befb56b0be4ee39a55d2"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1057,6 +1066,7 @@ dependencies = [
 name = "ignition"
 version = "0.1.0"
 dependencies = [
+ "ansi_term",
  "anyhow",
  "async-channel",
  "async-trait",
@@ -1078,6 +1088,7 @@ dependencies = [
  "serde_json",
  "tar",
  "tempfile",
+ "terminal_size",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -2241,6 +2252,16 @@ dependencies = [
  "fastrand",
  "getrandom 0.3.3",
  "once_cell",
+ "rustix",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "terminal_size"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45c6481c4829e4cc63825e62c49186a34538b7b2750b73b266581ffb612fb5ed"
+dependencies = [
  "rustix",
  "windows-sys 0.59.0",
 ]

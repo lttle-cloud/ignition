@@ -51,6 +51,8 @@ async-trait = "0.1.88"
 async-channel = "2.5.0"
 schemars = "1.0.4"
 reqwest = "0.12.22"
+terminal_size = "0.4.2"
+ansi_term = "0.12.1"
 
 [build-dependencies]
 meta = { path = "meta" }

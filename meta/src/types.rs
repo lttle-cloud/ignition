@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use proc_macro2::Span;
 use syn::{
     Ident, Result, Token,
@@ -129,4 +131,117 @@ pub struct ResourceAnalysis {
     pub args: ResourceArgs,
     pub versions: Vec<VersionInfo>,
     pub status: StatusInfo,
+}
+
+// #[name = "name", max_width? = 10, cell_style? = important | default]
+pub struct TableFieldArgs {
+    pub name: String,
+    pub max_width: Option<usize>,
+    pub cell_style: Option<TableCellStyle>,
+}
+
+#[derive(Debug, Clone)]
+pub enum TableCellStyle {
+    Default,
+    Important,
+}
+
+impl FromStr for TableCellStyle {
+    type Err = syn::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "default" => Ok(TableCellStyle::Default),
+            "important" => Ok(TableCellStyle::Important),
+            _ => Err(syn::Error::new(
+                Span::call_site(),
+                "invalid table cell style",
+            )),
+        }
+    }
+}
+
+impl Parse for TableCellStyle {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let ident = input.parse::<syn::Ident>()?;
+        match ident.to_string().as_str() {
+            "default" => Ok(TableCellStyle::Default),
+            "important" => Ok(TableCellStyle::Important),
+            _ => Err(syn::Error::new(ident.span(), "invalid table cell style")),
+        }
+    }
+}
+
+impl Parse for TableFieldArgs {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let list = input.parse_terminated(syn::MetaNameValue::parse, Token![,])?;
+
+        let mut name = None;
+        let mut max_width = None;
+        let mut cell_style = None;
+
+        for item in list {
+            if item.path.is_ident("name") {
+                let syn::Expr::Lit(syn::ExprLit {
+                    attrs: _,
+                    lit: syn::Lit::Str(lit),
+                    ..
+                }) = item.value
+                else {
+                    return Err(syn::Error::new(item.value.span(), "name must be a string"));
+                };
+
+                name = Some(lit.value());
+            } else if item.path.is_ident("max_width") {
+                let syn::Expr::Lit(syn::ExprLit {
+                    attrs: _,
+                    lit: syn::Lit::Int(lit),
+                    ..
+                }) = item.value
+                else {
+                    return Err(syn::Error::new(
+                        item.value.span(),
+                        "max_width must be an integer",
+                    ));
+                };
+
+                max_width = Some(lit.base10_parse::<usize>()?);
+            } else if item.path.is_ident("cell_style") {
+                let syn::Expr::Path(syn::ExprPath {
+                    attrs: _,
+                    qself: _,
+                    path: syn::Path { segments, .. },
+                }) = item.value
+                else {
+                    return Err(syn::Error::new(
+                        item.value.span(),
+                        "cell_style must be a identifier",
+                    ));
+                };
+                if segments.len() != 1 {
+                    return Err(syn::Error::new(
+                        item.path.span(),
+                        "cell_style must be a single identifier",
+                    ));
+                }
+
+                let Some(last_segment) = segments.last() else {
+                    return Err(syn::Error::new(
+                        item.path.span(),
+                        "cell_style must be a single identifier",
+                    ));
+                };
+
+                cell_style = Some(last_segment.ident.to_string().parse::<TableCellStyle>()?);
+            }
+        }
+
+        let name = name.ok_or(syn::Error::new(Span::call_site(), "name is required"))?;
+
+        Ok(TableFieldArgs {
+            name,
+            max_width,
+            cell_style,
+        })
+    }
 }
