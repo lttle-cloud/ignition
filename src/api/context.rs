@@ -6,16 +6,17 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use crate::api::ApiState;
+use crate::{api::ApiState, resources::metadata::Namespace};
 
 #[derive(Debug, Clone)]
 pub struct ServiceRequestContext {
     pub tenant: String,
-    pub namespace: Option<String>,
+    pub namespace: Namespace,
 }
 
 pub enum ServiceRequestContextError {
     InvalidToken,
+    InvalidNamespace,
 }
 
 impl IntoResponse for ServiceRequestContextError {
@@ -23,6 +24,9 @@ impl IntoResponse for ServiceRequestContextError {
         match self {
             ServiceRequestContextError::InvalidToken => {
                 (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
+            }
+            ServiceRequestContextError::InvalidNamespace => {
+                (StatusCode::BAD_REQUEST, "Invalid namespace").into_response()
             }
         }
     }
@@ -32,12 +36,25 @@ impl FromRequestParts<Arc<ApiState>> for ServiceRequestContext {
     type Rejection = ServiceRequestContextError;
 
     async fn from_request_parts(
-        _parts: &mut Parts,
+        parts: &mut Parts,
         _state: &Arc<ApiState>,
     ) -> Result<Self, Self::Rejection> {
+        let namespace_header = parts.headers.get("x-ignition-namespace");
+        let namespace = if let Some(namespace_header) = namespace_header {
+            Namespace::from_value(
+                namespace_header
+                    .to_str()
+                    .map_err(|_| ServiceRequestContextError::InvalidNamespace)?
+                    .to_string()
+                    .into(),
+            )
+        } else {
+            Namespace::Unspecified
+        };
+
         Ok(ServiceRequestContext {
             tenant: "test_tenant".to_string(),
-            namespace: None,
+            namespace,
         })
     }
 }

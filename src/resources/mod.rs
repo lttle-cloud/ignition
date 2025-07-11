@@ -4,7 +4,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
     machinery::store::{Key, PartialKey},
-    resources::metadata::Metadata,
+    resources::metadata::{Metadata, Namespace},
 };
 
 pub mod machine;
@@ -41,8 +41,8 @@ pub trait ProvideKey
 where
     Self: Serialize + DeserializeOwned,
 {
-    fn key(tenant: String, metadata: Metadata) -> Key<Self>;
-    fn partial_key(tenant: String, namespace: Option<String>) -> PartialKey<Self>;
+    fn key(tenant: String, metadata: Metadata) -> Result<Key<Self>>;
+    fn partial_key(tenant: String, namespace: Namespace) -> Result<PartialKey<Self>>;
 }
 
 #[derive(Debug, Clone)]
@@ -68,7 +68,7 @@ pub struct ResourceBuildInfo {
     pub collection: &'static str,
     pub crate_path: &'static str,
     pub versions: Vec<VersionBuildInfo>,
-    pub status: Option<StatusBuildInfo>,
+    pub status: StatusBuildInfo,
     pub configuration: ResourceConfiguration,
     pub schema: Schema,
     pub status_schema: Schema,
@@ -138,8 +138,8 @@ pub trait BuildableResource {
     ) -> ResourceBuildInfo;
 }
 
-pub trait FromResourceAsync<T> {
-    fn from_resource(resource: T) -> impl Future<Output = Result<Self>> + Send + Sync
+pub trait FromResource<T> {
+    fn from_resource(resource: T) -> Result<Self>
     where
         Self: Sized;
 }

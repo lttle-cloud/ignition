@@ -32,7 +32,7 @@ impl Controller for MachineController {
             ControllerEvent::ResourceChange(kind, metadata) => Some(ControllerKey::new(
                 ctx.tenant.clone(),
                 kind,
-                metadata.namespace.into(),
+                metadata.namespace,
                 metadata.name,
             )),
             _ => None,

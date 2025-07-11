@@ -14,21 +14,14 @@ pub async fn build_repository(resources: &[ResourceBuildInfo]) -> Result<()> {
     src.push_str("use crate::{\n");
     src.push_str("    controller::{context::ControllerEvent, scheduler::Scheduler},\n");
     src.push_str("    machinery::store::Store,\n");
-    src.push_str("    resources::{Convert, FromResourceAsync, ProvideKey, ProvideMetadata, metadata::Metadata},\n");
+    src.push_str("    resources::{Convert, FromResource, ProvideKey, ProvideMetadata, metadata::{Metadata, Namespace}},\n");
 
     // Add resource imports
     for resource in resources {
-        if let Some(status) = &resource.status {
-            src.push_str(&format!(
-                "    {}::{{{}, {}}},\n",
-                resource.crate_path, resource.name, status.struct_name
-            ));
-        } else {
-            src.push_str(&format!(
-                "    {}::{{{}}},\n",
-                resource.crate_path, resource.name
-            ));
-        }
+        src.push_str(&format!(
+            "    {}::{{{}, {}}},\n",
+            resource.crate_path, resource.name, resource.status.struct_name
+        ));
     }
     src.push_str("};\n\n");
 
@@ -104,11 +97,11 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
     // Get method
     src.push_str("    pub fn get(\n");
     src.push_str("        &self,\n");
-    src.push_str("        namespace: impl AsRef<str>,\n");
+    src.push_str("        namespace: Namespace,\n");
     src.push_str("        name: impl AsRef<str>,\n");
     src.push_str(&format!("    ) -> Result<Option<{}>> {{\n", resource_name));
     src.push_str(&format!(
-        "        let key = {}::key(self.tenant.clone(), Metadata::new(name, Some(namespace)));\n",
+        "        let key = {}::key(self.tenant.clone(), Metadata::new(name, namespace))?;\n",
         resource_name
     ));
     src.push_str("        let resource = self.store.get(key)?;\n");
@@ -122,40 +115,54 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
     ));
     src.push_str("        let metadata = resource.metadata();\n");
     src.push_str(&format!(
-        "        let key = {}::key(self.tenant.clone(), metadata.clone());\n",
+        "        let key = {}::key(self.tenant.clone(), metadata.clone())?;\n",
         resource_name
     ));
     src.push_str("        let mut resource = resource.latest();\n");
     src.push_str("        resource.name = metadata.name.clone();\n");
     if resource.namespaced {
-        src.push_str("        resource.namespace = metadata.namespace.clone().into();\n");
+        src.push_str("        resource.namespace = metadata.namespace.clone();\n");
     }
     src.push_str(&format!(
         "        let stored_resource: {} = resource.into();\n",
         resource_name
     ));
-    src.push_str("        self.store.put(key, stored_resource)?;\n");
+    src.push_str("        self.store.put(key, stored_resource.clone())?;\n");
     src.push_str("        \n");
+
+    let status_name = resource.status.struct_name;
+    src.push_str(&format!(
+        "        let status_key = {}::key(self.tenant.clone(), metadata.clone())?;\n",
+        status_name
+    ));
+    src.push_str("        if self.store.get(status_key.clone())?.is_none() {\n");
+    src.push_str(&format!(
+        "            let status = {}::from_resource(stored_resource)?;\n",
+        status_name
+    ));
+    src.push_str("            self.store.put(status_key, status)?;\n");
+    src.push_str("        };\n");
+    src.push_str("        \n");
+
     src.push_str("        // Notify scheduler of resource change\n");
     src.push_str("        if let Some(scheduler) = self.get_scheduler() {\n");
     src.push_str(&format!(
-            "            let event = ControllerEvent::ResourceChange(crate::resource_index::ResourceKind::{}, metadata);\n",
+            "            let event = ControllerEvent::ResourceChange(crate::resource_index::ResourceKind::{}, metadata.clone());\n",
             resource_name
         ));
     src.push_str("            if let Err(e) = scheduler.push(&self.tenant, event).await {\n");
     src.push_str("                tracing::warn!(\"Failed to notify scheduler of resource change: {}\", e);\n");
     src.push_str("            }\n");
     src.push_str("        }\n");
-    src.push_str("        \n");
+
     src.push_str("        Ok(())\n");
     src.push_str("    }\n\n");
 
     // Delete method
-    src.push_str("    pub async fn delete(&self, namespace: impl AsRef<str>, name: impl AsRef<str>) -> Result<()> {\n");
-    src.push_str("        let namespace_str = namespace.as_ref().to_string();\n");
+    src.push_str("    pub async fn delete(&self, namespace: Namespace, name: impl AsRef<str>) -> Result<()> {\n");
     src.push_str("        let name_str = name.as_ref().to_string();\n");
     src.push_str(&format!(
-        "        let key = {}::key(self.tenant.clone(), Metadata::new(&name_str, Some(&namespace_str)));\n",
+        "        let key = {}::key(self.tenant.clone(), Metadata::new(&name_str, namespace.clone()))?;\n",
         resource_name
     ));
     src.push_str("        let Some(_resource) = self.store.get(key.clone())? else {\n");
@@ -167,7 +174,7 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
     src.push_str("        \n");
     src.push_str("        // Notify scheduler of resource deletion\n");
     src.push_str("        if let Some(scheduler) = self.get_scheduler() {\n");
-    src.push_str("            let metadata = Metadata::new(name_str, Some(namespace_str));\n");
+    src.push_str("            let metadata = Metadata::new(name_str, namespace);\n");
     src.push_str(&format!(
             "            let event = ControllerEvent::ResourceChange(crate::resource_index::ResourceKind::{}, metadata);\n",
             resource_name
@@ -182,11 +189,11 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
 
     // List method
     src.push_str(&format!(
-        "    pub fn list(&self, namespace: Option<String>) -> Result<Vec<{}>> {{\n",
+        "    pub fn list(&self, namespace: Namespace) -> Result<Vec<{}>> {{\n",
         resource_name
     ));
     src.push_str(&format!(
-        "        let key = {}::partial_key(self.tenant.clone(), namespace);\n",
+        "        let key = {}::partial_key(self.tenant.clone(), namespace)?;\n",
         resource_name
     ));
     src.push_str("        let resources = self.store.list(key)?;\n");
@@ -194,75 +201,63 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
     src.push_str("    }\n");
 
     // Status methods if status exists
-    if let Some(status_info) = &resource.status {
-        let status_name = status_info.struct_name;
+    let status_name = resource.status.struct_name;
+    src.push_str(&format!(
+        "\n    pub fn get_status(&self, metadata: Metadata) -> Result<Option<{}>> {{\n",
+        status_name
+    ));
+    src.push_str(&format!(
+        "        let key = {}::key(self.tenant.clone(), metadata.clone())?;\n",
+        status_name
+    ));
 
-        src.push_str(&format!(
-            "\n    pub async fn get_status(&self, metadata: Metadata) -> Result<{}> {{\n",
-            status_name
-        ));
-        src.push_str(&format!(
-            "        let key = {}::key(self.tenant.clone(), metadata.clone());\n",
-            status_name
-        ));
-        src.push_str("        if let Some(status) = self.store.get(key.clone())? {\n");
-        src.push_str("            return Ok(status);\n");
-        src.push_str("        };\n\n");
+    src.push_str("        self.store.get(key.clone())\n");
+    src.push_str("    }\n\n");
 
-        src.push_str(
-            "        let Some(resource) = self.get(&metadata.namespace, &metadata.name)? else {\n",
-        );
-        src.push_str(&format!(
-            "            return Err(anyhow::anyhow!(\"{collection_name} not found\"));\n"
-        ));
-        src.push_str("        };\n\n");
-        src.push_str(&format!(
-            "        let status = {}::from_resource(resource).await?;\n",
-            status_name
-        ));
-        src.push_str("        self.set_status(metadata, status.clone()).await?;\n");
-        src.push_str("        Ok(status)\n");
-        src.push_str("    }\n\n");
-
-        src.push_str(&format!(
-            "    pub async fn set_status(&self, metadata: Metadata, status: {}) -> Result<()> {{\n",
-            status_name
-        ));
-        src.push_str(&format!(
-            "        let key = {}::key(self.tenant.clone(), metadata.clone());\n",
-            status_name
-        ));
-        src.push_str("        self.store.put(key, status)?;\n");
-        src.push_str("        \n");
-        src.push_str("        // Notify scheduler of status change\n");
-        src.push_str("        if let Some(scheduler) = self.get_scheduler() {\n");
-        src.push_str(&format!(
+    src.push_str(&format!(
+        "    pub async fn set_status(&self, metadata: Metadata, status: {}) -> Result<()> {{\n",
+        status_name
+    ));
+    src.push_str(&format!(
+        "        let key = {}::key(self.tenant.clone(), metadata.clone())?;\n",
+        status_name
+    ));
+    src.push_str("        self.store.put(key, status)?;\n");
+    src.push_str("        \n");
+    src.push_str("        // Notify scheduler of status change\n");
+    src.push_str("        if let Some(scheduler) = self.get_scheduler() {\n");
+    src.push_str(&format!(
             "            let event = ControllerEvent::ResourceStatusChange(crate::resource_index::ResourceKind::{}, metadata);\n",
             resource_name
         ));
-        src.push_str("            if let Err(e) = scheduler.push(&self.tenant, event).await {\n");
-        src.push_str("                tracing::warn!(\"Failed to notify scheduler of status change: {}\", e);\n");
-        src.push_str("            }\n");
-        src.push_str("        }\n");
-        src.push_str("        \n");
-        src.push_str("        Ok(())\n");
-        src.push_str("    }\n\n");
+    src.push_str("            if let Err(e) = scheduler.push(&self.tenant, event).await {\n");
+    src.push_str(
+        "                tracing::warn!(\"Failed to notify scheduler of status change: {}\", e);\n",
+    );
+    src.push_str("            }\n");
+    src.push_str("        }\n");
+    src.push_str("        \n");
+    src.push_str("        Ok(())\n");
+    src.push_str("    }\n\n");
 
-        src.push_str(&format!(
-            "    pub async fn patch_status<F>(&self, metadata: Metadata, mut f: F) -> Result<{}>\n",
-            status_name
-        ));
-        src.push_str("    where\n");
-        src.push_str(&format!("        F: FnMut(&mut {}),\n", status_name));
-        src.push_str("    {\n");
-        src.push_str(&format!(
-            "        let mut status = self.get_status(metadata.clone()).await?;\n"
-        ));
-        src.push_str("        f(&mut status);\n");
-        src.push_str("        self.set_status(metadata.clone(), status.clone()).await?;\n");
-        src.push_str("        Ok(status)\n");
-        src.push_str("    }\n");
-    }
+    src.push_str(&format!(
+        "    pub async fn patch_status<F>(&self, metadata: Metadata, mut f: F) -> Result<{}>\n",
+        status_name
+    ));
+    src.push_str("    where\n");
+    src.push_str(&format!("        F: FnMut(&mut {}),\n", status_name));
+    src.push_str("    {\n");
+    src.push_str(&format!(
+        "        let Some(mut status) = self.get_status(metadata.clone())? else {{\n"
+    ));
+    src.push_str(&format!(
+        "            return Err(anyhow::anyhow!(\"{collection_name} status not found\"));\n"
+    ));
+    src.push_str("        };\n");
+    src.push_str("        f(&mut status);\n");
+    src.push_str("        self.set_status(metadata.clone(), status.clone()).await?;\n");
+    src.push_str("        Ok(status)\n");
+    src.push_str("    }\n");
 
     src.push_str("}\n\n");
 }

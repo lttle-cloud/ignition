@@ -69,7 +69,7 @@ fn generate_output(
     });
 
     // Generate status struct
-    let status_struct = if let Some(status_info) = &analysis.status {
+    let status_struct = {
         let (_, items) = resource_mod
             .content
             .clone()
@@ -79,7 +79,7 @@ fn generate_output(
             .iter()
             .find_map(|item| {
                 if let syn::Item::Struct(s) = item {
-                    if s.ident == status_info.original_ident {
+                    if s.ident == analysis.status.original_ident {
                         Some(s)
                     } else {
                         None
@@ -90,9 +90,7 @@ fn generate_output(
             })
             .unwrap();
 
-        Some(generate_status_struct(struct_item, status_info))
-    } else {
-        None
+        generate_status_struct(struct_item, &analysis.status)
     };
 
     let version_enum_variants = generate_version_enum_variants(&analysis.args, &analysis.versions);

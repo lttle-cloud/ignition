@@ -35,9 +35,17 @@ pub enum ApiRequest {
 #[serde(tag = "type")]
 pub enum ApiResponse {
     #[serde(rename = "schema")]
-    SchemaDefinition { name: String },
-    #[serde(rename = "list")]
-    ListOfSchemaDefinition { name: String },
+    SchemaDefinition {
+        list: bool,
+        optional: bool,
+        name: String,
+    },
+    #[serde(rename = "tuple")]
+    TupleSchemaDefinition {
+        list: bool,
+        optional: bool,
+        names: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

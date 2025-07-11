@@ -16,6 +16,7 @@ pub async fn build_rust_api_client(api_schema: &ApiSchema) -> Result<()> {
     src.push_str("pub mod api_client {\n");
     src.push_str("    use anyhow::Result;\n");
     src.push_str("    use serde::{Deserialize, Serialize};\n\n");
+    src.push_str("    use crate::resources::metadata::Namespace;\n\n");
 
     // Generate config struct
     src.push_str("    #[derive(Clone)]\n");
@@ -103,6 +104,31 @@ fn generate_url_format_impl(methods: &ApiMethod) -> String {
     }
 }
 
+fn generate_response_inner_type(service: &ApiService, response: &Option<ApiResponse>) -> String {
+    match &response {
+        Some(ApiResponse::SchemaDefinition { list, name, .. }) => {
+            if *list {
+                format!("Vec<crate::{}::{}>", service.crate_path, name)
+            } else {
+                format!("crate::{}::{}", service.crate_path, name)
+            }
+        }
+        Some(ApiResponse::TupleSchemaDefinition { list, names, .. }) => {
+            let full_names = names
+                .iter()
+                .map(|name| format!("crate::{}::{}", service.crate_path, name))
+                .collect::<Vec<_>>();
+
+            if *list {
+                format!("Vec<({})>", full_names.join(", "))
+            } else {
+                format!("({})", full_names.join(", "))
+            }
+        }
+        None => "()".to_string(),
+    }
+}
+
 fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
     let method_name = &method.name;
     let verb = match method.verb {
@@ -117,7 +143,7 @@ fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
     // Method signature
     let mut params = Vec::new();
     if service.namespaced && method.verb == ApiVerb::Get {
-        params.push("namespace: impl AsRef<str>".to_string());
+        params.push("namespace: Namespace".to_string());
     }
     if method
         .path
@@ -150,15 +176,10 @@ fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
         }
     }
 
-    let return_type = match &method.response {
-        Some(ApiResponse::SchemaDefinition { name }) => {
-            format!("Result<crate::{}::{}>", service.crate_path, name)
-        }
-        Some(ApiResponse::ListOfSchemaDefinition { name }) => {
-            format!("Result<Vec<crate::{}::{}>>", service.crate_path, name)
-        }
-        None => "Result<()>".to_string(),
-    };
+    let return_type = format!(
+        "Result<{}>",
+        generate_response_inner_type(service, &method.response)
+    );
 
     src.push_str(&format!(
         "        pub async fn {}(&self, {}) -> {} {{\n",
@@ -178,9 +199,11 @@ fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
 
     // Add namespace header if namespaced
     if service.namespaced && method.verb == ApiVerb::Get {
+        src.push_str("            if let Some(namespace) = namespace.as_value() {\n");
         src.push_str(&format!(
-            "            request = request.header(\"x-ignition-namespace\", namespace.as_ref());\n"
+            "                request = request.header(\"x-ignition-namespace\", namespace);\n"
         ));
+        src.push_str("            }\n");
     }
 
     // Add request body if needed
@@ -217,23 +240,13 @@ fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
     }
 
     // Handle response
-    if let Some(response) = &method.response {
-        match response {
-            ApiResponse::SchemaDefinition { name } => {
-                src.push_str(&format!(
-                    "            let result = response.json::<crate::{}::{}>().await?;\n",
-                    service.crate_path, name
-                ));
-                src.push_str(&format!("            Ok(result)\n"));
-            }
-            ApiResponse::ListOfSchemaDefinition { name } => {
-                src.push_str(&format!(
-                    "            let result = response.json::<Vec<crate::{}::{}>>().await?;\n",
-                    service.crate_path, name
-                ));
-                src.push_str("            Ok(result)\n");
-            }
-        }
+    if let Some(_) = &method.response {
+        let response_inner_type = generate_response_inner_type(service, &method.response);
+        src.push_str(&format!(
+            "            let result = response.json::<{}>().await?;\n",
+            response_inner_type
+        ));
+        src.push_str(&format!("            Ok(result)\n"));
     } else {
         src.push_str("            if !response.status().is_success() {\n");
         src.push_str("                return Err(anyhow::anyhow!(\n");

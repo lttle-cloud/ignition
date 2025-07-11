@@ -1,7 +1,7 @@
 use anyhow::Result;
 use meta::resource;
 
-use crate::resources::{Convert, ConvertResource, FromResourceAsync};
+use crate::resources::{Convert, ConvertResource, FromResource};
 
 #[resource(name = "Machine", tag = "machine")]
 mod machine {
@@ -41,8 +41,8 @@ impl ConvertResource<MachineV2> for MachineV1 {
     }
 }
 
-impl FromResourceAsync<Machine> for MachineStatus {
-    async fn from_resource(resource: Machine) -> Result<Self> {
+impl FromResource<Machine> for MachineStatus {
+    fn from_resource(resource: Machine) -> Result<Self> {
         let machine = resource.latest();
 
         Ok(MachineStatus {
@@ -54,7 +54,7 @@ impl FromResourceAsync<Machine> for MachineStatus {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::resources::{ProvideKey, ProvideMetadata};
+    use crate::resources::{ProvideKey, ProvideMetadata, metadata::Namespace};
 
     #[test]
     fn test_resource_versioning() {
@@ -65,10 +65,10 @@ mod test {
         });
 
         let metadata = x.metadata();
-        assert_eq!(metadata.namespace, "test_ns");
+        assert_eq!(metadata.namespace, Some("test_ns".into()));
         assert_eq!(metadata.name, "test");
 
-        let key = Machine::key("tenant".into(), metadata);
+        let key = Machine::key("tenant".into(), metadata).expect("failed to get key");
         assert_eq!(key.to_string(), "tenant/machine/test_ns/test");
 
         let x = Machine::V1(MachineV1 {
@@ -78,10 +78,10 @@ mod test {
         });
 
         let metadata = x.metadata();
-        assert_eq!(metadata.namespace, "default");
+        assert_eq!(metadata.namespace, Some("default".into()));
         assert_eq!(metadata.name, "test");
 
-        let key = Machine::key("tenant".into(), metadata);
+        let key = Machine::key("tenant".into(), metadata).expect("failed to get key");
         assert_eq!(key.to_string(), "tenant/machine/default/test");
     }
 
@@ -95,10 +95,15 @@ mod test {
 
         let metadata = x.metadata();
 
-        let status_key = MachineStatus::key("tenant".into(), metadata.clone());
+        let status_key =
+            MachineStatus::key("tenant".into(), metadata.clone()).expect("failed to get key");
         assert_eq!(status_key.to_string(), "tenant/status-machine/test_ns/test");
 
-        let status_key = MachineStatus::partial_key("tenant".into(), metadata.namespace.into());
+        let status_key = MachineStatus::partial_key(
+            "tenant".into(),
+            Namespace::from_value(metadata.namespace.clone()),
+        )
+        .expect("failed to get key");
         assert_eq!(status_key.to_string(), "tenant/status-machine/test_ns/");
     }
 }

@@ -125,8 +125,13 @@ async fn build_api_schema(
                     ApiPathSegment::ResourceName,
                 ],
                 request: None,
-                response: Some(ApiResponse::SchemaDefinition {
-                    name: latest_version.struct_name.to_string(),
+                response: Some(ApiResponse::TupleSchemaDefinition {
+                    list: false,
+                    optional: false,
+                    names: vec![
+                        latest_version.struct_name.to_string(),
+                        resource.status.struct_name.to_string(),
+                    ],
                 }),
             };
 
@@ -141,8 +146,13 @@ async fn build_api_schema(
                     value: resource.tag.to_string(),
                 }],
                 request: None,
-                response: Some(ApiResponse::ListOfSchemaDefinition {
-                    name: latest_version.struct_name.to_string(),
+                response: Some(ApiResponse::TupleSchemaDefinition {
+                    list: true,
+                    optional: false,
+                    names: vec![
+                        latest_version.struct_name.to_string(),
+                        resource.status.struct_name.to_string(),
+                    ],
                 }),
             };
 
@@ -180,27 +190,27 @@ async fn build_api_schema(
         }
 
         if resource.configuration.generate_service_get_status {
-            if let Some(status) = &resource.status {
-                let method = ApiMethod {
-                    name: "get_status".to_string(),
-                    verb: ApiVerb::Get,
-                    path: vec![
-                        ApiPathSegment::Static {
-                            value: resource.tag.to_string(),
-                        },
-                        ApiPathSegment::ResourceName,
-                        ApiPathSegment::Static {
-                            value: "status".to_string(),
-                        },
-                    ],
-                    request: None,
-                    response: Some(ApiResponse::SchemaDefinition {
-                        name: status.struct_name.to_string(),
-                    }),
-                };
+            let method = ApiMethod {
+                name: "get_status".to_string(),
+                verb: ApiVerb::Get,
+                path: vec![
+                    ApiPathSegment::Static {
+                        value: resource.tag.to_string(),
+                    },
+                    ApiPathSegment::ResourceName,
+                    ApiPathSegment::Static {
+                        value: "status".to_string(),
+                    },
+                ],
+                request: None,
+                response: Some(ApiResponse::SchemaDefinition {
+                    list: false,
+                    optional: false,
+                    name: resource.status.struct_name.to_string(),
+                }),
+            };
 
-                service.methods.push(method);
-            }
+            service.methods.push(method);
         }
 
         api_schema.services.push(service);
@@ -215,12 +225,10 @@ async fn build_api_schema(
                 .expect("Failed to convert partial root schema to value"),
         );
 
-        if let Some(status) = &resource.status {
-            api_schema.defs.insert(
-                status.struct_name.to_string(),
-                resource.status_schema.clone().to_value(),
-            );
-        }
+        api_schema.defs.insert(
+            resource.status.struct_name.to_string(),
+            resource.status_schema.clone().to_value(),
+        );
     }
     api_schema
         .defs

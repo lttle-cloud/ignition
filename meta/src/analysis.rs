@@ -77,6 +77,10 @@ pub fn analyze_resource(args: ResourceArgs, resource_mod: &syn::ItemMod) -> Reso
         }
     }
 
+    let Some(status) = status else {
+        panic!("status struct not defined");
+    };
+
     ResourceAnalysis {
         args,
         versions,

@@ -20,8 +20,13 @@
           ],
           "request": null,
           "response": {
-            "type": "schema",
-            "name": "MachineV2"
+            "type": "tuple",
+            "list": false,
+            "optional": false,
+            "names": [
+              "MachineV2",
+              "MachineStatus"
+            ]
           }
         },
         {
@@ -35,8 +40,13 @@
           ],
           "request": null,
           "response": {
-            "type": "list",
-            "name": "MachineV2"
+            "type": "tuple",
+            "list": true,
+            "optional": false,
+            "names": [
+              "MachineV2",
+              "MachineStatus"
+            ]
           }
         },
         {
@@ -73,6 +83,8 @@
           "request": null,
           "response": {
             "type": "schema",
+            "list": false,
+            "optional": false,
             "name": "MachineStatus"
           }
         }

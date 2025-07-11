@@ -128,5 +128,5 @@ pub struct StatusInfo {
 pub struct ResourceAnalysis {
     pub args: ResourceArgs,
     pub versions: Vec<VersionInfo>,
-    pub status: Option<StatusInfo>,
+    pub status: StatusInfo,
 }

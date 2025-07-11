@@ -14,7 +14,7 @@ pub fn generate_provide_metadata_impls(
                 quote! {
                     impl super::ProvideMetadata for #variant_value {
                         fn metadata(&self) -> super::metadata::Metadata {
-                            super::metadata::Metadata::new(self.name.clone(), self.namespace.clone())
+                            super::metadata::Metadata::new(self.name.clone(), crate::resources::metadata::Namespace::from_value_or_default(self.namespace.clone()))
                         }
                     }
                 }
@@ -22,7 +22,7 @@ pub fn generate_provide_metadata_impls(
                 quote! {
                     impl super::ProvideMetadata for #variant_value {
                         fn metadata(&self) -> super::metadata::Metadata {
-                            super::metadata::Metadata::new(self.name.clone(), None)
+                            super::metadata::Metadata::new(self.name.clone(), crate::resources::metadata::Namespace::Unspecified)
                         }
                     }
                 }
@@ -41,29 +41,36 @@ pub fn generate_provide_key_impl(analysis: &ResourceAnalysis) -> proc_macro2::To
                 fn key(
                     tenant: String,
                     metadata: super::metadata::Metadata,
-                ) -> crate::machinery::store::Key<#enum_name> {
-                    crate::machinery::store::Key::<#enum_name>::namespaced()
-                        .collection(#collection_name)
-                        .tenant(tenant)
-                        .namespace(metadata.namespace)
-                        .key(metadata.name)
-                        .as_ref()
-                        .into()
+                ) -> anyhow::Result<crate::machinery::store::Key<#enum_name>> {
+                    let Some(namespace) = metadata.namespace else {
+                        return Err(anyhow::anyhow!("namespace is required"));
+                    };
+
+                    Ok(
+                        crate::machinery::store::Key::<#enum_name>::namespaced()
+                            .collection(#collection_name)
+                            .tenant(tenant)
+                            .namespace(namespace)
+                            .key(metadata.name)
+                            .as_ref()
+                            .into()
+                    )
+
                 }
 
                 fn partial_key(
                     tenant: String,
-                    namespace: Option<String>,
-                ) -> crate::machinery::store::PartialKey<#enum_name> {
+                    namespace: super::metadata::Namespace,
+                ) -> anyhow::Result<crate::machinery::store::PartialKey<#enum_name>> {
                     let builder = crate::machinery::store::PartialKey::<#enum_name>::namespaced()
                         .collection(#collection_name)
                         .tenant(tenant);
 
-                    if let Some(namespace) = namespace {
-                        return builder.namespace(namespace).as_ref().into();
+                    if let Some(namespace) = namespace.as_value() {
+                        return Ok(builder.namespace(namespace).as_ref().into());
                     }
 
-                    builder.as_ref().into()
+                    Ok(builder.as_ref().into())
                 }
             }
         }
@@ -73,7 +80,7 @@ pub fn generate_provide_key_impl(analysis: &ResourceAnalysis) -> proc_macro2::To
                 fn key(
                     tenant: String,
                     metadata: super::metadata::Metadata,
-                ) -> crate::machinery::store::Key<#enum_name> {
+                ) -> anyhow::Result<crate::machinery::store::Key<#enum_name>> {
                     crate::machinery::store::Key::<#enum_name>::not_namespaced()
                         .collection(#collection_name)
                         .tenant(tenant)
@@ -84,13 +91,13 @@ pub fn generate_provide_key_impl(analysis: &ResourceAnalysis) -> proc_macro2::To
 
                 fn partial_key(
                     tenant: String,
-                    _namespace: Option<String>,
-                ) -> crate::machinery::store::PartialKey<#enum_name> {
-                    crate::machinery::store::PartialKey::<#enum_name>::not_namespaced()
+                    _namespace: super::metadata::Namespace,
+                ) -> anyhow::Result<crate::machinery::store::PartialKey<#enum_name>> {
+                    Ok(crate::machinery::store::PartialKey::<#enum_name>::not_namespaced()
                         .collection(#collection_name)
                         .tenant(tenant)
                         .as_ref()
-                        .into()
+                        .into())
                 }
             }
         }
@@ -121,8 +128,7 @@ pub fn generate_provide_metadata_impl(analysis: &ResourceAnalysis) -> proc_macro
 pub fn generate_status_provide_key_impl(
     analysis: &ResourceAnalysis,
 ) -> Option<proc_macro2::TokenStream> {
-    let status_info = analysis.status.as_ref()?;
-    let status_struct_name = status_info.generated_ident.clone();
+    let status_struct_name = analysis.status.generated_ident.clone();
     let status_collection_name = format!("status-{}", analysis.args.tag);
 
     let pk_impl = if analysis.args.namespaced {
@@ -131,29 +137,34 @@ pub fn generate_status_provide_key_impl(
                 fn key(
                     tenant: String,
                     metadata: super::metadata::Metadata,
-                ) -> crate::machinery::store::Key<#status_struct_name> {
-                    crate::machinery::store::Key::<#status_struct_name>::namespaced()
-                        .collection(#status_collection_name)
-                        .tenant(tenant)
-                        .namespace(metadata.namespace)
-                        .key(metadata.name)
-                        .as_ref()
-                        .into()
+                ) -> anyhow::Result<crate::machinery::store::Key<#status_struct_name>> {
+                    let Some(namespace) = metadata.namespace else {
+                        return Err(anyhow::anyhow!("namespace is required"));
+                    };
+
+                    Ok(
+                        crate::machinery::store::Key::<#status_struct_name>::namespaced()
+                            .collection(#status_collection_name)
+                            .tenant(tenant)
+                            .namespace(namespace)
+                            .key(metadata.name)
+                            .as_ref()
+                            .into()
+                    )
                 }
 
                 fn partial_key(
                     tenant: String,
-                    namespace: Option<String>,
-                ) -> crate::machinery::store::PartialKey<#status_struct_name> {
+                    namespace: super::metadata::Namespace,
+                ) -> anyhow::Result<crate::machinery::store::PartialKey<#status_struct_name>> {
                     let builder = crate::machinery::store::PartialKey::<#status_struct_name>::namespaced()
                         .collection(#status_collection_name)
                         .tenant(tenant);
 
-                    if let Some(namespace) = namespace {
-                        return builder.namespace(namespace).as_ref().into();
+                    if let Some(namespace) = namespace.as_value() {
+                        return Ok(builder.namespace(namespace).as_ref().into());
                     }
-
-                    builder.as_ref().into()
+                    Ok(builder.as_ref().into())
                 }
             }
         }
@@ -163,24 +174,26 @@ pub fn generate_status_provide_key_impl(
                 fn key(
                     tenant: String,
                     metadata: super::metadata::Metadata,
-                ) -> crate::machinery::store::Key<#status_struct_name> {
-                    crate::machinery::store::Key::<#status_struct_name>::not_namespaced()
+                ) -> anyhow::Result<crate::machinery::store::Key<#status_struct_name>> {
+                    Ok(crate::machinery::store::Key::<#status_struct_name>::not_namespaced()
                         .collection(#status_collection_name)
                         .tenant(tenant)
                         .key(metadata.name)
                         .as_ref()
                         .into()
+                    )
                 }
 
                 fn partial_key(
                     tenant: String,
-                    _namespace: Option<String>,
-                ) -> crate::machinery::store::PartialKey<#status_struct_name> {
-                    crate::machinery::store::PartialKey::<#status_struct_name>::not_namespaced()
+                    _namespace: super::metadata::Namespace,
+                ) -> anyhow::Result<crate::machinery::store::PartialKey<#status_struct_name>> {
+                    Ok(crate::machinery::store::PartialKey::<#status_struct_name>::not_namespaced()
                         .collection(#status_collection_name)
                         .tenant(tenant)
                         .as_ref()
                         .into()
+                    )
                 }
             }
         }
@@ -215,30 +228,22 @@ pub fn generate_build_info_impl(analysis: &ResourceAnalysis) -> proc_macro2::Tok
         }
     });
 
-    let status_build_info = if let Some(status_info) = &analysis.status {
-        let status_struct_name = status_info.generated_ident.to_string();
+    let status_build_info = {
+        let status_struct_name = analysis.status.generated_ident.to_string();
         let status_collection_name = format!("status-{}", collection_name);
 
         quote! {
-            Some(super::StatusBuildInfo {
+            super::StatusBuildInfo {
                 struct_name: #status_struct_name,
                 collection: #status_collection_name,
-            })
-        }
-    } else {
-        quote! {
-            None
+            }
         }
     };
 
-    let status_schema_provider = if let Some(status_info) = &analysis.status {
-        let status_struct_name = status_info.generated_ident.clone();
+    let status_schema_provider = {
+        let status_struct_name = analysis.status.generated_ident.clone();
         quote! {
             #status_struct_name
-        }
-    } else {
-        quote! {
-            ()
         }
     };
 

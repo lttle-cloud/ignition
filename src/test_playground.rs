@@ -6,6 +6,7 @@ mod test {
     use crate::machinery::store::Store;
     use crate::repository::Repository;
     use crate::resources::machine::{Machine, MachineV1};
+    use crate::resources::metadata::Namespace;
     use crate::resources::{Convert, ProvideMetadata};
 
     #[tokio::test]
@@ -32,7 +33,9 @@ mod test {
             .expect("failed to set machine");
 
         //list the machines
-        let machines = machine_repo.list(None).expect("failed to list machines");
+        let machines = machine_repo
+            .list(Namespace::Unspecified)
+            .expect("failed to list machines");
         let machines = machines.latest();
 
         assert_eq!(machines.len(), 1);
@@ -54,7 +57,7 @@ mod test {
 
         let machines = client
             .machine()
-            .list("default")
+            .list(Namespace::Unspecified)
             .await
             .expect("failed to list machines");
 

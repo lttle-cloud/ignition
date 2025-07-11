@@ -23,7 +23,7 @@ pub async fn build_services(resources: &[ResourceBuildInfo]) -> Result<()> {
     src.push_str("        context::ServiceRequestContext,\n");
     src.push_str("        resource_service::{ResourceService, ResourceServiceRouter},\n");
     src.push_str("    },\n");
-    src.push_str("    resources::Convert,\n");
+    src.push_str("    resources::{Convert, ProvideMetadata},\n");
     src.push_str("    repository::Repository,\n");
     src.push_str("    resources::metadata::{DEFAULT_NAMESPACE, Metadata},\n");
 
@@ -71,15 +71,29 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
         src.push_str("            ctx: ServiceRequestContext,\n");
         src.push_str("        ) -> impl IntoResponse {\n");
         src.push_str(&format!(
-            "            let resources = state.repository.{}(ctx.tenant).list(ctx.namespace);\n\n",
+            "            let repo = state.repository.{}(ctx.tenant);\n\n",
             collection_name
         ));
-        src.push_str("            match resources {\n");
-        src.push_str(
-            "                Ok(resources) => (StatusCode::OK, Json(resources.latest())).into_response(),\n",
-        );
-        src.push_str("                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),\n");
-        src.push_str("            }\n");
+
+        src.push_str("            let resources = repo.list(ctx.namespace);\n\n");
+
+        src.push_str("            let resources = match resources {\n");
+        src.push_str("                Ok(resources) => resources,\n");
+        src.push_str("                Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),\n");
+        src.push_str("            };\n\n");
+
+        src.push_str("            let resources = resources.latest().iter().filter_map(|r| {\n");
+        src.push_str(&format!(
+            "                let status = repo.get_status(r.metadata());\n",
+        ));
+        src.push_str("                if let Ok(Some(status)) = status {\n");
+        src.push_str("                    Some((r.clone(), status))\n");
+        src.push_str("                } else {\n");
+        src.push_str("                    None\n");
+        src.push_str("                }\n");
+        src.push_str("            }).collect::<Vec<_>>();\n\n");
+
+        src.push_str("            (StatusCode::OK, Json(resources)).into_response()\n");
         src.push_str("        }\n\n");
     }
 
@@ -90,24 +104,29 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
         src.push_str("            ctx: ServiceRequestContext,\n");
         src.push_str("            Path(name): Path<String>,\n");
         src.push_str("        ) -> impl IntoResponse {\n");
+        src.push_str(&format!(
+            "            let repo = state.repository.{}(ctx.tenant);\n\n",
+            collection_name
+        ));
         if namespaced {
-            src.push_str("            let namespace = ctx.namespace.unwrap_or(DEFAULT_NAMESPACE.to_string());\n\n");
-            src.push_str(&format!(
-                "            let resource = state.repository.{}(ctx.tenant).get(namespace, name);\n",
-                collection_name
-            ));
+            src.push_str("            let resource = repo.get(ctx.namespace, name);\n");
         } else {
-            src.push_str(&format!(
-                "            let resource = state.repository.{}(ctx.tenant).get(\"default\", name);\n",
-                collection_name
-            ));
+            src.push_str("            let resource = repo.get(name);\n");
         }
-        src.push_str("\n            match resource {\n");
-        src.push_str(
-            "                Ok(resource) => (StatusCode::OK, Json(resource.map(|r| r.latest()))).into_response(),\n",
-        );
-        src.push_str("                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),\n");
-        src.push_str("            }\n");
+        src.push_str("\n            let resource = match resource {\n");
+        src.push_str("                Ok(resource) => resource,\n");
+        src.push_str("                Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),\n");
+        src.push_str("            };\n\n");
+        src.push_str("            let Some(resource) = resource else {\n");
+        src.push_str("                return (StatusCode::NOT_FOUND, \"Resource not found\".to_string()).into_response();\n");
+        src.push_str("            };\n\n");
+        src.push_str("            let resource = resource.latest();\n\n");
+        src.push_str("            let status = repo.get_status(resource.metadata());\n\n");
+        src.push_str("            let Ok(Some(status)) = status else {\n");
+        src.push_str("                return (StatusCode::NOT_FOUND, \"Status not found\".to_string()).into_response();\n");
+        src.push_str("            };\n\n");
+
+        src.push_str("            (StatusCode::OK, Json((resource, status))).into_response()\n");
         src.push_str("        }\n\n");
     }
 
@@ -121,7 +140,7 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
             "            let metadata = Metadata::new(name, ctx.namespace);\n\n",
         ));
         src.push_str(&format!(
-            "            let result = state.repository.{}(ctx.tenant).get_status(metadata).await;\n\n",
+            "            let result = state.repository.{}(ctx.tenant).get_status(metadata);\n\n",
             collection_name
         ));
         src.push_str("            match result {\n");
@@ -162,14 +181,13 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
         src.push_str("            Path(name): Path<String>,\n");
         src.push_str("        ) -> impl IntoResponse {\n");
         if namespaced {
-            src.push_str("            let namespace = ctx.namespace.unwrap_or(DEFAULT_NAMESPACE.to_string());\n\n");
             src.push_str(&format!(
-                "            let result = state.repository.{}(ctx.tenant).delete(namespace, name).await;\n",
+                "            let result = state.repository.{}(ctx.tenant).delete(ctx.namespace, name).await;\n",
                 collection_name
             ));
         } else {
             src.push_str(&format!(
-                "            let result = state.repository.{}(ctx.tenant).delete(\"default\", name).await;\n",
+                "            let result = state.repository.{}(ctx.tenant).delete(name).await;\n",
                 collection_name
             ));
         }
