@@ -40,6 +40,29 @@
     }
   ],
   "$defs": {
+    "MachineV1": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "bleah": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "bleah"
+      ]
+    },
     "MachineV2": {
       "type": "object",
       "properties": {
@@ -67,29 +90,6 @@
         "name",
         "bleah",
         "bleah2"
-      ]
-    },
-    "MachineV1": {
-      "type": "object",
-      "properties": {
-        "namespace": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "bleah": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0
-        }
-      },
-      "required": [
-        "name",
-        "bleah"
       ]
     }
   }
