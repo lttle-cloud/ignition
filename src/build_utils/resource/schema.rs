@@ -11,7 +11,10 @@ use crate::{
     machinery::api_schema::{
         ApiMethod, ApiPathSegment, ApiRequest, ApiResponse, ApiSchema, ApiService, ApiVerb,
     },
-    resources::ResourceBuildInfo,
+    resources::{
+        ResourceBuildInfo,
+        core::{add_core_service_schema_defs, core_api_service},
+    },
 };
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -94,6 +97,8 @@ async fn build_api_schema(
     let schema_out_path = cargo::workspace_root_dir_path("schemas/api.json").await?;
 
     let mut api_schema = ApiSchema::new();
+    api_schema.services.push(core_api_service());
+    add_core_service_schema_defs(schema_generator, &mut api_schema.defs)?;
 
     for resource in resources {
         if !resource.configuration.generate_service {

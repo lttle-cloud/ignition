@@ -1,4 +1,6 @@
+pub mod auth;
 pub mod context;
+pub mod core;
 pub mod resource_service;
 
 use std::sync::Arc;
@@ -9,7 +11,10 @@ use tokio::net::TcpListener;
 use tracing::info;
 
 use crate::{
-    api::resource_service::{ResourceService, ResourceServiceRouter},
+    api::{
+        auth::AuthHandler,
+        resource_service::{ResourceService, ResourceServiceRouter},
+    },
     controller::scheduler::Scheduler,
     machinery::store::Store,
     repository::Repository,
@@ -19,6 +24,7 @@ pub struct ApiState {
     pub store: Arc<Store>,
     pub repository: Arc<Repository>,
     pub scheduler: Arc<Scheduler>,
+    pub auth_handler: Arc<AuthHandler>,
 }
 
 pub struct ApiServerConfig {
@@ -37,6 +43,7 @@ impl ApiServer {
         store: Arc<Store>,
         repository: Arc<Repository>,
         scheduler: Arc<Scheduler>,
+        auth_handler: Arc<AuthHandler>,
         config: ApiServerConfig,
     ) -> Self {
         Self {
@@ -44,6 +51,7 @@ impl ApiServer {
                 store,
                 repository,
                 scheduler,
+                auth_handler,
             }),
             config,
             routers: vec![],

@@ -1,6 +1,35 @@
 {
   "services": [
     {
+      "name": "core",
+      "tag": "core",
+      "crate_path": "resources::core",
+      "namespaced": false,
+      "methods": [
+        {
+          "name": "me",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "me"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "Me"
+          }
+        }
+      ]
+    },
+    {
       "name": "Machine",
       "tag": "machine",
       "crate_path": "resources::machine",
@@ -92,6 +121,19 @@
     }
   ],
   "defs": {
+    "Me": {
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant"
+      ],
+      "title": "Me",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
     "Machine": {
       "oneOf": [
         {

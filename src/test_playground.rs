@@ -53,6 +53,7 @@ mod test {
     async fn test_api_client() {
         let client = api_client::ApiClient::new(api_client::ApiClientConfig {
             base_url: "http://localhost:3000".to_string(),
+            token: "".to_string(),
         });
 
         let machines = client

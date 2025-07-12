@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use ignition::{
-    api::{ApiServer, ApiServerConfig},
+    api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
     controller::{
         machine::MachineController,
         scheduler::{Scheduler, SchedulerConfig},
@@ -12,6 +12,9 @@ use ignition::{
     services,
     utils::tracing::init_tracing,
 };
+
+// TODO: get this from config
+const TEMP_JWT_SECRET: &str = "dGVtcF9qd3Rfc2VjcmV0";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -34,15 +37,19 @@ async fn main() -> Result<()> {
 
     let repository = scheduler.repository.clone();
 
+    let auth_handler = Arc::new(AuthHandler::new(TEMP_JWT_SECRET));
+
     let api_server = ApiServer::new(
         store.clone(),
         repository.clone(),
         scheduler.clone(),
+        auth_handler.clone(),
         ApiServerConfig {
             host: "0.0.0.0".to_string(),
-            port: 3000,
+            port: 5100,
         },
     )
+    .add_service::<CoreService>()
     .add_service::<services::MachineService>();
 
     scheduler.start_workers();

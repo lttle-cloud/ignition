@@ -22,6 +22,7 @@ pub async fn build_rust_api_client(api_schema: &ApiSchema) -> Result<()> {
     src.push_str("    #[derive(Clone)]\n");
     src.push_str("    pub struct ApiClientConfig {\n");
     src.push_str("        pub base_url: String,\n");
+    src.push_str("        pub token: String,\n");
     src.push_str("    }\n\n");
 
     // Generate main ApiClient struct
@@ -205,6 +206,11 @@ fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
         ));
         src.push_str("            }\n");
     }
+
+    // Add token header
+    src.push_str(
+        "            request = request.header(\"x-ignition-token\", self.config.token.clone());\n",
+    );
 
     // Add request body if needed
     if let Some(request) = &method.request {

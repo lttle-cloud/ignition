@@ -21,6 +21,10 @@ path = "src/cli/main.rs"
 name = "takeoff"
 path = "src/takeoff/main.rs"
 
+[[bin]]
+name = "generate-token-tool"
+path = "src/tools/generate_token.rs"
+
 [workspace]
 members = ["meta", "."]
 resolver = "2"
@@ -53,6 +57,10 @@ schemars = "1.0.4"
 reqwest = "0.12.22"
 terminal_size = "0.4.2"
 ansi_term = "0.12.1"
+jsonwebtoken = "9.3.1"
+directories = "6.0.0"
+toml = "0.9.2"
+clap = { version = "4.5.41", features = ["derive"] }
 
 [build-dependencies]
 meta = { path = "meta" }

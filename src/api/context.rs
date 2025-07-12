@@ -37,8 +37,22 @@ impl FromRequestParts<Arc<ApiState>> for ServiceRequestContext {
 
     async fn from_request_parts(
         parts: &mut Parts,
-        _state: &Arc<ApiState>,
+        state: &Arc<ApiState>,
     ) -> Result<Self, Self::Rejection> {
+        let token_header = parts.headers.get("x-ignition-token");
+        let token = if let Some(token_header) = token_header {
+            token_header
+                .to_str()
+                .map_err(|_| ServiceRequestContextError::InvalidToken)?
+                .to_string()
+        } else {
+            return Err(ServiceRequestContextError::InvalidToken);
+        };
+        let claims = state
+            .auth_handler
+            .verify_token(&token)
+            .map_err(|_| ServiceRequestContextError::InvalidToken)?;
+
         let namespace_header = parts.headers.get("x-ignition-namespace");
         let namespace = if let Some(namespace_header) = namespace_header {
             Namespace::from_value(
@@ -53,7 +67,7 @@ impl FromRequestParts<Arc<ApiState>> for ServiceRequestContext {
         };
 
         Ok(ServiceRequestContext {
-            tenant: "test_tenant".to_string(),
+            tenant: claims.tenant.clone(),
             namespace,
         })
     }
