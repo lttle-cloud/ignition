@@ -1,5 +1,4 @@
 use anyhow::Result;
-use ignition::resources::metadata::Namespace;
 use meta::{summary, table};
 
 use crate::{

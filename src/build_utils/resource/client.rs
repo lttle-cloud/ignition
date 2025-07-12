@@ -248,11 +248,18 @@ fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
     // Handle response
     if let Some(_) = &method.response {
         let response_inner_type = generate_response_inner_type(service, &method.response);
+        src.push_str("            let bytes = response.bytes().await?;\n");
         src.push_str(&format!(
-            "            let result = response.json::<{}>().await?;\n",
+            "            let result: Result<{}, _> = serde_json::from_slice(&bytes);\n",
             response_inner_type
         ));
-        src.push_str(&format!("            Ok(result)\n"));
+        src.push_str("            match result {\n");
+        src.push_str("                Ok(val) => Ok(val),\n");
+        src.push_str("                Err(e) => {\n");
+        src.push_str("                    let response_text = String::from_utf8_lossy(&bytes);\n");
+        src.push_str("                    Err(anyhow::anyhow!(\"{}\", response_text))\n");
+        src.push_str("                }\n");
+        src.push_str("            }\n");
     } else {
         src.push_str("            if !response.status().is_success() {\n");
         src.push_str("                return Err(anyhow::anyhow!(\n");

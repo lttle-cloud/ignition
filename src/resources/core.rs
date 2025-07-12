@@ -12,7 +12,7 @@ pub struct Me {
 
 pub fn core_api_service() -> ApiService {
     ApiService {
-        name: "core".to_string(),
+        name: "Core".to_string(),
         tag: "core".to_string(),
         crate_path: "resources::core".to_string(),
         namespaced: false,

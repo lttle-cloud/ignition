@@ -1,7 +1,7 @@
 {
   "services": [
     {
-      "name": "core",
+      "name": "Core",
       "tag": "core",
       "crate_path": "resources::core",
       "namespaced": false,
