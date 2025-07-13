@@ -5,9 +5,16 @@ use heed::{
     Database, Env, EnvOpenOptions,
     types::{Bytes, Str},
 };
-use serde::{Serialize, de::DeserializeOwned};
-use std::{marker::PhantomData, path::Path};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::{
+    collections::HashMap,
+    marker::PhantomData,
+    path::Path,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::fs::create_dir_all;
+
+const CORE_TENANT: &str = "__core__";
 
 pub struct Set;
 pub struct NotSet;
@@ -84,9 +91,15 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct Key<D>(String, PhantomData<D>)
+pub struct Key<D>
 where
-    D: Serialize + DeserializeOwned;
+    D: Serialize + DeserializeOwned,
+{
+    key: String,
+    tenant: String,
+    namespace: Option<String>,
+    _marker: PhantomData<D>,
+}
 
 #[derive(Clone, Debug)]
 pub struct PartialKey<D>(String, PhantomData<D>)
@@ -154,16 +167,20 @@ where
     D: Serialize + DeserializeOwned,
 {
     fn from(builder: &KeyBuilder<Set, Set, Set, Set, Set, Set, D>) -> Self {
-        Key::<D>(
-            format!(
-                "{}/{}/{}/{}",
-                builder.tenant.as_ref().unwrap(),
-                builder.collection.as_ref().unwrap(),
-                builder.namespace.as_ref().unwrap(),
-                builder.key.as_ref().unwrap(),
-            ),
-            PhantomData,
-        )
+        let key = format!(
+            "{}/{}/{}/{}",
+            builder.tenant.as_ref().unwrap(),
+            builder.collection.as_ref().unwrap(),
+            builder.namespace.as_ref().unwrap(),
+            builder.key.as_ref().unwrap(),
+        );
+
+        Key {
+            key,
+            tenant: builder.tenant.as_ref().unwrap().clone(),
+            namespace: builder.namespace.clone(),
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -200,15 +217,19 @@ where
     D: Serialize + DeserializeOwned,
 {
     fn from(builder: &KeyBuilder<NotSet, Set, Set, Set, NotSet, Set, D>) -> Self {
-        Key::<D>(
-            format!(
-                "{}/{}/{}",
-                builder.tenant.as_ref().unwrap(),
-                builder.collection.as_ref().unwrap(),
-                builder.key.as_ref().unwrap(),
-            ),
-            PhantomData,
-        )
+        let key = format!(
+            "{}/{}/{}",
+            builder.tenant.as_ref().unwrap(),
+            builder.collection.as_ref().unwrap(),
+            builder.key.as_ref().unwrap(),
+        );
+
+        Key {
+            key,
+            tenant: builder.tenant.as_ref().unwrap().clone(),
+            namespace: None,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -217,7 +238,7 @@ where
     D: Serialize + DeserializeOwned,
 {
     fn to_string(&self) -> String {
-        self.0.clone()
+        self.key.clone()
     }
 }
 
@@ -228,6 +249,33 @@ where
     fn to_string(&self) -> String {
         self.0.clone()
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TrackedNamespaces {
+    tenant: String,
+    namespaces: HashMap<String, TrackedNamespace>,
+}
+
+impl TrackedNamespaces {
+    fn new(tenant: String) -> Self {
+        Self {
+            tenant,
+            namespaces: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackedNamespace {
+    pub namespace: String,
+    pub created_at: u128,
+}
+
+pub fn now_millis() -> u128 {
+    let now = SystemTime::now();
+    let since_the_epoch = now.duration_since(UNIX_EPOCH).unwrap();
+    since_the_epoch.as_millis() as u128
 }
 
 pub struct Store {
@@ -255,13 +303,70 @@ impl Store {
         Ok(Self { db, env })
     }
 
+    fn track_namespace_for_key<D: Serialize + DeserializeOwned>(
+        &self,
+        key: impl Into<Key<D>>,
+    ) -> Result<()> {
+        let key: Key<D> = key.into();
+        let Some(namespace) = key.namespace else {
+            return Ok(());
+        };
+
+        if key.tenant == CORE_TENANT {
+            return Ok(());
+        }
+
+        let tracked_namespace_key = Key::<TrackedNamespaces>::not_namespaced()
+            .tenant(CORE_TENANT)
+            .collection("tracked_namespaces")
+            .key(key.tenant.clone());
+
+        let tenant = key.tenant.clone();
+        let mut tracked_namespaces = self
+            .get(&tracked_namespace_key)?
+            .unwrap_or_else(|| TrackedNamespaces::new(tenant));
+
+        let tracked_namespace = tracked_namespaces
+            .namespaces
+            .get(&namespace)
+            .cloned()
+            .unwrap_or_else(|| TrackedNamespace {
+                namespace: namespace.clone(),
+                created_at: now_millis(),
+            });
+
+        tracked_namespaces
+            .namespaces
+            .insert(namespace, tracked_namespace);
+
+        self.put(&tracked_namespace_key, &tracked_namespaces)?;
+
+        Ok(())
+    }
+
+    pub fn list_tracked_namespaces(
+        &self,
+        tenant: impl AsRef<str>,
+    ) -> Result<Vec<TrackedNamespace>> {
+        let key = Key::<TrackedNamespaces>::not_namespaced()
+            .tenant(CORE_TENANT)
+            .collection("tracked_namespaces")
+            .key(tenant.as_ref().to_string());
+
+        if let Some(tracked_namespaces) = self.get(&key)? {
+            Ok(tracked_namespaces.namespaces.values().cloned().collect())
+        } else {
+            Ok(vec![])
+        }
+    }
+
     pub fn get<D: Serialize + DeserializeOwned>(
         &self,
         key: impl Into<Key<D>>,
     ) -> Result<Option<D>> {
         let key: Key<D> = key.into();
         let rtxn = self.env.read_txn()?;
-        let value = self.db.get(&rtxn, &key.0)?;
+        let value = self.db.get(&rtxn, &key.key)?;
         Ok(value.map(|v| serde_json::from_slice(v).unwrap()))
     }
 
@@ -305,8 +410,10 @@ impl Store {
         let value = serde_json::to_string(&value)?.into_bytes();
 
         let mut wtxn = self.env.write_txn()?;
-        self.db.put(&mut wtxn, &key.0, &value)?;
+        self.db.put(&mut wtxn, &key.key, &value)?;
         wtxn.commit()?;
+
+        self.track_namespace_for_key(key)?;
 
         Ok(())
     }
@@ -314,7 +421,7 @@ impl Store {
     pub fn delete<D: Serialize + DeserializeOwned>(&self, key: impl Into<Key<D>>) -> Result<()> {
         let key: Key<D> = key.into();
         let mut wtxn = self.env.write_txn()?;
-        self.db.delete(&mut wtxn, &key.0)?;
+        self.db.delete(&mut wtxn, &key.key)?;
         wtxn.commit()?;
 
         Ok(())

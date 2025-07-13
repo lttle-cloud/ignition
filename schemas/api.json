@@ -26,6 +26,27 @@
             "optional": false,
             "name": "Me"
           }
+        },
+        {
+          "name": "list_namespaces",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "namespaces"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "ListNamespaces"
+          }
         }
       ]
     },
@@ -133,6 +154,60 @@
       ],
       "title": "Me",
       "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "Namespace": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "integer",
+          "format": "uint128",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "created_at"
+      ],
+      "title": "Namespace",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "ListNamespaces": {
+      "type": "object",
+      "properties": {
+        "namespaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Namespace"
+          }
+        }
+      },
+      "required": [
+        "namespaces"
+      ],
+      "title": "ListNamespaces",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "Namespace": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": "integer",
+              "format": "uint128",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "name",
+            "created_at"
+          ]
+        }
+      }
     },
     "Machine": {
       "oneOf": [

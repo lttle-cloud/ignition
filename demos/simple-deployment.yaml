@@ -2,3 +2,9 @@ machine:
   name: machine-1
   bleah: 1
   bleah2: 32
+---
+machine.v2:
+  name: machine-2
+  namespace: testing
+  bleah: 2
+  bleah2: 32

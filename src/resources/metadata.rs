@@ -49,6 +49,15 @@ pub struct Metadata {
     pub namespace: Option<String>,
 }
 
+impl ToString for Metadata {
+    fn to_string(&self) -> String {
+        match self.namespace.as_ref() {
+            Some(namespace) => format!("{}/{}", namespace, self.name),
+            None => self.name.clone(),
+        }
+    }
+}
+
 impl Metadata {
     pub fn new(name: impl AsRef<str>, namespace: Namespace) -> Self {
         Self {
