@@ -49,9 +49,14 @@ impl RootSchema {
         self.one_of.extend(schema.one_of.clone());
     }
 
-    fn add_defs(&mut self, defs: &Map<String, Value>) {
-        for (key, value) in defs {
-            self.defs.insert(key.clone(), value.clone());
+    fn set_defs(&mut self, defs: &Map<String, Value>) {
+        self.defs.clear();
+
+        let mut sorted_keys = defs.keys().collect::<Vec<_>>();
+        sorted_keys.sort_by(|a, b| b.cmp(a));
+
+        for key in sorted_keys {
+            self.defs.insert(key.clone(), defs[key].clone());
         }
     }
 }
@@ -77,7 +82,7 @@ pub fn merge_json_schemas(schemas: Vec<Schema>, schema_generator: &mut SchemaGen
         root_schema.add_one_of(&schema);
     }
 
-    root_schema.add_defs(schema_generator.definitions());
+    root_schema.set_defs(schema_generator.definitions());
 
     serde_json::to_value(root_schema).expect("Failed to convert root schema to value")
 }
@@ -238,6 +243,8 @@ async fn build_api_schema(
     api_schema
         .defs
         .extend(schema_generator.definitions().clone());
+
+    api_schema.defs.sort_keys();
 
     let src = serde_json::to_string_pretty(&api_schema)?;
 

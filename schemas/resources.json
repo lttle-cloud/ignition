@@ -43,6 +43,15 @@
     "MachineV2": {
       "type": "object",
       "properties": {
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
         "namespace": {
           "type": [
             "string",
@@ -72,6 +81,15 @@
     "MachineV1": {
       "type": "object",
       "properties": {
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
         "namespace": {
           "type": [
             "string",

@@ -21,6 +21,7 @@ pub fn generate_version_struct(
     if args.namespaced {
         named.insert(0, syn::parse_quote!(namespace: Option<String>));
     }
+    named.insert(0, syn::parse_quote!(tags: Option<Vec<String>>));
 
     item.attrs = syn::parse_quote!(#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]);
 

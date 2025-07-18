@@ -19,6 +19,7 @@ mod machine {
     #[status]
     struct Status {
         test: u32,
+        hash: u64,
     }
 }
 
@@ -27,6 +28,7 @@ impl ConvertResource<MachineV2> for MachineV1 {
         MachineV2 {
             name: this.name,
             namespace: this.namespace,
+            tags: None,
             bleah: this.bleah,
             bleah2: 0,
         }
@@ -36,6 +38,7 @@ impl ConvertResource<MachineV2> for MachineV1 {
         MachineV1 {
             namespace: this.namespace,
             name: this.name,
+            tags: None,
             bleah: this.bleah,
         }
     }
@@ -47,6 +50,7 @@ impl FromResource<Machine> for MachineStatus {
 
         Ok(MachineStatus {
             test: machine.bleah + machine.bleah2,
+            hash: 0,
         })
     }
 }
@@ -61,6 +65,7 @@ mod test {
         let x = Machine::V1(MachineV1 {
             namespace: Some("test_ns".into()),
             name: "test".into(),
+            tags: None,
             bleah: 1,
         });
 
@@ -74,6 +79,7 @@ mod test {
         let x = Machine::V1(MachineV1 {
             namespace: None,
             name: "test".into(),
+            tags: None,
             bleah: 1,
         });
 
@@ -90,6 +96,7 @@ mod test {
         let x = Machine::V1(MachineV1 {
             namespace: Some("test_ns".into()),
             name: "test".into(),
+            tags: None,
             bleah: 1,
         });
 

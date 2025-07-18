@@ -142,38 +142,6 @@
     }
   ],
   "defs": {
-    "Me": {
-      "type": "object",
-      "properties": {
-        "tenant": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "tenant"
-      ],
-      "title": "Me",
-      "$schema": "https://json-schema.org/draft/2020-12/schema"
-    },
-    "Namespace": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "created_at": {
-          "type": "integer",
-          "format": "uint128",
-          "minimum": 0
-        }
-      },
-      "required": [
-        "name",
-        "created_at"
-      ],
-      "title": "Namespace",
-      "$schema": "https://json-schema.org/draft/2020-12/schema"
-    },
     "ListNamespaces": {
       "type": "object",
       "properties": {
@@ -256,15 +224,62 @@
           "type": "integer",
           "format": "uint32",
           "minimum": 0
+        },
+        "hash": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
         }
       },
       "required": [
-        "test"
+        "test",
+        "hash"
+      ]
+    },
+    "MachineV1": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "bleah": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "bleah"
       ]
     },
     "MachineV2": {
       "type": "object",
       "properties": {
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
         "namespace": {
           "type": [
             "string",
@@ -291,28 +306,37 @@
         "bleah2"
       ]
     },
-    "MachineV1": {
+    "Me": {
       "type": "object",
       "properties": {
-        "namespace": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
+        "tenant": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant"
+      ],
+      "title": "Me",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "Namespace": {
+      "type": "object",
+      "properties": {
         "name": {
           "type": "string"
         },
-        "bleah": {
+        "created_at": {
           "type": "integer",
-          "format": "uint32",
+          "format": "uint128",
           "minimum": 0
         }
       },
       "required": [
         "name",
-        "bleah"
-      ]
+        "created_at"
+      ],
+      "title": "Namespace",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
     }
   }
 }

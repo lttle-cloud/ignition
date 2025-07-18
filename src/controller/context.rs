@@ -3,8 +3,10 @@ use std::sync::Arc;
 use oci_client::Reference;
 
 use crate::{
-    machinery::store::Store, repository::Repository, resource_index::ResourceKind,
-    resources::metadata::Metadata,
+    machinery::store::Store,
+    repository::Repository,
+    resource_index::ResourceKind,
+    resources::metadata::{Metadata, Namespace},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -27,6 +29,15 @@ impl ControllerKey {
             kind,
             namespace: namespace.map(|ns| ns.as_ref().to_string()),
             name: name.as_ref().to_string(),
+        }
+    }
+
+    pub fn metadata(&self) -> Metadata {
+        match self.kind {
+            ResourceKind::Machine => Metadata::new(
+                self.name.clone(),
+                Namespace::from_value_or_default(self.namespace.clone()),
+            ),
         }
     }
 }

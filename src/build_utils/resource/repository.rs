@@ -241,6 +241,27 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
     src.push_str("    }\n\n");
 
     src.push_str(&format!(
+        "    pub fn get_with_status(&self, metadata: Metadata) -> Result<Option<({}, {})>> {{\n",
+        resource_name, status_name
+    ));
+    src.push_str(&format!(
+        "        let key = {}::key(self.tenant.clone(), metadata.clone())?;\n",
+        resource_name
+    ));
+    src.push_str("        let Some(resource) = self.store.get(key.clone())? else {\n");
+    src.push_str("            return Ok(None);\n");
+    src.push_str("        };\n");
+    src.push_str(&format!(
+        "        let status_key = {}::key(self.tenant.clone(), metadata.clone())?;\n",
+        status_name
+    ));
+    src.push_str("        let Some(status) = self.store.get(status_key.clone())? else {\n");
+    src.push_str("            return Ok(None);\n");
+    src.push_str("        };\n");
+    src.push_str("        Ok(Some((resource, status)))\n");
+    src.push_str("    }\n\n");
+
+    src.push_str(&format!(
         "    pub async fn patch_status<F>(&self, metadata: Metadata, mut f: F) -> Result<{}>\n",
         status_name
     ));
