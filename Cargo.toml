@@ -65,6 +65,8 @@ serde_yaml = "0.9.34"
 humantime = "2.2.0"
 clap_complete = "4.5.55"
 atty = "0.2.14"
+bincode = "2.0.1"
+hex = "0.4.3"
 
 [build-dependencies]
 meta = { path = "meta" }
