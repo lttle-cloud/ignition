@@ -23,6 +23,7 @@ mod test {
 
         let machine = Machine::V1(MachineV1 {
             name: "test".to_string(),
+            tags: None,
             namespace: None, // will use default
             bleah: 12,
         });
