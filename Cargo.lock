@@ -282,6 +282,12 @@ dependencies = [
 
 [[package]]
 name = "bitflags"
+version = "1.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
+
+[[package]]
+name = "bitflags"
 version = "2.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
@@ -686,6 +692,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "event-manager"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97f377bdec2bbca5e5f69859595bd48b43f3a26ab063532f7d6e95f8e42056e3"
+dependencies = [
+ "libc",
+ "vmm-sys-util",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -922,7 +938,7 @@ version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a56c94661ddfb51aa9cdfbf102cfcc340aa69267f95ebccc4af08d7c530d393"
 dependencies = [
- "bitflags",
+ "bitflags 2.9.1",
  "byteorder",
  "heed-traits",
  "heed-types",
@@ -1267,12 +1283,17 @@ dependencies = [
  "clap_complete",
  "directories",
  "docker_credential",
+ "event-manager",
  "flate2",
  "futures-util",
  "heed",
  "hex",
  "humantime",
  "jsonwebtoken",
+ "kvm-bindings",
+ "kvm-ioctls",
+ "libc",
+ "linux-loader",
  "meta",
  "nix 0.30.1",
  "oci-client",
@@ -1287,11 +1308,20 @@ dependencies = [
  "tar",
  "tempfile",
  "terminal_size",
+ "thiserror 2.0.12",
  "tokio",
  "toml",
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "virtio-blk",
+ "virtio-device",
+ "virtio-queue",
+ "vm-allocator",
+ "vm-device",
+ "vm-memory",
+ "vm-superio",
+ "vmm-sys-util",
 ]
 
 [[package]]
@@ -1373,6 +1403,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "kvm-bindings"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf3432d9f609fbede9f624d1dbefcce77985a9322de1d0e6d460ec05502b7fd0"
+dependencies = [
+ "vmm-sys-util",
+]
+
+[[package]]
+name = "kvm-ioctls"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e00243d27a20feb05cf001ae52ddc79831ac70c020f215ba1153ff9270b650a"
+dependencies = [
+ "bitflags 2.9.1",
+ "kvm-bindings",
+ "libc",
+ "vmm-sys-util",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1390,9 +1441,18 @@ version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0ff37bd590ca25063e35af745c343cb7a0271906fb7b37e4813e8f79f00268d"
 dependencies = [
- "bitflags",
+ "bitflags 2.9.1",
  "libc",
  "redox_syscall",
+]
+
+[[package]]
+name = "linux-loader"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "870c3814345f050991f99869417779f6062542bcf4ed81db7a1b926ad1306638"
+dependencies = [
+ "vm-memory",
 ]
 
 [[package]]
@@ -1516,7 +1576,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56d83370a96813d7c977f8b63054f1162df6e5784f1c598d689236564fb5a6f2"
 dependencies = [
  "anyhow",
- "bitflags",
+ "bitflags 2.9.1",
  "byteorder",
  "libc",
  "log",
@@ -1569,7 +1629,7 @@ version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
 dependencies = [
- "bitflags",
+ "bitflags 2.9.1",
  "cfg-if",
  "cfg_aliases",
  "libc",
@@ -1581,7 +1641,7 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
 dependencies = [
- "bitflags",
+ "bitflags 2.9.1",
  "cfg-if",
  "cfg_aliases",
  "libc",
@@ -1712,7 +1772,7 @@ version = "0.10.73"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8505734d46c8ab1e19a1dce3aef597ad87dcb4c37e7188231769bd6bd51cebf8"
 dependencies = [
- "bitflags",
+ "bitflags 2.9.1",
  "cfg-if",
  "foreign-types",
  "libc",
@@ -2014,7 +2074,7 @@ version = "0.5.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d04b7d0ee6b4a0207a0a7adb104d23ecb0b47d6beae7152d0fa34b692b29fd6"
 dependencies = [
- "bitflags",
+ "bitflags 2.9.1",
 ]
 
 [[package]]
@@ -2164,7 +2224,7 @@ version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c71e83d6afe7ff64890ec6b71d6a69bb8a610ab78ce364b3352876bb4c801266"
 dependencies = [
- "bitflags",
+ "bitflags 2.9.1",
  "errno",
  "libc",
  "linux-raw-sys",
@@ -2262,7 +2322,7 @@ version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "897b2245f0b511c87893af39b033e5ca9cce68824c4d7e7630b5a1d339658d02"
 dependencies = [
- "bitflags",
+ "bitflags 2.9.1",
  "core-foundation",
  "core-foundation-sys",
  "libc",
@@ -2535,7 +2595,7 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c879d448e9d986b661742763247d3693ed13609438cf3d006f51f5368a5ba6b"
 dependencies = [
- "bitflags",
+ "bitflags 2.9.1",
  "core-foundation",
  "system-configuration-sys",
 ]
@@ -2812,7 +2872,7 @@ version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adc82fd73de2a9722ac5da747f12383d2bfdb93591ee6c58486e0097890f05f2"
 dependencies = [
- "bitflags",
+ "bitflags 2.9.1",
  "bytes",
  "futures-util",
  "http",
@@ -3005,10 +3065,93 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "virtio-bindings"
+version = "0.2.6"
+source = "git+https://github.com/rust-vmm/vm-virtio.git#f72ca02cfa965e25950958674ffde18e8aa01330"
+
+[[package]]
+name = "virtio-blk"
+version = "0.1.0"
+source = "git+https://github.com/rust-vmm/vm-virtio.git#f72ca02cfa965e25950958674ffde18e8aa01330"
+dependencies = [
+ "log",
+ "virtio-bindings",
+ "virtio-device",
+ "virtio-queue",
+ "vm-memory",
+ "vmm-sys-util",
+]
+
+[[package]]
+name = "virtio-device"
+version = "0.1.0"
+source = "git+https://github.com/rust-vmm/vm-virtio.git#f72ca02cfa965e25950958674ffde18e8aa01330"
+dependencies = [
+ "log",
+ "virtio-bindings",
+ "virtio-queue",
+ "vm-memory",
+]
+
+[[package]]
+name = "virtio-queue"
+version = "0.16.0"
+source = "git+https://github.com/rust-vmm/vm-virtio.git#f72ca02cfa965e25950958674ffde18e8aa01330"
+dependencies = [
+ "log",
+ "virtio-bindings",
+ "vm-memory",
+ "vmm-sys-util",
+]
+
+[[package]]
 name = "virtue"
 version = "0.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
+
+[[package]]
+name = "vm-allocator"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "040a65b0c29f298d71ca45dd52d02b0d0ddc15b9b97d95dfeebe67d6fdd42a28"
+dependencies = [
+ "libc",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "vm-device"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "599adbdaddea4947ca23c085d2b8e47f3499ccda35438424526f3853748a8eb6"
+
+[[package]]
+name = "vm-memory"
+version = "0.16.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd5e56d48353c5f54ef50bd158a0452fc82f5383da840f7b8efc31695dd3b9d"
+dependencies = [
+ "libc",
+ "thiserror 1.0.69",
+ "winapi",
+]
+
+[[package]]
+name = "vm-superio"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3428ee25acbfc75ed14600f2043876e0889cbd57c39dd441191417377cdceda0"
+
+[[package]]
+name = "vmm-sys-util"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d21f366bf22bfba3e868349978766a965cbe628c323d58e026be80b8357ab789"
+dependencies = [
+ "bitflags 1.3.2",
+ "libc",
+]
 
 [[package]]
 name = "want"
@@ -3314,7 +3457,7 @@ version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f42320e61fe2cfd34354ecb597f86f413484a798ba44a8ca1165c58d42da6c1"
 dependencies = [
- "bitflags",
+ "bitflags 2.9.1",
 ]
 
 [[package]]

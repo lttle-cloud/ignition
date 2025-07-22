@@ -1,5 +1,6 @@
 pub mod data;
 pub mod image;
+pub mod machine;
 pub mod net;
 pub mod volume;
 

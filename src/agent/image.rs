@@ -22,14 +22,14 @@ pub struct ImageAgentConfig {
     pub base_path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImageLayer {
     pub timestamp: u128,
     pub digest: String,
     pub path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Image {
     pub id: String,
     pub reference: String,

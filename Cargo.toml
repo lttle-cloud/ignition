@@ -67,6 +67,22 @@ clap_complete = "4.5.55"
 atty = "0.2.14"
 bincode = "2.0.1"
 hex = "0.4.3"
+vm-memory = { version = "0.16.2", features = ["backend-mmap"] }
+vm-allocator = "0.1.3"
+linux-loader = { version = "0.13.0", features = ["elf"] }
+libc = "0.2.169"
+kvm-bindings = { version = "0.13.0", features = ["fam-wrappers"] }
+kvm-ioctls = "0.23.0"
+event-manager = { version = "0.4.0", features = ["remote_endpoint"] }
+vmm-sys-util = "0.14.0"
+vm-device = "0.1.0"
+vm-superio = "0.8.0"
+virtio-device = { git = "https://github.com/rust-vmm/vm-virtio.git" }
+virtio-queue = { git = "https://github.com/rust-vmm/vm-virtio.git" }
+virtio-blk = { git = "https://github.com/rust-vmm/vm-virtio.git", features = [
+    "backend-stdio",
+] }
+thiserror = "2.0.12"
 
 [build-dependencies]
 meta = { path = "meta" }
