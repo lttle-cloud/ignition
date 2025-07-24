@@ -107,7 +107,6 @@ pub async fn pull_layer(
         }
     }
 
-    println!("file_path: {:?}", file_path.as_ref());
     tokio::fs::write(&file_path, data).await?;
 
     Ok(())

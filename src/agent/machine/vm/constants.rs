@@ -1,5 +1,7 @@
 // use crate::cpu_ref;
 
+use crate::agent::machine::vm::cpu_ref;
+
 pub const MMIO_END: u64 = 1 << 32;
 pub const MMIO_SIZE: u64 = 768 << 20; // 768 mib
 pub const MMIO_START: u64 = MMIO_END - MMIO_SIZE;
@@ -31,6 +33,6 @@ pub const KERNEL_MIN_ALIGNMENT_BYTES: u32 = 0x0100_0000;
 pub const EBDA_START: u64 = 0x0009_fc00;
 pub const E820_RAM: u32 = 1;
 
-// pub const MAX_IRQ: u32 = cpu_ref::mptable::IRQ_MAX as u32;
+pub const MAX_IRQ: u32 = cpu_ref::mptable::IRQ_MAX as u32;
 
 pub const SERIAL_IRQ: u32 = 4;

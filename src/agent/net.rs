@@ -186,7 +186,6 @@ mod tests {
     use super::*;
 
     async fn create_test_agent(dir: &Path) -> NetAgent {
-        println!("dir: {:?}", dir);
         let store = Store::new(dir).await.unwrap();
 
         let config = NetAgentConfig {

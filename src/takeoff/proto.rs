@@ -5,7 +5,22 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct TakeoffInitArgs {
+    #[serde(rename = "e")]
     pub envs: HashMap<String, String>,
+    #[serde(rename = "r")]
+    pub root_mount_source: String,
+    #[serde(rename = "m")]
+    pub additional_mount_points: Vec<MountPoint>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct MountPoint {
+    #[serde(rename = "s")]
+    pub source: String,
+    #[serde(rename = "t")]
+    pub target: String,
+    #[serde(rename = "r")]
+    pub read_only: bool,
 }
 
 impl TakeoffInitArgs {
@@ -30,6 +45,12 @@ mod tests {
     fn test_encode_decode() {
         let args = TakeoffInitArgs {
             envs: HashMap::from([("TEST".to_string(), "test".to_string())]),
+            root_mount_source: "/dev/vda".to_string(),
+            additional_mount_points: vec![MountPoint {
+                source: "/dev/vdb".to_string(),
+                target: "/mnt/data".to_string(),
+                read_only: true,
+            }],
         };
         let encoded = args.encode().unwrap();
         let decoded = TakeoffInitArgs::decode(&encoded).unwrap();

@@ -1,10 +1,21 @@
-use std::sync::Arc;
+use std::{
+    cell::RefCell,
+    sync::{Arc, Barrier},
+    thread::JoinHandle,
+    time::Duration,
+};
 
 use anyhow::{Result, bail};
 use kvm_bindings::{CpuId, Msrs, kvm_fpu, kvm_regs};
-use kvm_ioctls::{Kvm, VcpuFd, VmFd};
-use tokio::sync::Barrier;
+use kvm_ioctls::{Kvm, VcpuExit, VcpuFd, VmFd};
+use libc::{SIGRTMAX, c_int, siginfo_t};
+use tracing::{debug, warn};
+use vm_device::{
+    bus::{MmioAddress, PioAddress},
+    device_manager::{IoManager, MmioManager, PioManager},
+};
 use vm_memory::{Address, Bytes, GuestAddress, GuestMemoryMmap};
+use vmm_sys_util::signal::{Killable, register_signal_handler};
 
 use crate::agent::machine::vm::{
     constants::{
@@ -21,33 +32,79 @@ use crate::agent::machine::vm::{
     },
 };
 
-#[derive(Debug)]
-enum VcpuStatus {
+#[derive(Debug, PartialEq)]
+pub enum VcpuStatus {
     Idle,
-    Suspended,
+    Preparing,
     Running,
     Stopped,
 }
 
 #[derive(Debug)]
-pub struct Vcpu {
-    count: u8,
-    index: u8,
-    status: VcpuStatus,
-    cpuid: CpuId,
-    vcpu_fd: VcpuFd,
-    supported_msrs: Msrs,
-    barrier: Arc<Barrier>,
+pub struct VcpuEvent {
+    pub event_type: VcpuEventType,
+    pub vcpu_index: u8,
 }
 
-pub type VcpuRef = Arc<Vcpu>;
+#[derive(Debug)]
+pub enum VcpuEventType {
+    Errored,
+    Stopped,
+    Restarted,
+}
+
+pub struct Vcpu {
+    pub count: u8,
+    pub index: u8,
+    pub status: VcpuStatus,
+    pub cpuid: CpuId,
+    pub vcpu_fd: VcpuFd,
+    pub supported_msrs: Msrs,
+    barrier: Arc<Barrier>,
+    io_manager: Arc<IoManager>,
+    vcpu_event_tx: async_channel::Sender<VcpuEvent>,
+}
+
+thread_local!(static THIS_VCPU_PTR: RefCell<Option<*mut Vcpu>> = RefCell::new(None));
+
+pub enum VcpuRunResult {
+    Ok(Vcpu),
+    Error(anyhow::Error, Vcpu),
+}
+
+#[derive(Debug)]
+pub struct RunningVcpuHandle(JoinHandle<VcpuRunResult>);
+
+impl RunningVcpuHandle {
+    pub async fn signal_stop(&self) {
+        self.0.kill(SIGRTMAX() - 1).ok();
+    }
+
+    pub async fn join(self) -> VcpuRunResult {
+        loop {
+            if self.0.is_finished() {
+                return self.0.join().unwrap();
+            }
+
+            // check every 10ms if the thread is finished
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    pub async fn signal_stop_and_join(self) -> VcpuRunResult {
+        self.signal_stop().await;
+        self.join().await
+    }
+}
 
 impl Vcpu {
     pub async fn new(
         kvm: &Kvm,
         vm_fd: &VmFd,
         memory: &GuestMemoryMmap,
+        io_manager: Arc<IoManager>,
         barrier: Arc<Barrier>,
+        vcpu_event_tx: async_channel::Sender<VcpuEvent>,
         start_addr: GuestAddress,
         vcpu_count: u8,
         index: u8,
@@ -67,7 +124,9 @@ impl Vcpu {
             cpuid,
             vcpu_fd,
             supported_msrs,
+            io_manager,
             barrier,
+            vcpu_event_tx,
         };
 
         vcpu.configure_cpuid()?;
@@ -178,5 +237,179 @@ impl Vcpu {
         self.vcpu_fd.set_regs(&regs)?;
 
         Ok(())
+    }
+
+    fn setup_thread_local(&self) -> Result<()> {
+        THIS_VCPU_PTR.with(|vcpu| {
+            if vcpu.borrow().is_none() {
+                let vcpu_ptr = (self as *const Self).cast_mut();
+                *vcpu.borrow_mut() = Some(vcpu_ptr);
+            }
+        });
+
+        Ok(())
+    }
+
+    pub fn setup_signal_handler() -> Result<()> {
+        extern "C" fn handle_signal(_: c_int, _: *mut siginfo_t, _: *mut libc::c_void) {
+            THIS_VCPU_PTR.with(|vcpu| {
+                if let Some(vcpu_ptr) = *vcpu.borrow() {
+                    let vcpu = unsafe { &mut *vcpu_ptr };
+                    vcpu.vcpu_fd.set_kvm_immediate_exit(1);
+                }
+            });
+        }
+
+        register_signal_handler(SIGRTMAX() - 1, handle_signal)?;
+
+        Ok(())
+    }
+
+    fn run(&mut self) -> Result<()> {
+        Self::setup_signal_handler()?;
+        self.setup_thread_local()?;
+
+        // if the vcpu is stopped, and we're restarting, we need to send the restarted event
+        let restart = self.status == VcpuStatus::Stopped;
+
+        self.status = VcpuStatus::Preparing;
+        self.barrier.wait();
+        self.status = VcpuStatus::Running;
+
+        if restart {
+            self.vcpu_event_tx
+                .try_send(VcpuEvent {
+                    event_type: VcpuEventType::Restarted,
+                    vcpu_index: self.index,
+                })
+                .ok();
+        }
+
+        'vcpu_loop: loop {
+            match self.vcpu_fd.run() {
+                Ok(exit) => match exit {
+                    VcpuExit::Shutdown | VcpuExit::Hlt => {
+                        warn!("Guest shutdown: {:?}.", exit);
+                        break 'vcpu_loop;
+                    }
+                    VcpuExit::IoOut(addr, data) => {
+                        if (0x3f8..(0x3f8 + 8)).contains(&addr) {
+                            // write to serial port
+
+                            if self.io_manager.pio_write(PioAddress(addr), data).is_err() {
+                                warn!("Failed to write to serial port.");
+                            }
+                        } else if addr == 0x060 || addr == 0x061 || addr == 0x064 {
+                            // write to i8042
+                            if self.io_manager.pio_write(PioAddress(addr), data).is_err() {
+                                warn!("Failed to write to i8042.");
+                            }
+                        } else if (0x070..=0x07f).contains(&addr) {
+                            // rtc port write
+                            warn!("unhandled rtc port write: {:x}", addr);
+                        } else {
+                            warn!("unhandled io port write: {:x}", addr);
+                        }
+                    }
+                    VcpuExit::IoIn(addr, data) => {
+                        if (0x3f8..(0x3f8 + 8)).contains(&addr) {
+                            // read from serial port
+                            if self.io_manager.pio_read(PioAddress(addr), data).is_err() {
+                                warn!("Failed to read from serial port.");
+                            }
+                        } else {
+                            warn!("unhandled io port read: {:x}", addr);
+                        }
+                    }
+                    VcpuExit::MmioRead(addr, data) => {
+                        // if GuestManagerDevice::should_handle_read(addr) {
+                        //     let mut guest_manager = self.guest_manager.lock().unwrap();
+                        //     guest_manager.mmio_read(addr - GUEST_MANAGER_MMIO_START, data);
+
+                        //     if guest_manager.should_exit_immediately() {
+                        //         break 'vcpu_loop;
+                        //     }
+
+                        //     continue;
+                        // }
+
+                        if self.io_manager.mmio_read(MmioAddress(addr), data).is_err() {
+                            warn!("Failed to read from mmio.");
+                        }
+                    }
+                    VcpuExit::MmioWrite(addr, data) => {
+                        // if GuestManagerDevice::should_handle_write(addr) {
+                        //     let mut guest_manager = self.guest_manager.lock().unwrap();
+                        //     guest_manager.mmio_write(addr - GUEST_MANAGER_MMIO_START, data);
+
+                        //     if guest_manager.should_exit_immediately() {
+                        //         break 'vcpu_loop;
+                        //     }
+
+                        //     continue;
+                        // }
+
+                        match self.io_manager.mmio_write(MmioAddress(addr), data) {
+                            Err(e) => {
+                                warn!("Failed to write to mmio: {:?} {}", addr, e);
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {
+                        warn!("unhandled vcpu run exit: {:?}", exit);
+                    }
+                },
+                Err(e) if e.errno() == libc::EAGAIN => {}
+                Err(e) if e.errno() == libc::EINTR => {
+                    warn!("Vcpu run interrupt: {}", e);
+                    // Clear the immediate exit flag after handling the interrupt
+                    self.vcpu_fd.set_kvm_immediate_exit(0);
+                    break 'vcpu_loop;
+                }
+                Err(e) => {
+                    warn!("Vcpu run error: {}", e);
+                    return Err(e.into());
+                }
+            };
+        }
+
+        Ok(())
+    }
+
+    pub async fn start(mut self) -> Result<RunningVcpuHandle> {
+        let vcpu_event_tx = self.vcpu_event_tx.clone();
+        let handle = std::thread::Builder::new()
+            .name(format!("vcpu-{}", self.index))
+            .spawn(move || match self.run() {
+                Ok(_) => {
+                    self.status = VcpuStatus::Stopped;
+
+                    vcpu_event_tx
+                        .try_send(VcpuEvent {
+                            event_type: VcpuEventType::Stopped,
+                            vcpu_index: self.index,
+                        })
+                        .ok();
+
+                    warn!("Vcpu {} stopped", self.index);
+
+                    VcpuRunResult::Ok(self)
+                }
+                Err(e) => {
+                    self.status = VcpuStatus::Stopped;
+
+                    vcpu_event_tx
+                        .try_send(VcpuEvent {
+                            event_type: VcpuEventType::Errored,
+                            vcpu_index: self.index,
+                        })
+                        .ok();
+
+                    VcpuRunResult::Error(e, self)
+                }
+            })?;
+
+        Ok(RunningVcpuHandle(handle))
     }
 }

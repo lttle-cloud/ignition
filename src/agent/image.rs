@@ -264,8 +264,6 @@ mod tests {
             .await
             .expect("Failed to pull image");
 
-        println!("image: {:?}", image);
-
         assert_eq!(image.reference, "docker.io/library/alpine:latest");
         assert_eq!(image.layer_ids.len(), 1);
 

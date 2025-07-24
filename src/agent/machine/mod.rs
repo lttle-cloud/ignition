@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::agent::machine::machine::{Machine, MachineConfig, MachineRef};
 
+#[derive(Debug, Clone)]
 pub struct MachineAgentConfig {
     pub kernel_path: String,
     pub initrd_path: String,
@@ -37,7 +38,7 @@ impl MachineAgent {
     }
 
     pub async fn create_machine(&self, config: MachineConfig) -> Result<MachineRef> {
-        let machine = Arc::new(Machine::new(&self.config, config).await?);
+        let machine = Machine::new(&self.config, config).await?;
 
         let machines = self.machines.pin();
         machines.insert(machine.config.name.clone(), machine.clone());

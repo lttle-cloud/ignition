@@ -10,6 +10,8 @@ use anyhow::Result;
 
 use crate::{
     agent::{
+        image::{ImageAgent, ImageAgentConfig},
+        machine::{MachineAgent, MachineAgentConfig},
         net::{NetAgent, NetAgentConfig},
         volume::{VolumeAgent, VolumeAgentConfig},
     },
@@ -21,6 +23,8 @@ pub struct AgentConfig {
     pub store_path: String,
     pub net_config: NetAgentConfig,
     pub volume_config: VolumeAgentConfig,
+    pub image_config: ImageAgentConfig,
+    pub machine_config: MachineAgentConfig,
 }
 
 pub struct Agent {
@@ -28,6 +32,8 @@ pub struct Agent {
     store: Arc<Store>,
     net: Arc<NetAgent>,
     volume: Arc<VolumeAgent>,
+    image: Arc<ImageAgent>,
+    machine: Arc<MachineAgent>,
 }
 
 impl Agent {
@@ -35,14 +41,20 @@ impl Agent {
         let store = Arc::new(Store::new(&config.store_path).await?);
 
         let net = Arc::new(NetAgent::new(config.net_config.clone(), store.clone()).await?);
-
         let volume = Arc::new(VolumeAgent::new(config.volume_config.clone(), store.clone()).await?);
+
+        let image = Arc::new(
+            ImageAgent::new(config.image_config.clone(), store.clone(), volume.clone()).await?,
+        );
+        let machine = Arc::new(MachineAgent::new(config.machine_config.clone()));
 
         Ok(Self {
             config,
             store,
             net,
             volume,
+            image,
+            machine,
         })
     }
 
@@ -52,5 +64,13 @@ impl Agent {
 
     pub fn volume(&self) -> &VolumeAgent {
         &self.volume
+    }
+
+    pub fn image(&self) -> &ImageAgent {
+        &self.image
+    }
+
+    pub fn machine(&self) -> &MachineAgent {
+        &self.machine
     }
 }
