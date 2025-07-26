@@ -49,7 +49,7 @@ impl ResourceService for CoreService {
         router = router.route("/namespaces", get(list_namespaces));
 
         ResourceServiceRouter {
-            name: "core".to_string(),
+            name: "Core".to_string(),
             base_path: "/core".to_string(),
             router,
         }

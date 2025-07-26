@@ -1,9 +1,9 @@
 use std::{
-    fs::{OpenOptions, create_dir_all},
+    fs::{File, OpenOptions, create_dir_all},
     path::Path,
 };
 
-use anyhow::Result;
+use anyhow::{Ok, Result};
 use vm_allocator::AddressAllocator;
 use vm_memory::{FileOffset, GuestAddress, GuestMemoryMmap};
 
@@ -26,7 +26,7 @@ pub async fn create_memory(machine_config: &MachineConfig) -> Result<GuestMemory
             }
 
             let mem_file = dir.join("memory.bin");
-            let mem_file = OpenOptions::new().read(true).write(true).open(mem_file)?;
+            let mem_file = open_memory_file(mem_file, mem_size)?;
 
             GuestMemoryMmap::from_ranges_with_files(&[(
                 GuestAddress(0),
@@ -37,6 +37,23 @@ pub async fn create_memory(machine_config: &MachineConfig) -> Result<GuestMemory
     };
 
     Ok(guest_memory)
+}
+
+fn open_memory_file(path: impl AsRef<Path>, mem_size: u64) -> Result<File> {
+    let path = path.as_ref();
+    let needs_init = !path.exists();
+
+    let mem_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(needs_init)
+        .open(path)?;
+
+    if needs_init {
+        mem_file.set_len(mem_size)?;
+    }
+
+    Ok(mem_file)
 }
 
 pub fn create_mmio_allocator() -> Result<AddressAllocator> {

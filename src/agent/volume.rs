@@ -20,6 +20,7 @@ pub struct Volume {
     pub id: String,
     pub sparse_size: u64,
     pub path: String,
+    pub ov_path: String,
     pub cloned_from: Option<String>,
 }
 
@@ -66,13 +67,20 @@ impl VolumeAgent {
     pub async fn volume_create_empty_sparse(&self, sparse_size: u64) -> Result<Volume> {
         let id = uuid::Uuid::new_v4().to_string();
         let path = self.base_path.join(&id).to_string_lossy().to_string();
-
         fs::create_sparse_file(&path, sparse_size).await?;
+
+        let ov_path = self
+            .base_path
+            .join(format!("{}.ov", id))
+            .to_string_lossy()
+            .to_string();
+        fs::create_sparse_file(&ov_path, sparse_size).await?;
 
         let volume = Volume {
             id: id.clone(),
             sparse_size,
             path,
+            ov_path,
             cloned_from: None,
         };
 
@@ -134,18 +142,26 @@ impl VolumeAgent {
         Ok(())
     }
 
-    pub async fn volume_clone(&self, source_id: &str) -> Result<Volume> {
+    pub async fn volume_clone_with_overlay(&self, source_id: &str) -> Result<Volume> {
         let Some(source_volume) = self.volume(source_id)? else {
             return Err(anyhow::anyhow!("Source volume not found"));
         };
 
-        let mut new_volume = self
-            .volume_create_empty_sparse(source_volume.sparse_size)
-            .await?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let ov_path = self
+            .base_path
+            .join(format!("{}.ov", id))
+            .to_string_lossy()
+            .to_string();
+        fs::create_sparse_file(&ov_path, source_volume.sparse_size).await?;
 
-        tokio::fs::copy(&source_volume.path, &new_volume.path).await?;
-
-        new_volume.cloned_from = Some(source_id.to_string());
+        let new_volume = Volume {
+            id,
+            sparse_size: source_volume.sparse_size,
+            path: source_volume.path.clone(),
+            ov_path,
+            cloned_from: Some(source_id.to_string()),
+        };
 
         let key = Key::<Volume>::not_namespaced()
             .tenant(DEFAULT_AGENT_TENANT)
@@ -223,7 +239,7 @@ mod tests {
         .await;
 
         let volume = agent.volume_create_empty_sparse(1024).await.unwrap();
-        let volume2 = agent.volume_clone(&volume.id).await.unwrap();
+        let volume2 = agent.volume_clone_with_overlay(&volume.id).await.unwrap();
 
         assert_eq!(volume2.cloned_from, Some(volume.id.clone()));
 

@@ -1,5 +1,3 @@
-use std::fs::File;
-
 use anyhow::{Result, anyhow};
 use event_manager::{EventOps, EventSet, Events, MutEventSubscriber};
 use tracing::warn;
@@ -8,7 +6,9 @@ use virtio_queue::{Queue, QueueOwnedT, QueueState, QueueT};
 use vm_memory::GuestMemoryMmap;
 use vmm_sys_util::eventfd::EventFd;
 
-use crate::agent::machine::vm::devices::virtio::{SignalUsedQueue, SingleFdSignalQueue};
+use crate::agent::machine::vm::devices::virtio::{
+    SignalUsedQueue, SingleFdSignalQueue, block::overlay_backend::OverlayBackend,
+};
 
 const IOEVENT_DATA: u32 = 0;
 
@@ -16,7 +16,7 @@ pub struct BlockHandler<S: SignalUsedQueue> {
     pub driver_notify: S,
     pub queue: Queue,
     pub memory: GuestMemoryMmap,
-    pub disk: StdIoBackend<File>,
+    pub disk: StdIoBackend<OverlayBackend>,
 }
 
 impl<S: SignalUsedQueue> BlockHandler<S> {

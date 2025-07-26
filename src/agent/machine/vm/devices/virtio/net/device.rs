@@ -50,7 +50,7 @@ pub struct Net {
     config: NetworkConfig,
     device: VirtioMmioDeviceConfig,
     memory: GuestMemoryMmap,
-    device_event_tx: async_channel::Sender<DeviceEvent>,
+    device_event_tx: async_broadcast::Sender<DeviceEvent>,
     handler: Option<Arc<Mutex<QueueHandler>>>,
 }
 
@@ -86,7 +86,7 @@ impl Net {
         env: &mut Env,
         io_manager: &mut IoManager,
         config: NetworkConfig,
-        device_event_tx: async_channel::Sender<DeviceEvent>,
+        device_event_tx: async_broadcast::Sender<DeviceEvent>,
     ) -> Result<Arc<Mutex<Self>>> {
         let device_features: u64 = (1 << VIRTIO_F_VERSION_1)
             | (1 << VIRTIO_F_RING_EVENT_IDX)
@@ -133,13 +133,8 @@ impl Net {
     }
 
     pub fn finalize_activate(&mut self, handler: Arc<Mutex<QueueHandler>>) -> Result<()> {
-        warn!("net finalize activate");
         self.device.finalize_activate(handler.clone())?;
         self.handler = Some(handler);
-
-        self.device_event_tx
-            .try_send(DeviceEvent::NetActivated)
-            .ok();
 
         Ok(())
     }

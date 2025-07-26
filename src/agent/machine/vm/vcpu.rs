@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    sync::{Arc, Barrier},
+    sync::{Arc, Barrier, Mutex},
     thread::JoinHandle,
     time::Duration,
 };
@@ -9,7 +9,7 @@ use anyhow::{Result, bail};
 use kvm_bindings::{CpuId, Msrs, kvm_fpu, kvm_regs};
 use kvm_ioctls::{Kvm, VcpuExit, VcpuFd, VmFd};
 use libc::{SIGRTMAX, c_int, siginfo_t};
-use tracing::{debug, warn};
+use tracing::warn;
 use vm_device::{
     bus::{MmioAddress, PioAddress},
     device_manager::{IoManager, MmioManager, PioManager},
@@ -30,6 +30,7 @@ use crate::agent::machine::vm::{
         },
         msr_index,
     },
+    devices::meta::guest_manager::{GUEST_MANAGER_MMIO_START, GuestManagerDevice},
 };
 
 #[derive(Debug, PartialEq)]
@@ -40,17 +41,24 @@ pub enum VcpuStatus {
     Stopped,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VcpuEvent {
     pub event_type: VcpuEventType,
     pub vcpu_index: u8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum VcpuEventType {
     Errored,
     Stopped,
+    Suspended,
     Restarted,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum VcpuExitReason {
+    Normal,
+    Suspend,
 }
 
 pub struct Vcpu {
@@ -62,7 +70,8 @@ pub struct Vcpu {
     pub supported_msrs: Msrs,
     barrier: Arc<Barrier>,
     io_manager: Arc<IoManager>,
-    vcpu_event_tx: async_channel::Sender<VcpuEvent>,
+    vcpu_event_tx: async_broadcast::Sender<VcpuEvent>,
+    guest_manager: Arc<Mutex<GuestManagerDevice>>,
 }
 
 thread_local!(static THIS_VCPU_PTR: RefCell<Option<*mut Vcpu>> = RefCell::new(None));
@@ -104,7 +113,8 @@ impl Vcpu {
         memory: &GuestMemoryMmap,
         io_manager: Arc<IoManager>,
         barrier: Arc<Barrier>,
-        vcpu_event_tx: async_channel::Sender<VcpuEvent>,
+        vcpu_event_tx: async_broadcast::Sender<VcpuEvent>,
+        guest_manager: Arc<Mutex<GuestManagerDevice>>,
         start_addr: GuestAddress,
         vcpu_count: u8,
         index: u8,
@@ -127,6 +137,7 @@ impl Vcpu {
             io_manager,
             barrier,
             vcpu_event_tx,
+            guest_manager,
         };
 
         vcpu.configure_cpuid()?;
@@ -265,7 +276,7 @@ impl Vcpu {
         Ok(())
     }
 
-    fn run(&mut self) -> Result<()> {
+    fn run(&mut self) -> Result<VcpuExitReason> {
         Self::setup_signal_handler()?;
         self.setup_thread_local()?;
 
@@ -278,7 +289,7 @@ impl Vcpu {
 
         if restart {
             self.vcpu_event_tx
-                .try_send(VcpuEvent {
+                .try_broadcast(VcpuEvent {
                     event_type: VcpuEventType::Restarted,
                     vcpu_index: self.index,
                 })
@@ -322,32 +333,28 @@ impl Vcpu {
                         }
                     }
                     VcpuExit::MmioRead(addr, data) => {
-                        // if GuestManagerDevice::should_handle_read(addr) {
-                        //     let mut guest_manager = self.guest_manager.lock().unwrap();
-                        //     guest_manager.mmio_read(addr - GUEST_MANAGER_MMIO_START, data);
-
-                        //     if guest_manager.should_exit_immediately() {
-                        //         break 'vcpu_loop;
-                        //     }
-
-                        //     continue;
-                        // }
+                        if GuestManagerDevice::should_handle_read(addr) {
+                            let mut guest_manager = self.guest_manager.lock().unwrap();
+                            guest_manager.mmio_read(addr - GUEST_MANAGER_MMIO_START, data);
+                            continue;
+                        }
 
                         if self.io_manager.mmio_read(MmioAddress(addr), data).is_err() {
                             warn!("Failed to read from mmio.");
                         }
                     }
                     VcpuExit::MmioWrite(addr, data) => {
-                        // if GuestManagerDevice::should_handle_write(addr) {
-                        //     let mut guest_manager = self.guest_manager.lock().unwrap();
-                        //     guest_manager.mmio_write(addr - GUEST_MANAGER_MMIO_START, data);
+                        if GuestManagerDevice::should_handle_write(addr) {
+                            let mut guest_manager = self.guest_manager.lock().unwrap();
+                            let should_exit =
+                                guest_manager.mmio_write(addr - GUEST_MANAGER_MMIO_START, data);
 
-                        //     if guest_manager.should_exit_immediately() {
-                        //         break 'vcpu_loop;
-                        //     }
+                            if should_exit {
+                                return Ok(VcpuExitReason::Suspend);
+                            }
 
-                        //     continue;
-                        // }
+                            continue;
+                        }
 
                         match self.io_manager.mmio_write(MmioAddress(addr), data) {
                             Err(e) => {
@@ -374,7 +381,7 @@ impl Vcpu {
             };
         }
 
-        Ok(())
+        Ok(VcpuExitReason::Normal)
     }
 
     pub async fn start(mut self) -> Result<RunningVcpuHandle> {
@@ -382,12 +389,16 @@ impl Vcpu {
         let handle = std::thread::Builder::new()
             .name(format!("vcpu-{}", self.index))
             .spawn(move || match self.run() {
-                Ok(_) => {
+                Ok(exit_reason) => {
                     self.status = VcpuStatus::Stopped;
 
                     vcpu_event_tx
-                        .try_send(VcpuEvent {
-                            event_type: VcpuEventType::Stopped,
+                        .try_broadcast(VcpuEvent {
+                            event_type: if exit_reason == VcpuExitReason::Suspend {
+                                VcpuEventType::Suspended
+                            } else {
+                                VcpuEventType::Stopped
+                            },
                             vcpu_index: self.index,
                         })
                         .ok();
@@ -400,7 +411,7 @@ impl Vcpu {
                     self.status = VcpuStatus::Stopped;
 
                     vcpu_event_tx
-                        .try_send(VcpuEvent {
+                        .try_broadcast(VcpuEvent {
                             event_type: VcpuEventType::Errored,
                             vcpu_index: self.index,
                         })

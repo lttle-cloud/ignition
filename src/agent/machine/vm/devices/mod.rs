@@ -1,5 +1,6 @@
 pub mod alloc;
 pub mod legacy;
+pub mod meta;
 pub mod virtio;
 
 use std::{
@@ -21,35 +22,34 @@ use vm_memory::{Address, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
 use vm_superio::Serial;
 use vmm_sys_util::eventfd::EventFd;
 
-use crate::agent::{
-    machine::{
-        machine::{MachineConfig, NetworkConfig, VolumeMountConfig},
-        vm::{
-            constants::{MAX_IRQ, SERIAL_IRQ},
-            cpu_ref::mptable::MpTable,
-            devices::{
-                alloc::IrqAllocator,
-                legacy::{serial::SerialWrapper, trigger::EventFdTrigger},
-                virtio::{Env, block::device::Block, mmio::MmioConfig, net::device::Net},
-            },
+use crate::agent::machine::{
+    machine::{MachineConfig, MachineMode, NetworkConfig, VolumeMountConfig},
+    vm::{
+        constants::{MAX_IRQ, SERIAL_IRQ},
+        cpu_ref::mptable::MpTable,
+        devices::{
+            alloc::IrqAllocator,
+            legacy::{serial::SerialWrapper, trigger::EventFdTrigger},
+            meta::guest_manager::GuestManagerDevice,
+            virtio::{Env, block::device::Block, mmio::MmioConfig, net::device::Net},
         },
     },
-    volume::Volume,
 };
 
 pub struct VmDevices {
+    pub guest_manager: Arc<Mutex<GuestManagerDevice>>,
     pub net: Arc<Mutex<Net>>,
     pub blocks: Vec<Arc<Mutex<Block>>>,
 }
 
 #[derive(Debug, Clone)]
 pub enum DeviceEvent {
-    NetActivated,
+    UserSpaceReady,
+    StopRequested,
 }
 
 pub async fn setup_devices(
     machine_config: &MachineConfig,
-    image_volume: &Volume,
     kvm: &Kvm,
     vm_fd: Arc<VmFd>,
     memory: &GuestMemoryMmap,
@@ -58,7 +58,7 @@ pub async fn setup_devices(
     io_manager: &mut IoManager,
     event_manager: &mut EventManager<Arc<Mutex<dyn MutEventSubscriber + Send>>>,
     kernel_cmdline: &mut Cmdline,
-    device_event_tx: async_channel::Sender<DeviceEvent>,
+    device_event_tx: async_broadcast::Sender<DeviceEvent>,
 ) -> Result<VmDevices> {
     setup_memory_regions(kvm, vm_fd.clone(), memory)?;
 
@@ -66,6 +66,12 @@ pub async fn setup_devices(
 
     setup_irq_controller(vm_fd.clone())?;
     setup_serial_console(vm_fd.clone(), io_manager)?;
+
+    let snapshot_strategy = match &machine_config.mode {
+        MachineMode::Regular => None,
+        MachineMode::Flash(strategy) => Some(strategy.clone()),
+    };
+    let guest_manager = GuestManagerDevice::new(device_event_tx.clone(), snapshot_strategy);
 
     let net = setup_network_device(
         vm_fd.clone(),
@@ -79,23 +85,7 @@ pub async fn setup_devices(
         device_event_tx.clone(),
     )?;
 
-    let image_block = setup_block_device(
-        vm_fd.clone(),
-        &VolumeMountConfig {
-            volume: image_volume.clone(),
-            mount_at: "/".to_string(),
-            read_only: false,
-            root: true,
-        },
-        irq_allocator,
-        mmio_allocator,
-        io_manager,
-        event_manager,
-        memory,
-        kernel_cmdline,
-    )?;
-
-    let mut blocks = vec![image_block];
+    let mut blocks = vec![];
 
     for volume_mount in machine_config.volume_mounts.iter() {
         let block = setup_block_device(
@@ -112,7 +102,11 @@ pub async fn setup_devices(
         blocks.push(block);
     }
 
-    Ok(VmDevices { net, blocks })
+    Ok(VmDevices {
+        guest_manager,
+        net,
+        blocks,
+    })
 }
 
 fn register_irq_fd(vm_fd: Arc<VmFd>, fd: &EventFd, irq: u32) -> Result<()> {
@@ -199,7 +193,7 @@ fn setup_network_device(
     event_manager: &mut EventManager<Arc<Mutex<dyn MutEventSubscriber + Send>>>,
     memory: &GuestMemoryMmap,
     kernel_cmdline: &mut Cmdline,
-    device_event_tx: async_channel::Sender<DeviceEvent>,
+    device_event_tx: async_broadcast::Sender<DeviceEvent>,
 ) -> Result<Arc<Mutex<Net>>> {
     let mmio_range = {
         let range = mmio_allocator.allocate(0x1000, 4, AllocPolicy::FirstMatch)?;

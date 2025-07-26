@@ -16,6 +16,7 @@ use crate::agent::machine::{
     machine::VolumeMountConfig,
     vm::devices::virtio::{
         Env, SingleFdSignalQueue,
+        block::overlay_backend::OverlayBackend,
         features::{VIRTIO_F_IN_ORDER, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_VERSION_1},
         mmio::VirtioMmioDeviceConfig,
     },
@@ -119,18 +120,31 @@ impl VirtioDeviceActions for Block {
     type E = anyhow::Error;
 
     fn activate(&mut self) -> Result<()> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(!self.config.read_only)
-            .open(&self.config.volume.path)?;
-
         let mut features = self.device.virtio.driver_features;
         if self.config.read_only {
             features |= 1 << VIRTIO_BLK_F_RO;
         }
 
+        let backend = if self.config.read_only {
+            let src_file = OpenOptions::new()
+                .read(true)
+                .open(&self.config.volume.path)?;
+
+            OverlayBackend::new_readonly(src_file)
+        } else {
+            let src_file = OpenOptions::new()
+                .read(true)
+                .open(&self.config.volume.path)?;
+
+            let ov_file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&self.config.volume.ov_path)?;
+
+            OverlayBackend::new_readwrite(src_file, ov_file)?
+        };
         let disk =
-            StdIoBackend::new(file, features).map_err(|_| anyhow!("failed to create disk"))?;
+            StdIoBackend::new(backend, features).map_err(|_| anyhow!("failed to create disk"))?;
 
         let driver_notify = SingleFdSignalQueue {
             irqfd: self.device.irqfd.clone(),

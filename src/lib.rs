@@ -3,7 +3,6 @@ pub mod api;
 pub mod controller;
 pub mod machinery;
 pub mod resources;
-pub mod takeoff;
 pub mod test_playground;
 pub mod utils;
 

@@ -8,6 +8,7 @@ use anyhow::{Result, bail};
 use event_manager::{EventManager, MutEventSubscriber};
 use futures_util::future::join_all;
 use kvm_ioctls::VmFd;
+use takeoff_proto::proto::{MountPoint, TakeoffInitArgs};
 use tokio::{
     sync::{Mutex, RwLock},
     task::JoinHandle,
@@ -17,26 +18,23 @@ use vm_allocator::AddressAllocator;
 use vm_device::device_manager::IoManager;
 use vm_memory::{GuestAddress, GuestMemory, GuestMemoryMmap};
 
-use crate::{
-    agent::{
-        image::Image,
-        machine::{
-            MachineAgentConfig,
-            vm::{
-                constants::SERIAL_IRQ,
-                devices::{
-                    DeviceEvent, VmDevices, alloc::IrqAllocator, setup_devices,
-                    virtio::block::get_block_mount_source_by_index,
-                },
-                kernel::{create_cmdline, load_kernel},
-                kvm::create_and_verify_kvm,
-                memory::{create_memory, create_mmio_allocator},
-                vcpu::{RunningVcpuHandle, Vcpu, VcpuEvent, VcpuEventType, VcpuRunResult},
+use crate::agent::{
+    image::Image,
+    machine::{
+        MachineAgentConfig,
+        vm::{
+            constants::SERIAL_IRQ,
+            devices::{
+                DeviceEvent, VmDevices, alloc::IrqAllocator, setup_devices,
+                virtio::block::get_block_mount_source_by_index,
             },
+            kernel::{create_cmdline, load_kernel},
+            kvm::create_and_verify_kvm,
+            memory::{create_memory, create_mmio_allocator},
+            vcpu::{RunningVcpuHandle, Vcpu, VcpuEvent, VcpuEventType, VcpuRunResult},
         },
-        volume::Volume,
     },
-    takeoff::proto::{MountPoint, TakeoffInitArgs},
+    volume::Volume,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,9 +63,10 @@ pub enum MachineMode {
 
 #[derive(Debug, Clone)]
 pub enum SnapshotStrategy {
-    WaitForNthListen(u16),
+    WaitForNthListen(u32),
     WaitForFirstListen,
     WaitForListenOnPort(u16),
+    WaitForUserSpaceReady,
     Manual,
 }
 
@@ -84,7 +83,6 @@ pub struct MachineConfig {
     pub state_retention_mode: MachineStateRetentionMode,
     pub resources: MachineResources,
     pub image: Image,
-    pub image_volume: Volume,
     pub envs: HashMap<String, String>,
     pub volume_mounts: Vec<VolumeMountConfig>,
     pub network: NetworkConfig,
@@ -107,11 +105,17 @@ pub struct NetworkConfig {
     pub netmask: String,
 }
 
+pub enum MachineStopReason {
+    Stop,
+    Suspend,
+}
+
 pub struct Machine {
     pub config: MachineConfig,
     state: Arc<RwLock<MachineState>>,
-    state_change_rx: async_channel::Receiver<MachineState>,
-    state_change_tx: async_channel::Sender<MachineState>,
+    state_change_rx: async_broadcast::Receiver<MachineState>,
+    state_change_tx: async_broadcast::Sender<MachineState>,
+    first_boot_duration: Arc<RwLock<Option<Duration>>>,
     last_start_time: Arc<RwLock<Option<Instant>>>,
     last_ready_time: Arc<RwLock<Option<Instant>>>,
 
@@ -120,16 +124,16 @@ pub struct Machine {
     kernel_start_address: GuestAddress,
 
     vm_fd: Arc<VmFd>,
-    vcpu_event_rx: async_channel::Receiver<VcpuEvent>,
-    vcpu_event_tx: async_channel::Sender<VcpuEvent>,
+    vcpu_event_rx: async_broadcast::Receiver<VcpuEvent>,
+    vcpu_event_tx: async_broadcast::Sender<VcpuEvent>,
     vcpu_watcher_task: Mutex<Option<JoinHandle<()>>>,
 
     vcpu_start_barrier: Arc<Barrier>,
     idle_vcpus: Mutex<Vec<Vcpu>>,
     running_vcpus: Mutex<Vec<RunningVcpuHandle>>,
 
-    device_event_rx: async_channel::Receiver<DeviceEvent>,
-    device_event_tx: async_channel::Sender<DeviceEvent>,
+    device_event_rx: async_broadcast::Receiver<DeviceEvent>,
+    device_event_tx: async_broadcast::Sender<DeviceEvent>,
     device_watcher_task: Mutex<Option<JoinHandle<()>>>,
     devices: VmDevices,
     event_manager_task: std::thread::JoinHandle<()>,
@@ -155,8 +159,7 @@ impl Machine {
 
         let takeoff_args: TakeoffInitArgs = TakeoffInitArgs {
             envs: config.envs.clone(),
-            root_mount_source: get_block_mount_source_by_index(0),
-            additional_mount_points: config
+            mount_points: config
                 .volume_mounts
                 .iter()
                 .enumerate()
@@ -178,12 +181,11 @@ impl Machine {
 
         let vm_fd = Arc::new(vm_fd);
 
-        let (device_event_tx, device_event_rx) = async_channel::unbounded::<DeviceEvent>();
+        let (device_event_tx, device_event_rx) = async_broadcast::broadcast::<DeviceEvent>(128);
 
         // setup devices
         let devices = setup_devices(
             &config,
-            &config.image_volume,
             &kvm,
             vm_fd.clone(),
             &guest_memory,
@@ -227,7 +229,7 @@ impl Machine {
         // add vcpus
         let io_manager = Arc::new(io_manager);
         let barrier = Arc::new(Barrier::new(config.resources.cpu as usize));
-        let (vcpu_event_tx, vcpu_event_rx) = async_channel::unbounded::<VcpuEvent>();
+        let (vcpu_event_tx, vcpu_event_rx) = async_broadcast::broadcast::<VcpuEvent>(128);
 
         let mut vcpus = vec![];
         for i in 0..config.resources.cpu {
@@ -238,6 +240,7 @@ impl Machine {
                 io_manager.clone(),
                 barrier.clone(),
                 vcpu_event_tx.clone(),
+                devices.guest_manager.clone(),
                 kernel_start_address.clone(),
                 config.resources.cpu as u8,
                 i,
@@ -246,7 +249,7 @@ impl Machine {
             vcpus.push(vcpu);
         }
 
-        let (state_change_tx, state_change_rx) = async_channel::unbounded::<MachineState>();
+        let (state_change_tx, state_change_rx) = async_broadcast::broadcast::<MachineState>(128);
 
         let machine = Arc::new(Self {
             config,
@@ -256,6 +259,7 @@ impl Machine {
 
             last_start_time: Arc::new(RwLock::new(None)),
             last_ready_time: Arc::new(RwLock::new(None)),
+            first_boot_duration: Arc::new(RwLock::new(None)),
 
             guest_memory,
             mmio_allocator,
@@ -279,9 +283,8 @@ impl Machine {
 
         let watcher_machine = machine.clone();
         let vcpu_watcher_task = tokio::spawn(async move {
-            while let Ok(event) = watcher_machine.vcpu_event_rx.recv().await {
-                println!("vcpu event: {:?}", event);
-
+            let mut rx = watcher_machine.vcpu_event_rx.clone();
+            while let Ok(event) = rx.recv().await {
                 match event.event_type {
                     // stop the machine in case any vcpu errors
                     VcpuEventType::Errored => {
@@ -289,6 +292,9 @@ impl Machine {
                     }
                     VcpuEventType::Stopped => {
                         watcher_machine.stop().await.ok();
+                    }
+                    VcpuEventType::Suspended => {
+                        watcher_machine.suspend().await.ok();
                     }
                     VcpuEventType::Restarted => {
                         // net handler event won't be sent again. instead we'll use the vcpu event to set ready state
@@ -301,10 +307,18 @@ impl Machine {
 
         let watcher_machine = machine.clone();
         let device_watcher_task = tokio::spawn(async move {
-            while let Ok(event) = watcher_machine.device_event_rx.recv().await {
+            let mut rx = watcher_machine.device_event_rx.clone();
+            while let Ok(event) = rx.recv().await {
                 match event {
-                    DeviceEvent::NetActivated => {
+                    DeviceEvent::UserSpaceReady => {
                         watcher_machine.set_state(MachineState::Ready).await.ok();
+                    }
+                    DeviceEvent::StopRequested => {
+                        if matches!(watcher_machine.config.mode, MachineMode::Flash(_)) {
+                            watcher_machine.suspend().await.ok();
+                        } else {
+                            watcher_machine.stop().await.ok();
+                        }
                     }
                 }
             }
@@ -320,19 +334,43 @@ impl Machine {
             return Ok(());
         }
 
-        if state == MachineState::Booting {
-            *self.last_start_time.write().await = Some(Instant::now());
-        } else if state == MachineState::Ready {
-            *self.last_ready_time.write().await = Some(Instant::now());
+        'time_update_block: {
+            if state == MachineState::Booting {
+                *self.last_start_time.write().await = Some(Instant::now());
+            } else if state == MachineState::Ready {
+                let ready_time = Instant::now();
+                *self.last_ready_time.write().await = Some(ready_time);
+
+                let last_start_time = { self.last_start_time.read().await.clone() };
+                let first_boot_duration = { self.first_boot_duration.read().await.clone() };
+
+                let Some(last_start_time) = last_start_time else {
+                    break 'time_update_block;
+                };
+
+                self.devices
+                    .guest_manager
+                    .lock()
+                    .expect("Failed to lock guest manager")
+                    .set_boot_duration(ready_time.duration_since(last_start_time));
+
+                if first_boot_duration.is_some() {
+                    break 'time_update_block;
+                }
+
+                let mut first_boot_duration = self.first_boot_duration.write().await;
+                *first_boot_duration = Some(last_start_time.duration_since(Instant::now()));
+            }
         }
 
         *current_state = state.clone();
-        self.state_change_tx.send(state).await?;
+        self.state_change_tx.broadcast(state).await.ok();
         Ok(())
     }
 
     pub async fn get_state(&self) -> MachineState {
-        self.state.read().await.clone()
+        let state = self.state.read().await.clone();
+        state
     }
 
     pub async fn get_last_boot_duration(&self) -> Result<Duration> {
@@ -350,9 +388,27 @@ impl Machine {
 
     pub async fn start(&self) -> Result<()> {
         let current_state = self.get_state().await;
+        let is_first_start = current_state == MachineState::Idle;
 
-        if !matches!(current_state, MachineState::Idle | MachineState::Stopped) {
+        if matches!(current_state, MachineState::Booting | MachineState::Ready) {
+            return Ok(());
+        }
+
+        if !matches!(
+            current_state,
+            MachineState::Idle | MachineState::Stopped | MachineState::Suspended
+        ) {
             bail!("Machine can't be started from state: {:?}", current_state);
+        }
+
+        if !is_first_start {
+            let mut guest_manager = self
+                .devices
+                .guest_manager
+                .lock()
+                .expect("Failed to lock guest manager");
+
+            guest_manager.set_snapshot_strategy(None);
         }
 
         let mut idle_vcpus = self.idle_vcpus.lock().await;
@@ -370,12 +426,31 @@ impl Machine {
     }
 
     pub async fn stop(&self) -> Result<()> {
+        self.stop_with_reason(MachineStopReason::Stop).await
+    }
+
+    pub async fn suspend(&self) -> Result<()> {
+        self.stop_with_reason(MachineStopReason::Suspend).await
+    }
+
+    pub async fn stop_with_reason(&self, reason: MachineStopReason) -> Result<()> {
         let current_state = self.get_state().await;
+        if matches!(
+            current_state,
+            MachineState::Stopped | MachineState::Suspended
+        ) {
+            return Ok(());
+        }
+
         if !matches!(current_state, MachineState::Ready | MachineState::Booting) {
             bail!("Machine can't be stopped from state: {:?}", current_state);
         }
 
-        self.set_state(MachineState::Stopping).await?;
+        let next_state = match reason {
+            MachineStopReason::Stop => MachineState::Stopping,
+            MachineStopReason::Suspend => MachineState::Suspending,
+        };
+        self.set_state(next_state).await?;
 
         let mut running_vcpus = self.running_vcpus.lock().await;
         let mut idle_vcpus = self.idle_vcpus.lock().await;
@@ -409,12 +484,16 @@ impl Machine {
             bail!("{}", fail_message);
         }
 
-        self.set_state(MachineState::Stopped).await?;
+        let next_state = match reason {
+            MachineStopReason::Stop => MachineState::Stopped,
+            MachineStopReason::Suspend => MachineState::Suspended,
+        };
+        self.set_state(next_state).await?;
 
         Ok(())
     }
 
-    pub async fn watch_state(&self) -> Result<async_channel::Receiver<MachineState>> {
+    pub async fn watch_state(&self) -> Result<async_broadcast::Receiver<MachineState>> {
         Ok(self.state_change_rx.clone())
     }
 
@@ -424,7 +503,8 @@ impl Machine {
             return Ok(());
         }
 
-        while let Ok(new_state) = self.state_change_rx.recv().await {
+        let mut rx = self.state_change_rx.clone();
+        while let Ok(new_state) = rx.recv().await {
             if new_state == state {
                 return Ok(());
             }

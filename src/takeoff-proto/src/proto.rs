@@ -1,16 +1,14 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct TakeoffInitArgs {
     #[serde(rename = "e")]
     pub envs: HashMap<String, String>,
-    #[serde(rename = "r")]
-    pub root_mount_source: String,
     #[serde(rename = "m")]
-    pub additional_mount_points: Vec<MountPoint>,
+    pub mount_points: Vec<MountPoint>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -35,6 +33,20 @@ impl TakeoffInitArgs {
         let args = serde_json::from_slice(&bytes)?;
         Ok(args)
     }
+
+    pub fn try_parse_from_kernel_cmdline(cmdline: &str) -> Result<Self> {
+        // extract takeoff=... from cmdline
+        let takeoff_str = cmdline.split("takeoff=").nth(1).unwrap_or("");
+        let takeoff_str = takeoff_str.split(" ").nth(0).unwrap_or("");
+        let takeoff_str = takeoff_str.trim();
+
+        if takeoff_str.is_empty() {
+            bail!("No takeoff args found in cmdline");
+        }
+
+        let args = Self::decode(takeoff_str)?;
+        Ok(args)
+    }
 }
 
 #[cfg(test)]
@@ -45,8 +57,7 @@ mod tests {
     fn test_encode_decode() {
         let args = TakeoffInitArgs {
             envs: HashMap::from([("TEST".to_string(), "test".to_string())]),
-            root_mount_source: "/dev/vda".to_string(),
-            additional_mount_points: vec![MountPoint {
+            mount_points: vec![MountPoint {
                 source: "/dev/vdb".to_string(),
                 target: "/mnt/data".to_string(),
                 read_only: true,
