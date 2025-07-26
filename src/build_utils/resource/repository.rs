@@ -14,7 +14,7 @@ pub async fn build_repository(resources: &[ResourceBuildInfo]) -> Result<()> {
     src.push_str("use crate::{\n");
     src.push_str("    controller::{context::ControllerEvent, scheduler::Scheduler},\n");
     src.push_str("    machinery::store::Store,\n");
-    src.push_str("    resources::{Convert, FromResource, ProvideKey, ProvideMetadata, metadata::{Metadata, Namespace}},\n");
+    src.push_str("    resources::{Convert, FromResource, ProvideKey, ProvideMetadata, metadata::{Metadata, Namespace}, AdmissionRule},\n");
 
     // Add resource imports
     for resource in resources {

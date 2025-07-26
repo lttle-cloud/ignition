@@ -1,7 +1,10 @@
 use anyhow::Result;
 use tokio::fs::write;
 
-use crate::{build_utils::cargo, resources::ResourceBuildInfo};
+use crate::{
+    build_utils::cargo,
+    resources::{AdmissionRule, ResourceBuildInfo},
+};
 
 pub async fn build_services(resources: &[ResourceBuildInfo]) -> Result<()> {
     let service_out_path = cargo::build_out_dir_path("services.rs");
@@ -25,7 +28,7 @@ pub async fn build_services(resources: &[ResourceBuildInfo]) -> Result<()> {
     src.push_str("    },\n");
     src.push_str("    resources::{Convert, ProvideMetadata},\n");
     src.push_str("    repository::Repository,\n");
-    src.push_str("    resources::metadata::{DEFAULT_NAMESPACE, Metadata},\n");
+    src.push_str("    resources::metadata::{DEFAULT_NAMESPACE, Metadata, Namespace},\n");
 
     // Add resource imports
     for resource in resources {
@@ -162,10 +165,34 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
             resource_name
         ));
         src.push_str("        ) -> impl IntoResponse {\n");
-        src.push_str(&format!(
-            "            let result = state.repository.{}(ctx.tenant).set(resource).await;\n\n",
-            collection_name
-        ));
+
+        // Check admission rules
+        if resource
+            .configuration
+            .admission_rules
+            .contains(&AdmissionRule::DissalowPatchUpdate)
+        {
+            src.push_str("            // Check if resource already exists (DisallowPatchUpdate admission rule)\n");
+            src.push_str(&format!(
+                "            let repo = state.repository.{}(ctx.tenant.clone());\n",
+                collection_name
+            ));
+            src.push_str("            let metadata = resource.metadata();\n");
+            if namespaced {
+                src.push_str("            if let Ok(Some(_)) = repo.get(Namespace::from_value_or_default(metadata.namespace.clone()), metadata.name.clone()) {\n");
+            } else {
+                src.push_str(
+                    "            if let Ok(Some(_)) = repo.get(metadata.name.clone()) {\n",
+                );
+            }
+            src.push_str(&format!(
+                "                return (StatusCode::FORBIDDEN, \"{} already exists\".to_string()).into_response();\n",
+                resource_name
+            ));
+            src.push_str("            }\n\n");
+        }
+
+        src.push_str("            let result = repo.set(resource).await;\n\n");
         src.push_str("            match result {\n");
         src.push_str("                Ok(()) => StatusCode::OK.into_response(),\n");
         src.push_str("                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),\n");

@@ -75,6 +75,12 @@ pub struct ResourceBuildInfo {
     pub status_schema: Schema,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum AdmissionRule {
+    /// Only allow create through PATCH, disallow update through PATCH.
+    DissalowPatchUpdate,
+}
+
 #[derive(Debug, Clone)]
 pub struct ResourceConfiguration {
     pub generate_service: bool,
@@ -83,6 +89,7 @@ pub struct ResourceConfiguration {
     pub generate_service_set: bool,
     pub generate_service_delete: bool,
     pub generate_service_get_status: bool,
+    pub admission_rules: Vec<AdmissionRule>,
 }
 
 impl ResourceConfiguration {
@@ -94,6 +101,7 @@ impl ResourceConfiguration {
             generate_service_set: true,
             generate_service_delete: false,
             generate_service_get_status: true,
+            admission_rules: vec![],
         }
     }
 
@@ -124,6 +132,11 @@ impl ResourceConfiguration {
 
     pub fn disable_generate_service_get_status(mut self) -> Self {
         self.generate_service_get_status = false;
+        self
+    }
+
+    pub fn add_admission_rule(mut self, rule: AdmissionRule) -> Self {
+        self.admission_rules.push(rule);
         self
     }
 }
