@@ -7,6 +7,7 @@ use async_channel::Receiver;
 use tracing::{error, info};
 
 use crate::{
+    agent::Agent,
     controller::{
         Controller, ReconcileNext,
         context::{ControllerContext, ControllerEvent, ControllerKey},
@@ -23,6 +24,7 @@ pub struct SchedulerConfig {
 pub struct Scheduler {
     pub store: Arc<Store>,
     pub repository: Arc<Repository>,
+    pub agent: Arc<Agent>,
     config: SchedulerConfig,
     queue: WorkQueue,
     rx: Receiver<ControllerKey>,
@@ -33,6 +35,7 @@ impl Scheduler {
     pub fn new(
         store: Arc<Store>,
         repository: Arc<Repository>,
+        agent: Arc<Agent>,
         config: SchedulerConfig,
         ctrls: Vec<Box<dyn Controller>>,
     ) -> Self {
@@ -41,6 +44,7 @@ impl Scheduler {
         Self {
             store,
             repository,
+            agent,
             config,
             queue,
             rx,
@@ -54,6 +58,7 @@ impl Scheduler {
             let queue = self.queue.clone();
             let store = self.store.clone();
             let repository = self.repository.clone();
+            let agent = self.agent.clone();
             let ctrl = self.ctrl.clone();
             let rx = self.rx.clone();
 
@@ -64,6 +69,7 @@ impl Scheduler {
                             key.tenant.clone(),
                             store.clone(),
                             repository.clone(),
+                            agent.clone(),
                         );
 
                         if !ctrl.should_reconcile(ctx.clone(), key.clone()).await {
@@ -100,6 +106,7 @@ impl Scheduler {
                 tenant.as_ref(),
                 self.store.clone(),
                 self.repository.clone(),
+                self.agent.clone(),
             );
 
             let result = ctrl.schedule(ctx, ev.clone()).await;

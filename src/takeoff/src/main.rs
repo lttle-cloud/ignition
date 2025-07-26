@@ -34,14 +34,12 @@ async fn takeoff() -> Result<()> {
 
     info!("takeoff init args: {:#?}", args);
 
-    // mount the real root
     let real_root = args.mount_points.first().expect("real root mount point");
     mount(&real_root.source, "/real_root", Some("ext4")).await;
 
     chroot("/real_root").expect("chroot");
     chdir("/").expect("chdir");
 
-    // remount the devtmpfs and proc
     mount("devtmpfs", "/dev", Some("devtmpfs")).await;
     mount("proc", "/proc", Some("proc")).await;
 
@@ -87,8 +85,6 @@ async fn takeoff() -> Result<()> {
 
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
-
-    // pipe stdout and stderr to serial (SerialWriter implements Write)
 
     let stdout_thread = spawn(move || {
         let mut reader = BufReader::new(stdout);

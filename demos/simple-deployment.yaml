@@ -1,10 +1,6 @@
 machine:
-  name: machine-1
-  bleah: 1
-  bleah2: 32
----
-machine.v2:
-  name: machine-2
-  namespace: testing
-  bleah: 2
-  bleah2: 32
+  name: nginx-test
+  image: nginx:latest
+  resources:
+    cpu: 1
+    memory: 256

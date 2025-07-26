@@ -1,7 +1,7 @@
 pub mod credentials;
 pub mod oci;
 
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Result, bail};
 use oci_client::Reference;
@@ -120,8 +120,7 @@ impl ImageAgent {
         Ok(images)
     }
 
-    pub async fn image_pull(&self, reference: &str) -> Result<Image> {
-        let reference = Reference::from_str(reference)?;
+    pub async fn image_pull(&self, reference: Reference) -> Result<Image> {
         let (manigest, digest, config) = oci::fetch_manifest(&reference).await?;
 
         if let Some(existing_image) = self.image_by_reference(&reference.to_string())? {
@@ -225,9 +224,9 @@ impl ImageAgent {
 
 #[cfg(test)]
 mod tests {
-    use crate::agent::volume::VolumeAgentConfig;
-
     use super::*;
+    use crate::agent::volume::VolumeAgentConfig;
+    use std::str::FromStr;
 
     #[tokio::test]
     #[ignore]
@@ -260,7 +259,7 @@ mod tests {
         .unwrap();
 
         let image = image_agent
-            .image_pull("alpine:latest")
+            .image_pull(Reference::from_str("alpine:latest").unwrap())
             .await
             .expect("Failed to pull image");
 
@@ -278,7 +277,7 @@ mod tests {
 
         // pulling again should not pull anything
         let new_image = image_agent
-            .image_pull("alpine:latest")
+            .image_pull(Reference::from_str("alpine:latest").unwrap())
             .await
             .expect("Failed to pull image");
 

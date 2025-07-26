@@ -16,14 +16,8 @@ pub struct MachineTable {
     #[field(name = "namespace")]
     namespace: Option<String>,
 
-    #[field(name = "bleah")]
-    bleah: String,
-
-    #[field(name = "bleah2")]
-    bleah2: String,
-
-    #[field(name = "test", cell_style = important)]
-    test: String,
+    #[field(name = "status", cell_style = important)]
+    status: String,
 }
 
 #[summary]
@@ -34,14 +28,8 @@ pub struct MachineSummary {
     #[field(name = "namespace")]
     namespace: Option<String>,
 
-    #[field(name = "bleah")]
-    bleah: String,
-
-    #[field(name = "second bleah")]
-    bleah2: String,
-
-    #[field(name = "status test (sum)", cell_style = important)]
-    test: String,
+    #[field(name = "status", cell_style = important)]
+    status: String,
 }
 
 impl From<(MachineLatest, MachineStatus)> for MachineSummary {
@@ -49,9 +37,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
         Self {
             name: machine.name,
             namespace: machine.namespace,
-            bleah: machine.bleah.to_string(),
-            bleah2: machine.bleah2.to_string(),
-            test: status.test.to_string(),
+            status: status.phase.to_string(),
         }
     }
 }
@@ -61,9 +47,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineTableRow {
         Self {
             name: machine.name,
             namespace: machine.namespace,
-            bleah: machine.bleah.to_string(),
-            bleah2: machine.bleah2.to_string(),
-            test: status.test.to_string(),
+            status: status.phase.to_string(),
         }
     }
 }

@@ -126,11 +126,18 @@ pub struct StatusInfo {
     pub generated_ident: Ident,
 }
 
+#[derive(Debug, Clone)]
+pub struct AdditionalSchemaInfo {
+    pub original_ident: Ident,
+    pub item: syn::Item,
+}
+
 #[derive(Debug)]
 pub struct ResourceAnalysis {
     pub args: ResourceArgs,
     pub versions: Vec<VersionInfo>,
     pub status: StatusInfo,
+    pub additional_schemas: Vec<AdditionalSchemaInfo>,
 }
 
 // #[name = "name", max_width? = 10, cell_style? = important | default]

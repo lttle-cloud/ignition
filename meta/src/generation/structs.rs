@@ -57,3 +57,29 @@ pub fn generate_status_struct(
     });
     item
 }
+
+pub fn generate_additional_schema_item(item: &syn::Item, _args: &ResourceArgs) -> syn::Item {
+    let add_attrs = syn::parse_quote!(#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]);
+    match item {
+        syn::Item::Struct(struct_item) => {
+            let mut struct_item = struct_item.clone();
+            struct_item.attrs = add_attrs;
+            struct_item.vis = syn::Visibility::Public(syn::token::Pub {
+                span: struct_item.ident.span(),
+            });
+            struct_item.fields.iter_mut().for_each(|field| {
+                field.vis = syn::Visibility::Public(syn::token::Pub { span: field.span() });
+            });
+            syn::Item::Struct(struct_item)
+        }
+        syn::Item::Enum(enum_item) => {
+            let mut enum_item = enum_item.clone();
+            enum_item.attrs = add_attrs;
+            enum_item.vis = syn::Visibility::Public(syn::token::Pub {
+                span: enum_item.ident.span(),
+            });
+            syn::Item::Enum(enum_item)
+        }
+        _ => panic!("invalid item"),
+    }
+}

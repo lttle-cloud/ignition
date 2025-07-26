@@ -1,20 +1,23 @@
 pub mod data;
 pub mod image;
+pub mod job;
 pub mod machine;
 pub mod net;
 pub mod volume;
 
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use anyhow::Result;
 
 use crate::{
     agent::{
         image::{ImageAgent, ImageAgentConfig},
+        job::JobAgent,
         machine::{MachineAgent, MachineAgentConfig},
         net::{NetAgent, NetAgentConfig},
         volume::{VolumeAgent, VolumeAgentConfig},
     },
+    controller::scheduler::Scheduler,
     machinery::store::Store,
 };
 
@@ -30,6 +33,7 @@ pub struct AgentConfig {
 pub struct Agent {
     config: AgentConfig,
     store: Arc<Store>,
+    job: Arc<JobAgent>,
     net: Arc<NetAgent>,
     volume: Arc<VolumeAgent>,
     image: Arc<ImageAgent>,
@@ -37,7 +41,7 @@ pub struct Agent {
 }
 
 impl Agent {
-    pub async fn new(config: AgentConfig) -> Result<Self> {
+    pub async fn new(config: AgentConfig, scheduler: Weak<Scheduler>) -> Result<Self> {
         let store = Arc::new(Store::new(&config.store_path).await?);
 
         let net = Arc::new(NetAgent::new(config.net_config.clone(), store.clone()).await?);
@@ -51,6 +55,7 @@ impl Agent {
         Ok(Self {
             config,
             store,
+            job: Arc::new(JobAgent::new(scheduler)),
             net,
             volume,
             image,
@@ -58,19 +63,23 @@ impl Agent {
         })
     }
 
-    pub fn net(&self) -> &NetAgent {
-        &self.net
+    pub fn job(&self) -> Arc<JobAgent> {
+        self.job.clone()
     }
 
-    pub fn volume(&self) -> &VolumeAgent {
-        &self.volume
+    pub fn net(&self) -> Arc<NetAgent> {
+        self.net.clone()
     }
 
-    pub fn image(&self) -> &ImageAgent {
-        &self.image
+    pub fn volume(&self) -> Arc<VolumeAgent> {
+        self.volume.clone()
     }
 
-    pub fn machine(&self) -> &MachineAgent {
-        &self.machine
+    pub fn image(&self) -> Arc<ImageAgent> {
+        self.image.clone()
+    }
+
+    pub fn machine(&self) -> Arc<MachineAgent> {
+        self.machine.clone()
     }
 }

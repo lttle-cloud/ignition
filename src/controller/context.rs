@@ -3,6 +3,7 @@ use std::sync::Arc;
 use oci_client::Reference;
 
 use crate::{
+    agent::Agent,
     machinery::store::Store,
     repository::Repository,
     resource_index::ResourceKind,
@@ -60,29 +61,29 @@ pub struct ControllerContext {
     pub tenant: String,
     pub store: Arc<Store>,
     pub repository: Arc<Repository>,
+    pub agent: Arc<Agent>,
 }
 
 impl ControllerContext {
-    pub fn new(tenant: impl AsRef<str>, store: Arc<Store>, repository: Arc<Repository>) -> Self {
+    pub fn new(
+        tenant: impl AsRef<str>,
+        store: Arc<Store>,
+        repository: Arc<Repository>,
+        agent: Arc<Agent>,
+    ) -> Self {
         Self {
             tenant: tenant.as_ref().to_string(),
             store,
             repository,
+            agent,
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum AsyncWork {
-    ImagePullUpdate {
-        reference: Reference,
-        layer_count: u64,
-        downloaded_layers: u64,
-        uncompressed_layers: u64,
-    },
-    ImagePullComplete {
-        reference: Reference,
-    },
+    ImagePullComplete { reference: String },
+    Error(String),
 }
 
 #[derive(Debug, Clone)]

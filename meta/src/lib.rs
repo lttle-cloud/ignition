@@ -15,6 +15,8 @@ use generation::{
 };
 use types::ResourceArgs;
 
+use crate::generation::generate_additional_schema_item;
+
 #[proc_macro_attribute]
 pub fn resource(args: TokenStream, input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args as ResourceArgs);
@@ -104,6 +106,15 @@ fn generate_output(
         generate_status_struct(struct_item, &analysis.status)
     };
 
+    // Generate additional schema structs
+    let additional_schema_structs =
+        analysis
+            .additional_schemas
+            .iter()
+            .map(|additional_schema_info| {
+                generate_additional_schema_item(&additional_schema_info.item, &analysis.args)
+            });
+
     let version_enum_variants = generate_version_enum_variants(&analysis.args, &analysis.versions);
     let schema_enum_variants = generate_schema_enum_variants(&analysis.args, &analysis.versions);
     let version_provide_metadata_impls =
@@ -129,6 +140,8 @@ fn generate_output(
         pub enum #schema_enum_name {
             #(#schema_enum_variants),*
         }
+
+        #(#additional_schema_structs)*
 
         #provide_key_impl
 

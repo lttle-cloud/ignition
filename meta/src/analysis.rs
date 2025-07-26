@@ -1,4 +1,7 @@
-use crate::types::{ResourceAnalysis, ResourceArgs, StatusInfo, TagsList, VersionInfo, VersionTag};
+use crate::types::{
+    AdditionalSchemaInfo, ResourceAnalysis, ResourceArgs, StatusInfo, TagsList, VersionInfo,
+    VersionTag,
+};
 use proc_macro2::Span;
 use syn::Result;
 
@@ -55,9 +58,44 @@ pub fn extract_status_info(
     None
 }
 
+pub fn extract_additional_schema_info_struct(
+    struct_item: &syn::ItemStruct,
+    _args: &ResourceArgs,
+) -> Option<AdditionalSchemaInfo> {
+    for attr in struct_item.attrs.iter() {
+        if attr.path().is_ident("schema") {
+            let original_ident = struct_item.ident.clone();
+
+            return Some(AdditionalSchemaInfo {
+                original_ident,
+                item: syn::Item::Struct(struct_item.clone()),
+            });
+        }
+    }
+    None
+}
+
+pub fn extract_additional_schema_info_enum(
+    enum_item: &syn::ItemEnum,
+    _args: &ResourceArgs,
+) -> Option<AdditionalSchemaInfo> {
+    for attr in enum_item.attrs.iter() {
+        if attr.path().is_ident("schema") {
+            let original_ident = enum_item.ident.clone();
+
+            return Some(AdditionalSchemaInfo {
+                original_ident,
+                item: syn::Item::Enum(enum_item.clone()),
+            });
+        }
+    }
+    None
+}
+
 pub fn analyze_resource(args: ResourceArgs, resource_mod: &syn::ItemMod) -> ResourceAnalysis {
     let mut versions = Vec::new();
     let mut status = None;
+    let mut additional_schemas = Vec::new();
 
     let (_, items) = resource_mod
         .content
@@ -73,6 +111,16 @@ pub fn analyze_resource(args: ResourceArgs, resource_mod: &syn::ItemMod) -> Reso
                     panic!("status struct already defined");
                 }
                 status = Some(status_info);
+            } else if let Some(additional_schema_info) =
+                extract_additional_schema_info_struct(&struct_item, &args)
+            {
+                additional_schemas.push(additional_schema_info);
+            }
+        } else if let syn::Item::Enum(enum_item) = item {
+            if let Some(additional_schema_info) =
+                extract_additional_schema_info_enum(&enum_item, &args)
+            {
+                additional_schemas.push(additional_schema_info);
             }
         }
     }
@@ -85,6 +133,7 @@ pub fn analyze_resource(args: ResourceArgs, resource_mod: &syn::ItemMod) -> Reso
         args,
         versions,
         status,
+        additional_schemas,
     }
 }
 
