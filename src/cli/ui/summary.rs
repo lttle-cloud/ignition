@@ -24,7 +24,7 @@ impl SummaryCellStyle {
 pub struct SummaryRow {
     pub name: String,
     pub cell_style: SummaryCellStyle,
-    pub value: Option<String>,
+    pub value: Vec<String>,
 }
 
 pub struct Summary {
@@ -44,7 +44,8 @@ impl Summary {
 
             print!("{}: ", Style::new().bold().paint(row.name.clone()));
 
-            if let Some(value) = &row.value {
+            // print each value, start a new line after each and pad to the right
+            for (i, value) in row.value.iter().enumerate() {
                 let value_style = row.cell_style.get_style();
                 let value = if value.len() > values_max_width {
                     format!("{}...", value_style.paint(&value[..values_max_width - 3]))
@@ -52,7 +53,11 @@ impl Summary {
                     value_style.paint(value).to_string()
                 };
 
-                print!("{}", value);
+                if i > 0 {
+                    print!("\n{}{}", " ".repeat(names_max_width + COLUMN_GAP), value);
+                } else {
+                    print!("{}", value);
+                }
             }
 
             println!();

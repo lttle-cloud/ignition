@@ -1,15 +1,18 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Barrier},
+    path::PathBuf,
+    sync::{Arc, Barrier, Weak},
     time::{Duration, Instant},
 };
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use event_manager::{EventManager, MutEventSubscriber};
 use futures_util::future::join_all;
 use kvm_ioctls::VmFd;
 use takeoff_proto::proto::{MountPoint, TakeoffInitArgs};
+use tempfile::tempdir;
 use tokio::{
+    fs::create_dir_all,
     sync::{Mutex, RwLock},
     task::JoinHandle,
 };
@@ -18,23 +21,29 @@ use vm_allocator::AddressAllocator;
 use vm_device::device_manager::IoManager;
 use vm_memory::{GuestAddress, GuestMemory, GuestMemoryMmap};
 
-use crate::agent::{
-    image::Image,
-    machine::{
-        MachineAgentConfig,
-        vm::{
-            constants::SERIAL_IRQ,
-            devices::{
-                DeviceEvent, VmDevices, alloc::IrqAllocator, setup_devices,
-                virtio::block::get_block_mount_source_by_index,
+use crate::{
+    agent::{
+        image::Image,
+        machine::{
+            MachineAgentConfig,
+            vm::{
+                constants::SERIAL_IRQ,
+                devices::{
+                    DeviceEvent, VmDevices, alloc::IrqAllocator, setup_devices,
+                    virtio::block::get_block_mount_source_by_index,
+                },
+                kernel::{create_cmdline, load_kernel},
+                kvm::create_and_verify_kvm,
+                memory::{create_memory, create_mmio_allocator},
+                vcpu::{RunningVcpuHandle, Vcpu, VcpuEvent, VcpuEventType, VcpuRunResult},
             },
-            kernel::{create_cmdline, load_kernel},
-            kvm::create_and_verify_kvm,
-            memory::{create_memory, create_mmio_allocator},
-            vcpu::{RunningVcpuHandle, Vcpu, VcpuEvent, VcpuEventType, VcpuRunResult},
         },
+        volume::Volume,
     },
-    volume::Volume,
+    controller::{
+        context::{AsyncWork, ControllerEvent, ControllerKey},
+        scheduler::Scheduler,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +88,7 @@ pub struct MachineResources {
 #[derive(Debug, Clone)]
 pub struct MachineConfig {
     pub name: String,
+    pub controller_key: ControllerKey,
     pub mode: MachineMode,
     pub state_retention_mode: MachineStateRetentionMode,
     pub resources: MachineResources,
@@ -115,6 +125,7 @@ pub struct Machine {
     state: Arc<RwLock<MachineState>>,
     state_change_rx: async_broadcast::Receiver<MachineState>,
     state_change_tx: async_broadcast::Sender<MachineState>,
+    scheduler: Weak<Scheduler>,
     first_boot_duration: Arc<RwLock<Option<Duration>>>,
     last_start_time: Arc<RwLock<Option<Instant>>>,
     last_ready_time: Arc<RwLock<Option<Instant>>>,
@@ -145,6 +156,7 @@ impl Machine {
     pub async fn new(
         agent_config: &MachineAgentConfig,
         config: MachineConfig,
+        scheduler: Weak<Scheduler>,
     ) -> Result<MachineRef> {
         let kvm = create_and_verify_kvm()?;
         let vm_fd = kvm.create_vm()?;
@@ -183,7 +195,17 @@ impl Machine {
 
         let (device_event_tx, device_event_rx) = async_broadcast::broadcast::<DeviceEvent>(128);
 
+        let log_dir = match &config.state_retention_mode {
+            MachineStateRetentionMode::InMemory => tempdir()
+                .map_err(|e| anyhow!("Failed to create temp dir for machine log: {}", e))?
+                .path()
+                .to_path_buf(),
+            MachineStateRetentionMode::OnDisk { path } => PathBuf::from(path),
+        };
+        create_dir_all(&log_dir).await?;
+
         // setup devices
+        let log_path = log_dir.join("serial.log");
         let devices = setup_devices(
             &config,
             &kvm,
@@ -194,6 +216,7 @@ impl Machine {
             &mut io_manager,
             &mut event_manager,
             &mut kernel_cmd,
+            log_path.to_string_lossy().as_ref(),
             device_event_tx.clone(),
         )
         .await?;
@@ -256,6 +279,7 @@ impl Machine {
             state: Arc::new(RwLock::new(MachineState::Idle)),
             state_change_rx,
             state_change_tx,
+            scheduler,
 
             last_start_time: Arc::new(RwLock::new(None)),
             last_ready_time: Arc::new(RwLock::new(None)),
@@ -359,12 +383,35 @@ impl Machine {
                 }
 
                 let mut first_boot_duration = self.first_boot_duration.write().await;
-                *first_boot_duration = Some(last_start_time.duration_since(Instant::now()));
+                *first_boot_duration = Some(ready_time.duration_since(last_start_time));
             }
         }
 
         *current_state = state.clone();
-        self.state_change_tx.broadcast(state).await.ok();
+        self.state_change_tx.broadcast(state.clone()).await.ok();
+        if let Some(scheduler) = self.scheduler.upgrade() {
+            let (first_boot_duration, last_boot_duration) = {
+                let first_boot_duration = self.first_boot_duration.read().await.clone();
+                let last_boot_duration = self.get_last_boot_duration().await;
+                (first_boot_duration, last_boot_duration)
+            };
+
+            scheduler
+                .push(
+                    self.config.controller_key.tenant.clone(),
+                    ControllerEvent::AsyncWorkChange(
+                        self.config.controller_key.clone(),
+                        AsyncWork::MachineStateChange {
+                            machine_id: self.config.name.clone(),
+                            state: state.clone(),
+                            first_boot_duration,
+                            last_boot_duration,
+                        },
+                    ),
+                )
+                .await
+                .ok();
+        }
         Ok(())
     }
 
@@ -373,17 +420,22 @@ impl Machine {
         state
     }
 
-    pub async fn get_last_boot_duration(&self) -> Result<Duration> {
+    pub async fn get_last_boot_duration(&self) -> Option<Duration> {
         let last_start_time = self.last_start_time.read().await;
         let last_ready_time = self.last_ready_time.read().await;
         let Some(last_start_time) = *last_start_time else {
-            return Ok(Duration::from_secs(0));
+            return None;
         };
         let Some(last_ready_time) = *last_ready_time else {
-            return Ok(Duration::from_secs(0));
+            return None;
         };
 
-        Ok(last_ready_time.duration_since(last_start_time))
+        last_ready_time.duration_since(last_start_time).into()
+    }
+
+    pub async fn get_first_boot_duration(&self) -> Option<Duration> {
+        let first_boot_duration = self.first_boot_duration.read().await;
+        first_boot_duration.clone()
     }
 
     pub async fn start(&self) -> Result<()> {

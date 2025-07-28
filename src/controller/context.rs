@@ -1,9 +1,7 @@
-use std::sync::Arc;
-
-use oci_client::Reference;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
-    agent::Agent,
+    agent::{Agent, machine::machine::MachineState},
     machinery::store::Store,
     repository::Repository,
     resource_index::ResourceKind,
@@ -82,12 +80,22 @@ impl ControllerContext {
 
 #[derive(Debug, Clone)]
 pub enum AsyncWork {
-    ImagePullComplete { reference: String },
+    ImagePullComplete {
+        id: String,
+        reference: String,
+    },
+    MachineStateChange {
+        machine_id: String,
+        state: MachineState,
+        first_boot_duration: Option<Duration>,
+        last_boot_duration: Option<Duration>,
+    },
     Error(String),
 }
 
 #[derive(Debug, Clone)]
 pub enum ControllerEvent {
+    BringUp(ResourceKind, Metadata),
     ResourceChange(ResourceKind, Metadata),
     ResourceStatusChange(ResourceKind, Metadata),
     AgentTrigger,

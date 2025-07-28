@@ -1310,6 +1310,7 @@ dependencies = [
  "meta",
  "nix 0.30.1",
  "oci-client",
+ "ordinal",
  "papaya",
  "rand 0.9.1",
  "reqwest",
@@ -1840,6 +1841,12 @@ name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+
+[[package]]
+name = "ordinal"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04f7ff16c3a0599da7939ad0ae9300414ca1115a7f552574bb269638a1e0576d"
 
 [[package]]
 name = "overload"

@@ -4,6 +4,7 @@ pub mod meta;
 pub mod virtio;
 
 use std::{
+    fs::OpenOptions,
     io::{BufWriter, stdout},
     sync::{Arc, Mutex},
 };
@@ -58,6 +59,7 @@ pub async fn setup_devices(
     io_manager: &mut IoManager,
     event_manager: &mut EventManager<Arc<Mutex<dyn MutEventSubscriber + Send>>>,
     kernel_cmdline: &mut Cmdline,
+    log_path: &str,
     device_event_tx: async_broadcast::Sender<DeviceEvent>,
 ) -> Result<VmDevices> {
     setup_memory_regions(kvm, vm_fd.clone(), memory)?;
@@ -65,7 +67,7 @@ pub async fn setup_devices(
     MpTable::new(machine_config.resources.cpu, MAX_IRQ as u8)?.write(memory)?;
 
     setup_irq_controller(vm_fd.clone())?;
-    setup_serial_console(vm_fd.clone(), io_manager)?;
+    setup_serial_console(vm_fd.clone(), io_manager, log_path)?;
 
     let snapshot_strategy = match &machine_config.mode {
         MachineMode::Regular => None,
@@ -149,7 +151,11 @@ fn setup_irq_controller(vm_fd: Arc<VmFd>) -> Result<()> {
     Ok(())
 }
 
-fn setup_serial_console(vm_fd: Arc<VmFd>, io_manager: &mut IoManager) -> Result<()> {
+fn setup_serial_console(
+    vm_fd: Arc<VmFd>,
+    io_manager: &mut IoManager,
+    log_path: &str,
+) -> Result<()> {
     let irq_fd = EventFdTrigger::new(libc::EFD_NONBLOCK)?;
 
     register_irq_fd(vm_fd, &irq_fd, SERIAL_IRQ)?;
@@ -157,25 +163,14 @@ fn setup_serial_console(vm_fd: Arc<VmFd>, io_manager: &mut IoManager) -> Result<
     // serial port
     let range = PioRange::new(PioAddress(0x3f8), 8)?;
 
-    // if let Some(log_file_path) = &machine_config.log_file_path {
-    //     let log_file = OpenOptions::new()
-    //         .create(true)
-    //         .append(true)
-    //         .open(log_file_path)?;
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)?;
 
-    //     let log_file = BufWriter::new(log_file);
+    let log_file = BufWriter::new(log_file);
 
-    //     let serial = Serial::new(irq_fd.try_clone()?, log_file);
-    //     let serial = SerialWrapper(serial);
-    //     let serial = Arc::new(Mutex::new(serial));
-
-    //     io_manager.register_pio(range, serial.clone())?;
-    // } else {
-    // };
-
-    let writer = BufWriter::new(stdout());
-
-    let serial = Serial::new(irq_fd.try_clone()?, writer);
+    let serial = Serial::new(irq_fd.try_clone()?, log_file);
     let serial = SerialWrapper(serial);
     let serial = Arc::new(Mutex::new(serial));
 

@@ -17,17 +17,19 @@ pub fn summary_macro(_args: TokenStream, input: TokenStream) -> TokenStream {
 
         let ty_text = field.ty.to_token_stream().to_string();
 
-        if ty_text != "String" && ty_text != "Option < String >" {
+        if ty_text != "String" && ty_text != "Option < String >" && ty_text != "Vec < String >" {
             return syn::Error::new(
                 field.span(),
                 format!(
-                    "summary field must be a String or Option<String>. found: {}",
+                    "summary field must be a String, Option<String> or Vec<String>. found: {}",
                     ty_text
                 ),
             )
             .to_compile_error()
             .into();
         }
+        let is_vec = ty_text == "Vec < String >";
+        let is_option = ty_text == "Option < String >";
 
         let field_args = field.attrs.iter().find_map(|attr| {
             if let syn::Meta::List(meta) = &attr.meta {
@@ -52,11 +54,25 @@ pub fn summary_macro(_args: TokenStream, input: TokenStream) -> TokenStream {
             .unwrap_or(crate::types::SummaryCellStyle::Default);
         let cell_style = syn::Ident::new(&format!("{:?}", cell_style), field.span());
 
+        let value_set = if is_vec {
+            quote! {
+                summary.#ident.clone()
+            }
+        } else if is_option {
+            quote! {
+                summary.#ident.as_ref().map(|v| vec![v.clone()]).unwrap_or_default()
+            }
+        } else {
+            quote! {
+                vec![summary.#ident.clone()]
+            }
+        };
+
         summary_rows.push(quote! {
             crate::ui::summary::SummaryRow {
                 name: #name.to_string(),
                 cell_style: crate::ui::summary::SummaryCellStyle::#cell_style,
-                value: summary.#ident.clone().into(),
+                value: #value_set,
             }
         });
 

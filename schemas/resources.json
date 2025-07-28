@@ -28,6 +28,89 @@
     }
   ],
   "$defs": {
+    "MachineSnapshotStrategy": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "first-listen",
+            "user-space-ready",
+            "manual"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "nth-listen": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "nth-listen"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "listen-on-port": {
+              "type": "integer",
+              "format": "uint16",
+              "minimum": 0,
+              "maximum": 65535
+            }
+          },
+          "required": [
+            "listen-on-port"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "MachineResources": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "memory": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "cpu",
+        "memory"
+      ]
+    },
+    "MachineMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "regular"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "flash": {
+              "$ref": "#/$defs/MachineSnapshotStrategy"
+            }
+          },
+          "required": [
+            "flash"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
     "MachineV1": {
       "type": "object",
       "properties": {
@@ -114,88 +197,6 @@
           },
           "required": [
             "error"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "MachineResources": {
-      "type": "object",
-      "properties": {
-        "cpu": {
-          "type": "integer",
-          "format": "uint8",
-          "minimum": 0,
-          "maximum": 255
-        },
-        "memory": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0
-        }
-      },
-      "required": [
-        "cpu",
-        "memory"
-      ]
-    },
-    "MachineMode": {
-      "oneOf": [
-        {
-          "type": "string",
-          "enum": [
-            "regular"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "flash": {
-              "$ref": "#/$defs/MachineSnapshotStrategy"
-            }
-          },
-          "required": [
-            "flash"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "MachineSnapshotStrategy": {
-      "oneOf": [
-        {
-          "type": "string",
-          "enum": [
-            "first-listen",
-            "user-space-ready"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "nth-listen": {
-              "type": "integer",
-              "format": "uint32",
-              "minimum": 0
-            }
-          },
-          "required": [
-            "nth-listen"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "listen-on-port": {
-              "type": "integer",
-              "format": "uint16",
-              "minimum": 0,
-              "maximum": 65535
-            }
-          },
-          "required": [
-            "listen-on-port"
           ],
           "additionalProperties": false
         }

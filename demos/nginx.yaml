@@ -1,0 +1,6 @@
+machine:
+  name: nginx-test
+  image: nginx:latest
+  resources:
+    cpu: 1
+    memory: 128

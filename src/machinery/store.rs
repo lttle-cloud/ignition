@@ -7,7 +7,7 @@ use heed::{
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     marker::PhantomData,
     path::Path,
     time::{SystemTime, UNIX_EPOCH},
@@ -358,6 +358,21 @@ impl Store {
         } else {
             Ok(vec![])
         }
+    }
+
+    pub fn list_tenants(&self) -> Result<Vec<String>> {
+        let key = PartialKey::<TrackedNamespaces>::not_namespaced()
+            .tenant(CORE_TENANT)
+            .collection("tracked_namespaces");
+
+        let mut tenants = HashSet::new();
+
+        let tracked_namespaces = self.list(&key)?;
+        for tracked_namespace in tracked_namespaces {
+            tenants.insert(tracked_namespace.tenant);
+        }
+
+        Ok(tenants.into_iter().collect())
     }
 
     pub fn get<D: Serialize + DeserializeOwned>(

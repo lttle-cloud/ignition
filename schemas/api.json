@@ -291,7 +291,8 @@
           "type": "string",
           "enum": [
             "first-listen",
-            "user-space-ready"
+            "user-space-ready",
+            "manual"
           ]
         },
         {
@@ -328,17 +329,63 @@
     "MachineStatus": {
       "type": "object",
       "properties": {
-        "hash": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0
-        },
         "phase": {
           "$ref": "#/$defs/MachinePhase"
+        },
+        "image_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image_resolved_reference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_ip": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_tap": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_image_volume_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_boot_time_us": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint128",
+          "minimum": 0
+        },
+        "first_boot_time_us": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint128",
+          "minimum": 0
         }
       },
       "required": [
-        "hash",
         "phase"
       ]
     },

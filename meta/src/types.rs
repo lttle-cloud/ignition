@@ -144,6 +144,7 @@ pub struct ResourceAnalysis {
 pub struct TableFieldArgs {
     pub name: String,
     pub max_width: Option<usize>,
+    pub min_width: Option<usize>,
     pub cell_style: Option<TableCellStyle>,
 }
 
@@ -185,6 +186,7 @@ impl Parse for TableFieldArgs {
 
         let mut name = None;
         let mut max_width = None;
+        let mut min_width = None;
         let mut cell_style = None;
 
         for item in list {
@@ -213,6 +215,20 @@ impl Parse for TableFieldArgs {
                 };
 
                 max_width = Some(lit.base10_parse::<usize>()?);
+            } else if item.path.is_ident("min_width") {
+                let syn::Expr::Lit(syn::ExprLit {
+                    attrs: _,
+                    lit: syn::Lit::Int(lit),
+                    ..
+                }) = item.value
+                else {
+                    return Err(syn::Error::new(
+                        item.value.span(),
+                        "min_width must be an integer",
+                    ));
+                };
+
+                min_width = Some(lit.base10_parse::<usize>()?);
             } else if item.path.is_ident("cell_style") {
                 let syn::Expr::Path(syn::ExprPath {
                     attrs: _,
@@ -248,6 +264,7 @@ impl Parse for TableFieldArgs {
         Ok(TableFieldArgs {
             name,
             max_width,
+            min_width,
             cell_style,
         })
     }

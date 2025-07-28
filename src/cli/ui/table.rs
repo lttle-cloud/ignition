@@ -14,6 +14,7 @@ pub struct TableHeader {
     pub text: String,
     pub cell_style: TableCellStyle,
     pub max_width: Option<usize>,
+    pub min_width: Option<usize>,
 }
 
 impl TableCellStyle {
@@ -42,9 +43,11 @@ impl Table {
         for row in &self.rows {
             for (i, cell) in row.iter().enumerate() {
                 let max_width = self.headers[i].max_width.unwrap_or(usize::MAX);
+                let min_width = self.headers[i].min_width.unwrap_or(0);
                 column_widths[i] = column_widths[i]
+                    .max(cell.as_ref().map(|c| c.len()).unwrap_or(0))
                     .min(max_width)
-                    .max(cell.as_ref().map(|c| c.len()).unwrap_or(0));
+                    .max(min_width);
             }
         }
 

@@ -1,7 +1,7 @@
 pub mod device;
 pub mod ip_range;
 
-use std::sync::Arc;
+use std::{net::Ipv4Addr, sync::Arc};
 
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
@@ -55,6 +55,26 @@ pub struct IpReservation {
     pub tag: Option<String>,
 }
 
+pub fn compute_mac_for_ip(ip: &str) -> Result<String> {
+    let mut mac = [0u8; 6];
+    let ip: Ipv4Addr = ip.parse()?;
+
+    mac[0] = 0x02; // Local Admin bit set
+    mac[1] = 0x42; // Arbitrary value
+    mac[2] = (ip.octets()[0] ^ 0x42) & 0x3f; // Mask to ensure unicast
+    mac[3] = ip.octets()[1];
+    mac[4] = ip.octets()[2];
+    mac[5] = ip.octets()[3];
+
+    let mac_str = mac
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<Vec<_>>()
+        .join(":");
+
+    Ok(mac_str)
+}
+
 impl NetDevice {
     pub async fn delete(self) -> Result<()> {
         nl_device_delete(&self.name).await
@@ -76,6 +96,22 @@ impl NetAgent {
             vm_ip_range,
             service_ip_range,
         })
+    }
+
+    pub fn vm_gateway(&self) -> Ipv4Addr {
+        self.vm_ip_range.gateway()
+    }
+
+    pub fn service_gateway(&self) -> Ipv4Addr {
+        self.service_ip_range.gateway()
+    }
+
+    pub fn vm_netmask(&self) -> Ipv4Addr {
+        self.vm_ip_range.netmask()
+    }
+
+    pub fn service_netmask(&self) -> Ipv4Addr {
+        self.service_ip_range.netmask()
     }
 
     pub fn device_unchecked(&self, name: &str) -> Result<NetDevice> {

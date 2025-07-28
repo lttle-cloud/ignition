@@ -3,28 +3,44 @@ pub mod vm;
 
 use anyhow::Result;
 use papaya::HashMap;
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Weak},
+};
 
-use crate::agent::machine::machine::{Machine, MachineConfig, MachineRef};
+use crate::{
+    agent::machine::machine::{Machine, MachineConfig, MachineRef},
+    controller::scheduler::Scheduler,
+};
 
 #[derive(Debug, Clone)]
 pub struct MachineAgentConfig {
     pub kernel_path: String,
     pub initrd_path: String,
     pub kernel_cmd_init: String,
+    pub transient_state_path: PathBuf,
 }
 
 pub struct MachineAgent {
     config: MachineAgentConfig,
+    scheduler: Weak<Scheduler>,
     machines: Arc<HashMap<String, MachineRef>>,
 }
 
 impl MachineAgent {
-    pub fn new(config: MachineAgentConfig) -> Self {
+    pub fn new(config: MachineAgentConfig, scheduler: Weak<Scheduler>) -> Self {
         Self {
             config,
+            scheduler,
             machines: Arc::new(HashMap::new()),
         }
+    }
+
+    pub fn transient_dir(&self, rel: impl AsRef<Path>) -> String {
+        let mut path = self.config.transient_state_path.clone();
+        path.push("machines");
+        path.push(rel);
+        path.to_string_lossy().to_string()
     }
 
     pub fn get_machine(&self, name: &str) -> Option<MachineRef> {
@@ -38,7 +54,7 @@ impl MachineAgent {
     }
 
     pub async fn create_machine(&self, config: MachineConfig) -> Result<MachineRef> {
-        let machine = Machine::new(&self.config, config).await?;
+        let machine = Machine::new(&self.config, config, self.scheduler.clone()).await?;
 
         let machines = self.machines.pin();
         machines.insert(machine.config.name.clone(), machine.clone());

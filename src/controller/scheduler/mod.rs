@@ -15,6 +15,8 @@ use crate::{
     },
     machinery::store::Store,
     repository::Repository,
+    resource_index::ResourceKind,
+    resources::{ProvideMetadata, metadata::Namespace},
 };
 
 pub struct SchedulerConfig {
@@ -118,6 +120,36 @@ impl Scheduler {
                 Err(e) => {
                     error!("failed to schedule event for controller: {}", e);
                 }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn schedule_bringup(&self) -> Result<()> {
+        let tenants = self.store.list_tenants()?;
+        for tenant in tenants {
+            let machines = self
+                .repository
+                .machine(tenant.clone())
+                .list(Namespace::Unspecified)?;
+            for machine in machines {
+                let metadata = machine.metadata();
+
+                let key = ControllerKey::new(
+                    tenant.clone(),
+                    ResourceKind::Machine,
+                    metadata.namespace.clone(),
+                    metadata.name.clone(),
+                );
+
+                info!("scheduled bringup for resource {}", key.to_string());
+
+                self.push(
+                    tenant.clone(),
+                    ControllerEvent::BringUp(ResourceKind::Machine, metadata),
+                )
+                .await?;
             }
         }
 

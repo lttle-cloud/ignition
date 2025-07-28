@@ -62,11 +62,21 @@ pub fn table_macro(_args: TokenStream, input: TokenStream) -> TokenStream {
             },
         };
 
+        let min_with = match field_args.min_width {
+            Some(min_width) => quote! {
+                Some(#min_width)
+            },
+            None => quote! {
+                None
+            },
+        };
+
         headers.push(quote! {
             crate::ui::table::TableHeader {
                 text: #text.to_string(),
                 cell_style: crate::ui::table::TableCellStyle::#cell_style,
                 max_width: #max_width,
+                min_width: #min_with,
             }
         });
 

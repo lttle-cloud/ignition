@@ -39,12 +39,21 @@ mod machine {
         WaitForListenOnPort(u16),
         #[serde(rename = "user-space-ready")]
         WaitForUserSpaceReady,
+        #[serde(rename = "manual")]
+        Manual,
     }
 
     #[status]
     struct Status {
-        hash: u64,
         phase: MachinePhase,
+        image_id: Option<String>,
+        image_resolved_reference: Option<String>,
+        machine_id: Option<String>,
+        machine_ip: Option<String>,
+        machine_tap: Option<String>,
+        machine_image_volume_id: Option<String>,
+        last_boot_time_us: Option<u128>,
+        first_boot_time_us: Option<u128>,
     }
 
     #[schema]
@@ -92,8 +101,15 @@ impl ToString for MachinePhase {
 impl FromResource<Machine> for MachineStatus {
     fn from_resource(_resource: Machine) -> Result<Self> {
         Ok(MachineStatus {
-            hash: 0,
             phase: MachinePhase::Idle,
+            image_id: None,
+            image_resolved_reference: None,
+            machine_id: None,
+            machine_ip: None,
+            machine_tap: None,
+            machine_image_volume_id: None,
+            last_boot_time_us: None,
+            first_boot_time_us: None,
         })
     }
 }

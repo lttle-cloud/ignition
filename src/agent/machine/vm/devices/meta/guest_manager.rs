@@ -166,8 +166,6 @@ impl GuestManagerDevice {
             return false;
         };
 
-        println!("trigger_code: {:?}", trigger_code);
-
         if matches!(trigger_code, TriggerCode::AfterListen { port: _, addr: _ }) {
             self.listen_trigger_count += 1;
         }

@@ -50,7 +50,10 @@ impl Agent {
         let image = Arc::new(
             ImageAgent::new(config.image_config.clone(), store.clone(), volume.clone()).await?,
         );
-        let machine = Arc::new(MachineAgent::new(config.machine_config.clone()));
+        let machine = Arc::new(MachineAgent::new(
+            config.machine_config.clone(),
+            scheduler.clone(),
+        ));
 
         Ok(Self {
             config,
