@@ -9,7 +9,9 @@ use ignition::{
 };
 use tokio::fs::read_to_string;
 
-use crate::{client::get_api_client, cmd::machine::MachineSummary, config::Config};
+use crate::{
+    client::get_api_client, cmd::machine::MachineSummary, config::Config, ui::message::message_info,
+};
 
 #[derive(Args)]
 pub struct DeployArgs {
@@ -60,10 +62,10 @@ async fn deploy_machine(_config: &Config, api_client: &ApiClient, machine: Machi
         )
         .await?;
 
-    println!(
+    message_info(format!(
         "Successfully deployed machine: {}",
         machine.metadata().to_string()
-    );
+    ));
 
     let summary = MachineSummary::from((machine, status));
     summary.print();

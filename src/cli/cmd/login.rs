@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::{client::get_api_client, config::Config};
+use crate::{client::get_api_client, config::Config, ui::message::message_info};
 use clap::Args;
 
 #[derive(Args)]
@@ -21,7 +21,7 @@ pub async fn run_login(config: &Config, args: LoginArgs) -> Result<()> {
 
     let api_client = get_api_client(&config).await?;
     let me = api_client.core().me().await?;
-    println!("Logged in as {}", me.tenant);
+    message_info(format!("Successfully logged in as {}", me.tenant));
 
     Ok(())
 }

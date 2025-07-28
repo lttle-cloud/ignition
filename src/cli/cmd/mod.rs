@@ -11,7 +11,10 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 use ignition::resources::metadata::Namespace;
 
-use crate::config::Config;
+use crate::{
+    config::Config,
+    ui::message::{message_info, message_warn},
+};
 
 #[derive(Parser)]
 #[command(name = "lttle")]
@@ -85,23 +88,23 @@ pub async fn run_cli(config: &Config) -> Result<()> {
             } {
                 let mut file = File::create(file_path)?;
                 clap_complete::generate(shell, &mut cmd, "lttle", &mut file);
-                eprintln!("Installed completions to {}", file_path);
+                message_info(format!(
+                    "Installed completions for {} to {}",
+                    shell.to_string(),
+                    file_path
+                ));
 
                 return Ok(());
             }
 
             if atty::is(Stream::Stdout) {
-                eprintln!(
-                    "Automatic installation is not supported for {}.",
+                message_warn(format!(
+                    "Automatic installation is not supported for {}. \
+                         Please check the documentation for manual installation instructions. \
+                         To get the completion script, pipe this command to your shell's specific completion file. \
+                         For example in bash: `lttle completions bash > /etc/bash_completion.d/lttle`",
                     shell.to_string()
-                );
-                eprintln!(
-                    "Check the docs of ({}) on how to install completions. To get the completion script, pipe this command to your shell's specific completion file.",
-                    shell.to_string()
-                );
-                eprintln!(
-                    "For example in bash: `lttle completions bash > /etc/bash_completion.d/lttle`"
-                );
+                ));
 
                 return Ok(());
             }

@@ -15,7 +15,7 @@ impl SummaryCellStyle {
     pub fn get_style(&self) -> Style {
         match self {
             SummaryCellStyle::Default => Style::new(),
-            SummaryCellStyle::Important => Style::new().bold().fg(Color::Purple),
+            SummaryCellStyle::Important => Style::new().fg(Color::Purple),
         }
     }
 }

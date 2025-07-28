@@ -21,7 +21,7 @@ impl TableCellStyle {
     pub fn get_style(&self) -> Style {
         match self {
             TableCellStyle::Default => Style::new(),
-            TableCellStyle::Important => Style::new().bold().fg(Color::Purple),
+            TableCellStyle::Important => Style::new().fg(Color::Purple),
         }
     }
 }
