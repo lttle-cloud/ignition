@@ -182,9 +182,12 @@ async fn build_api_schema(
             let method = ApiMethod {
                 name: "delete".to_string(),
                 verb: ApiVerb::Delete,
-                path: vec![ApiPathSegment::Static {
-                    value: resource.tag.to_string(),
-                }],
+                path: vec![
+                    ApiPathSegment::Static {
+                        value: resource.tag.to_string(),
+                    },
+                    ApiPathSegment::ResourceName,
+                ],
                 request: None,
                 response: None,
             };

@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow, bail};
 use async_trait::async_trait;
 use oci_client::Reference;
 use tokio::{runtime, task::spawn_blocking};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     agent::{
@@ -118,57 +118,100 @@ impl Controller for MachineController {
             .machine(ctx.tenant.clone())
             .get_with_status(key.metadata())?;
 
-        let Some((machine, status)) = (match (running_machine, stored_machine) {
-            (Some(running_machine), Some((stored_machine, status))) => {
-                // we have a running machine and a stored machine
-                let current_state = running_machine.get_state().await;
-                let new_phase = match current_state {
-                    MachineState::Booting => Some(MachinePhase::Booting),
-                    MachineState::Ready => Some(MachinePhase::Ready),
-                    MachineState::Suspending => Some(MachinePhase::Suspending),
-                    MachineState::Suspended => Some(MachinePhase::Suspended),
-                    MachineState::Stopping => Some(MachinePhase::Stopping),
-                    MachineState::Stopped => Some(MachinePhase::Stopped),
-                    MachineState::Error(message) => Some(MachinePhase::Error {
-                        message: message.clone(),
-                    }),
-                    _ => None,
-                };
+        let Some((machine, status)) = ('actual_vs_desired: {
+            match (running_machine, stored_machine) {
+                (Some(running_machine), Some((stored_machine, status))) => {
+                    // we have a running machine and a stored machine
+                    let current_state = running_machine.get_state().await;
+                    let new_phase = match current_state {
+                        MachineState::Booting => Some(MachinePhase::Booting),
+                        MachineState::Ready => Some(MachinePhase::Ready),
+                        MachineState::Suspending => Some(MachinePhase::Suspending),
+                        MachineState::Suspended => Some(MachinePhase::Suspended),
+                        MachineState::Stopping => Some(MachinePhase::Stopping),
+                        MachineState::Stopped => Some(MachinePhase::Stopped),
+                        MachineState::Error(message) => Some(MachinePhase::Error {
+                            message: message.clone(),
+                        }),
+                        _ => None,
+                    };
 
-                let last_boot_duration_us = running_machine
-                    .get_last_boot_duration()
-                    .await
-                    .and_then(|duration| Some(duration.as_micros()));
+                    let last_boot_duration_us = running_machine
+                        .get_last_boot_duration()
+                        .await
+                        .and_then(|duration| Some(duration.as_micros()));
 
-                let first_boot_duration_us = running_machine
-                    .get_first_boot_duration()
-                    .await
-                    .and_then(|duration| Some(duration.as_micros()));
+                    let first_boot_duration_us = running_machine
+                        .get_first_boot_duration()
+                        .await
+                        .and_then(|duration| Some(duration.as_micros()));
 
-                if let Some(new_phase) = new_phase {
-                    if new_phase != status.phase {
-                        let new_status = ctx
-                            .repository
-                            .machine(ctx.tenant.clone())
-                            .patch_status(key.metadata(), move |status| {
-                                status.phase = new_phase.clone();
-                                status.last_boot_time_us = last_boot_duration_us;
-                                status.first_boot_time_us = first_boot_duration_us;
-                            })
-                            .await?;
-                        Some((stored_machine, new_status))
+                    if let Some(new_phase) = new_phase {
+                        if new_phase != status.phase {
+                            let new_status = ctx
+                                .repository
+                                .machine(ctx.tenant.clone())
+                                .patch_status(key.metadata(), move |status| {
+                                    status.phase = new_phase.clone();
+                                    status.last_boot_time_us = last_boot_duration_us;
+                                    status.first_boot_time_us = first_boot_duration_us;
+                                })
+                                .await?;
+                            Some((stored_machine, new_status))
+                        } else {
+                            Some((stored_machine, status))
+                        }
                     } else {
                         Some((stored_machine, status))
                     }
-                } else {
+                }
+                (None, Some((stored_machine, status))) => {
+                    // we have a stored machine but no running machine
                     Some((stored_machine, status))
                 }
+                (Some(running_machine), None) => {
+                    let Some(_status) = ctx
+                        .repository
+                        .machine(ctx.tenant.clone())
+                        .get_status(key.metadata())?
+                    else {
+                        break 'actual_vs_desired None;
+                    };
+
+                    info!(
+                        "cleaning up machine {} with status: {:?}",
+                        machine_name, _status
+                    );
+
+                    // we have a running machine but no stored machine. time to clean up
+                    running_machine.stop().await?;
+                    ctx.agent.machine().delete_machine(&machine_name).await?;
+
+                    ctx.repository
+                        .machine(ctx.tenant.clone())
+                        .delete_status(key.metadata())
+                        .await?;
+                    // we don't have
+                    None
+                }
+                (None, None) => {
+                    let status = ctx
+                        .repository
+                        .machine(ctx.tenant.clone())
+                        .get_status(key.metadata())?;
+
+                    if status.is_some() {
+                        warn!("cleaning up machine status for key: {}", key.to_string());
+
+                        ctx.repository
+                            .machine(ctx.tenant.clone())
+                            .delete_status(key.metadata())
+                            .await?;
+                    }
+
+                    None
+                }
             }
-            (None, Some((stored_machine, status))) => {
-                // we have a stored machine but no running machine
-                Some((stored_machine, status))
-            }
-            _ => None,
         }) else {
             return Ok(ReconcileNext::done());
         };

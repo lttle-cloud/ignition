@@ -100,6 +100,21 @@
           }
         },
         {
+          "name": "delete",
+          "verb": "DELETE",
+          "path": [
+            {
+              "type": "static",
+              "value": "machine"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": null
+        },
+        {
           "name": "apply",
           "verb": "PUT",
           "path": [

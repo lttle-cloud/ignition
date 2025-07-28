@@ -141,9 +141,12 @@ fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
     // Build URL path
     let url_construction = generate_url_format_impl(method);
 
+    let generate_namespace_header =
+        service.namespaced && (method.verb == ApiVerb::Get || method.verb == ApiVerb::Delete);
+
     // Method signature
     let mut params = Vec::new();
-    if service.namespaced && method.verb == ApiVerb::Get {
+    if generate_namespace_header {
         params.push("namespace: Namespace".to_string());
     }
     if method
@@ -199,7 +202,7 @@ fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
     ));
 
     // Add namespace header if namespaced
-    if service.namespaced && method.verb == ApiVerb::Get {
+    if generate_namespace_header {
         src.push_str("            if let Some(namespace) = namespace.as_value() {\n");
         src.push_str(&format!(
             "                request = request.header(\"x-ignition-namespace\", namespace);\n"

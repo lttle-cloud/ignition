@@ -1,7 +1,7 @@
 pub mod machine;
 pub mod vm;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use papaya::HashMap;
 use std::{
     path::{Path, PathBuf},
@@ -60,5 +60,13 @@ impl MachineAgent {
         machines.insert(machine.config.name.clone(), machine.clone());
 
         Ok(machine)
+    }
+
+    pub async fn delete_machine(&self, name: &str) -> Result<()> {
+        let machines = self.machines.pin();
+        if let Some(_) = machines.remove(name) {
+            return Ok(());
+        };
+        bail!("Machine '{}' not found", name)
     }
 }

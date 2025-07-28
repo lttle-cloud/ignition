@@ -280,5 +280,36 @@ fn generate_resource_repository(src: &mut String, resource: &ResourceBuildInfo) 
     src.push_str("        Ok(status)\n");
     src.push_str("    }\n");
 
+    // delete status
+    src.push_str(&format!(
+        "    pub async fn delete_status(&self, metadata: Metadata) -> Result<()> {{\n"
+    ));
+    src.push_str(&format!(
+        "        let key = {}::key(self.tenant.clone(), metadata.clone())?;\n",
+        status_name
+    ));
+    src.push_str("        if self.store.get(key.clone())?.is_none() {\n");
+    src.push_str(&format!(
+        "            return Err(anyhow::anyhow!(\"{collection_name} status not found\"));\n"
+    ));
+    src.push_str("        }\n");
+    src.push_str("        self.store.delete(key)?;\n");
+    src.push_str("        \n");
+    src.push_str("        // Notify scheduler of status deletion\n");
+    src.push_str("        if let Some(scheduler) = self.get_scheduler() {\n");
+    src.push_str("            let event = ControllerEvent::ResourceStatusChange(\n");
+    src.push_str(&format!(
+        "                crate::resource_index::ResourceKind::{}, metadata,\n",
+        resource_name
+    ));
+    src.push_str("            );\n");
+    src.push_str("            if let Err(e) = scheduler.push(&self.tenant, event).await {\n");
+    src.push_str("                tracing::warn!(\"Failed to notify scheduler of status deletion: {}\", e);\n");
+    src.push_str("            }\n");
+    src.push_str("        }\n");
+    src.push_str("        \n");
+    src.push_str("        Ok(())\n");
+    src.push_str("    }\n");
+
     src.push_str("}\n\n");
 }

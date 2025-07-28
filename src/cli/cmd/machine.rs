@@ -9,8 +9,9 @@ use ordinal::Ordinal;
 
 use crate::{
     client::get_api_client,
-    cmd::{GetNamespacedArgs, ListNamespacedArgs},
+    cmd::{DeleteNamespacedArgs, GetNamespacedArgs, ListNamespacedArgs},
     config::Config,
+    ui::message::{message_info, message_warn},
 };
 
 #[table]
@@ -199,6 +200,26 @@ pub async fn run_machine_get(config: &Config, args: GetNamespacedArgs) -> Result
 
     let summary = MachineSummary::from((machine, status));
     summary.print();
+
+    Ok(())
+}
+
+pub async fn run_machine_delete(config: &Config, args: DeleteNamespacedArgs) -> Result<()> {
+    let api_client = get_api_client(config).await?;
+    if !args.confirm {
+        message_warn(format!(
+            "You are about to delete the machine '{}'. This action cannot be undone. To confirm, run the command with --yes (or -y).",
+            args.name
+        ));
+        return Ok(());
+    }
+
+    api_client
+        .machine()
+        .delete(args.clone().into(), args.name.clone())
+        .await?;
+
+    message_info(format!("Machine '{}' has been deleted.", args.name));
 
     Ok(())
 }

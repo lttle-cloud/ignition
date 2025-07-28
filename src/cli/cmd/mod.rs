@@ -56,6 +56,10 @@ pub enum MachineCommand {
 
     /// Get a machine
     Get(GetNamespacedArgs),
+
+    /// Delete a machine (short: rm)
+    #[command(alias = "rm")]
+    Delete(DeleteNamespacedArgs),
 }
 
 #[derive(Subcommand)]
@@ -77,6 +81,7 @@ pub async fn run_cli(config: &Config) -> Result<()> {
         Command::Machine(cmd) => match cmd {
             MachineCommand::List(args) => machine::run_machine_list(config, args).await,
             MachineCommand::Get(args) => machine::run_machine_get(config, args).await,
+            MachineCommand::Delete(args) => machine::run_machine_delete(config, args).await,
         },
         Command::Completions { shell } => {
             let mut cmd = Cli::command();
@@ -148,6 +153,26 @@ pub struct GetNamespacedArgs {
 
 impl From<GetNamespacedArgs> for Namespace {
     fn from(args: GetNamespacedArgs) -> Self {
+        Namespace::from_value_or_default(args.namespace)
+    }
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct DeleteNamespacedArgs {
+    /// List resources in a specific namespace (short: --ns)
+    #[arg(long = "namespace", alias = "ns")]
+    namespace: Option<String>,
+
+    /// Name of the resource to delete
+    name: String,
+
+    /// Confirm deletion of object
+    #[arg(long = "yes", short = 'y')]
+    confirm: bool,
+}
+
+impl From<DeleteNamespacedArgs> for Namespace {
+    fn from(args: DeleteNamespacedArgs) -> Self {
         Namespace::from_value_or_default(args.namespace)
     }
 }

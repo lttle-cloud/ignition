@@ -28,28 +28,6 @@
     }
   ],
   "$defs": {
-    "MachineMode": {
-      "oneOf": [
-        {
-          "type": "string",
-          "enum": [
-            "regular"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "flash": {
-              "$ref": "#/$defs/MachineSnapshotStrategy"
-            }
-          },
-          "required": [
-            "flash"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
     "MachineSnapshotStrategy": {
       "oneOf": [
         {
@@ -144,24 +122,26 @@
         "resources"
       ]
     },
-    "MachineResources": {
-      "type": "object",
-      "properties": {
-        "cpu": {
-          "type": "integer",
-          "format": "uint8",
-          "minimum": 0,
-          "maximum": 255
+    "MachineMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "regular"
+          ]
         },
-        "memory": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0
+        {
+          "type": "object",
+          "properties": {
+            "flash": {
+              "$ref": "#/$defs/MachineSnapshotStrategy"
+            }
+          },
+          "required": [
+            "flash"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "cpu",
-        "memory"
       ]
     },
     "MachinePhase": {
@@ -200,6 +180,26 @@
           ],
           "additionalProperties": false
         }
+      ]
+    },
+    "MachineResources": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "memory": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "cpu",
+        "memory"
       ]
     }
   }
