@@ -28,6 +28,28 @@
     }
   ],
   "$defs": {
+    "MachineMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "regular"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "flash": {
+              "$ref": "#/$defs/MachineSnapshotStrategy"
+            }
+          },
+          "required": [
+            "flash"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
     "MachineSnapshotStrategy": {
       "oneOf": [
         {
@@ -64,48 +86,6 @@
           },
           "required": [
             "listen-on-port"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "MachineResources": {
-      "type": "object",
-      "properties": {
-        "cpu": {
-          "type": "integer",
-          "format": "uint8",
-          "minimum": 0,
-          "maximum": 255
-        },
-        "memory": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0
-        }
-      },
-      "required": [
-        "cpu",
-        "memory"
-      ]
-    },
-    "MachineMode": {
-      "oneOf": [
-        {
-          "type": "string",
-          "enum": [
-            "regular"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "flash": {
-              "$ref": "#/$defs/MachineSnapshotStrategy"
-            }
-          },
-          "required": [
-            "flash"
           ],
           "additionalProperties": false
         }
@@ -162,6 +142,26 @@
         "name",
         "image",
         "resources"
+      ]
+    },
+    "MachineResources": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "memory": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "cpu",
+        "memory"
       ]
     },
     "MachinePhase": {

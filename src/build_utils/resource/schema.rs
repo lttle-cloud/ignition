@@ -82,7 +82,16 @@ pub fn merge_json_schemas(schemas: Vec<Schema>, schema_generator: &mut SchemaGen
         root_schema.add_one_of(&schema);
     }
 
-    root_schema.set_defs(schema_generator.definitions());
+    root_schema.defs.clear();
+
+    let definitions = schema_generator.definitions();
+    let mut sorted_keys = definitions.keys().collect::<Vec<_>>();
+    sorted_keys.sort_by(|a, b| a.cmp(b)); // Ascending order
+    for key in sorted_keys {
+        if let Some(value) = definitions.get(key) {
+            root_schema.defs.insert(key.clone(), value.clone());
+        }
+    }
 
     serde_json::to_value(root_schema).expect("Failed to convert root schema to value")
 }
