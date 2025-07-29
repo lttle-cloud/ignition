@@ -44,11 +44,11 @@ pub fn generate_conversion_methods(analysis: &ResourceAnalysis) -> proc_macro2::
     let stored_version = analysis.versions.iter().find(|v| v.stored);
     let latest_version = analysis.versions.iter().find(|v| v.latest);
     
-    let Some(stored_version) = stored_version else {
+    let Some(_) = stored_version else {
         return quote! {};
     };
 
-    let Some(latest_version) = latest_version else {
+    let Some(_) = latest_version else {
         return quote! {};
     };
 

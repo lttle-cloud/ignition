@@ -53,6 +53,7 @@ impl GuestManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn trigger_manual_snapshot(&self) {
         unsafe {
             let ptr: *mut u64 = self.map_base.as_ptr() as *mut u64;
@@ -60,6 +61,7 @@ impl GuestManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_last_boot_time_us(&self) -> u64 {
         unsafe {
             let ptr = self.map_base.as_ptr() as *mut u64;
@@ -69,6 +71,7 @@ impl GuestManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_first_boot_time_us(&self) -> u64 {
         unsafe {
             let ptr = self.map_base.as_ptr().add(8) as *mut u64;

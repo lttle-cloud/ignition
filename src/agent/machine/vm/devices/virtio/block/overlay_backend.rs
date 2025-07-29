@@ -84,7 +84,7 @@ impl Seek for OverlayBackend {
 impl ReadVolatile for OverlayBackend {
     fn read_volatile<B: BitmapSlice>(
         &mut self,
-        mut slice: &mut VolatileSlice<B>,
+        slice: &mut VolatileSlice<B>,
     ) -> Result<usize, VolatileMemoryError> {
         match self {
             // Pure passthrough when no overlay is present

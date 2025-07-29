@@ -1,4 +1,5 @@
 // heed based RAFT replicated (todo: replication) KV store
+#![allow(dead_code)]
 
 use anyhow::Result;
 use heed::{

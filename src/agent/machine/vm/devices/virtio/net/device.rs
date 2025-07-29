@@ -4,7 +4,6 @@ use std::{
 };
 
 use anyhow::{Result, anyhow, bail};
-use tracing::warn;
 use virtio_device::{VirtioConfig, VirtioDeviceActions, VirtioDeviceType, VirtioMmioDevice};
 use virtio_queue::{Queue, QueueT};
 use vm_device::{
@@ -16,18 +15,15 @@ use vm_memory::GuestMemoryMmap;
 
 use crate::agent::machine::{
     machine::NetworkConfig,
-    vm::devices::{
-        DeviceEvent,
-        virtio::{
-            Env, SingleFdSignalQueue,
-            features::{
-                VIRTIO_F_IN_ORDER, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_VERSION_1, VIRTIO_NET_F_CSUM,
-                VIRTIO_NET_F_GUEST_CSUM, VIRTIO_NET_F_GUEST_TSO4, VIRTIO_NET_F_GUEST_TSO6,
-                VIRTIO_NET_F_GUEST_UFO, VIRTIO_NET_F_HOST_TSO4, VIRTIO_NET_F_HOST_TSO6,
-                VIRTIO_NET_F_HOST_UFO, VIRTIO_NET_F_MAC,
-            },
-            mmio::VirtioMmioDeviceConfig,
+    vm::devices::virtio::{
+        Env, SingleFdSignalQueue,
+        features::{
+            VIRTIO_F_IN_ORDER, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_VERSION_1, VIRTIO_NET_F_CSUM,
+            VIRTIO_NET_F_GUEST_CSUM, VIRTIO_NET_F_GUEST_TSO4, VIRTIO_NET_F_GUEST_TSO6,
+            VIRTIO_NET_F_GUEST_UFO, VIRTIO_NET_F_HOST_TSO4, VIRTIO_NET_F_HOST_TSO6,
+            VIRTIO_NET_F_HOST_UFO, VIRTIO_NET_F_MAC,
         },
+        mmio::VirtioMmioDeviceConfig,
     },
 };
 
@@ -50,7 +46,6 @@ pub struct Net {
     config: NetworkConfig,
     device: VirtioMmioDeviceConfig,
     memory: GuestMemoryMmap,
-    device_event_tx: async_broadcast::Sender<DeviceEvent>,
     handler: Option<Arc<Mutex<QueueHandler>>>,
 }
 
@@ -86,7 +81,6 @@ impl Net {
         env: &mut Env,
         io_manager: &mut IoManager,
         config: NetworkConfig,
-        device_event_tx: async_broadcast::Sender<DeviceEvent>,
     ) -> Result<Arc<Mutex<Self>>> {
         let device_features: u64 = (1 << VIRTIO_F_VERSION_1)
             | (1 << VIRTIO_F_RING_EVENT_IDX)
@@ -122,7 +116,6 @@ impl Net {
             config,
             memory: env.mem.clone(),
             device,
-            device_event_tx,
             handler: None,
         };
         let net = Arc::new(Mutex::new(net));

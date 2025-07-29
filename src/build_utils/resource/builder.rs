@@ -21,6 +21,7 @@ impl ResourcesBuilder {
         }
     }
 
+    #[allow(dead_code)]
     pub fn resource<R: BuildableResource>(self) -> Self {
         self.resource_with_config::<R>(identity)
     }

@@ -64,10 +64,7 @@ pub fn extract_additional_schema_info_struct(
 ) -> Option<AdditionalSchemaInfo> {
     for attr in struct_item.attrs.iter() {
         if attr.path().is_ident("schema") {
-            let original_ident = struct_item.ident.clone();
-
             return Some(AdditionalSchemaInfo {
-                original_ident,
                 item: syn::Item::Struct(struct_item.clone()),
             });
         }
@@ -81,10 +78,7 @@ pub fn extract_additional_schema_info_enum(
 ) -> Option<AdditionalSchemaInfo> {
     for attr in enum_item.attrs.iter() {
         if attr.path().is_ident("schema") {
-            let original_ident = enum_item.ident.clone();
-
             return Some(AdditionalSchemaInfo {
-                original_ident,
                 item: syn::Item::Enum(enum_item.clone()),
             });
         }

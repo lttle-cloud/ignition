@@ -174,7 +174,7 @@ fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
                     name
                 ));
             }
-            ApiRequest::TaggedSchemaDefinition { name, tag } => {
+            ApiRequest::TaggedSchemaDefinition { name, .. } => {
                 params.push(format!("{}: {}", name.to_lowercase(), name));
             }
         }

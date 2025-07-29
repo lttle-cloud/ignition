@@ -25,7 +25,6 @@ pub struct Volume {
 }
 
 pub struct VolumeAgent {
-    config: VolumeAgentConfig,
     base_path: PathBuf,
     store: Arc<Store>,
 }
@@ -38,11 +37,7 @@ impl VolumeAgent {
             tokio::fs::create_dir_all(&base_path).await?;
         }
 
-        Ok(Self {
-            config,
-            base_path,
-            store,
-        })
+        Ok(Self { base_path, store })
     }
 
     pub fn volume(&self, id: &str) -> Result<Option<Volume>> {

@@ -40,10 +40,8 @@ pub struct Image {
 }
 
 pub struct ImageAgent {
-    config: ImageAgentConfig,
     store: Arc<Store>,
     volume_agent: Arc<VolumeAgent>,
-    base_path: PathBuf,
     base_layers_path: PathBuf,
 }
 
@@ -64,10 +62,8 @@ impl ImageAgent {
         }
 
         Ok(Self {
-            config,
             store,
             volume_agent,
-            base_path,
             base_layers_path,
         })
     }

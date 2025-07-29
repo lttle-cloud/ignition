@@ -31,8 +31,6 @@ pub struct AgentConfig {
 }
 
 pub struct Agent {
-    config: AgentConfig,
-    store: Arc<Store>,
     job: Arc<JobAgent>,
     net: Arc<NetAgent>,
     volume: Arc<VolumeAgent>,
@@ -56,8 +54,6 @@ impl Agent {
         ));
 
         Ok(Self {
-            config,
-            store,
             job: Arc::new(JobAgent::new(scheduler)),
             net,
             volume,

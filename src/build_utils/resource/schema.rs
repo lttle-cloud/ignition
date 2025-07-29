@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use schemars::{Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use tokio::fs::write;
 
 use crate::{
@@ -47,17 +47,6 @@ impl RootSchema {
 
     fn add_one_of(&mut self, schema: &PartialRootSchema) {
         self.one_of.extend(schema.one_of.clone());
-    }
-
-    fn set_defs(&mut self, defs: &Map<String, Value>) {
-        self.defs.clear();
-
-        let mut sorted_keys = defs.keys().collect::<Vec<_>>();
-        sorted_keys.sort_by(|a, b| b.cmp(a));
-
-        for key in sorted_keys {
-            self.defs.insert(key.clone(), defs[key].clone());
-        }
     }
 }
 

@@ -22,7 +22,6 @@ use crate::agent::machine::{
 };
 
 pub async fn load_kernel(
-    machine_config: &MachineConfig,
     memory: &GuestMemoryMmap,
     kernel_path: impl AsRef<Path>,
     initrd_path: impl AsRef<Path>,

@@ -120,6 +120,7 @@ pub enum MachineStopReason {
     Suspend,
 }
 
+#[allow(unused)]
 pub struct Machine {
     pub config: MachineConfig,
     state: Arc<RwLock<MachineState>>,
@@ -236,7 +237,6 @@ impl Machine {
 
         // load the kernel
         let kernel_load_result = load_kernel(
-            &config,
             &guest_memory,
             &agent_config.kernel_path,
             &agent_config.initrd_path,

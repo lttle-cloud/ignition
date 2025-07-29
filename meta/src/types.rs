@@ -128,7 +128,6 @@ pub struct StatusInfo {
 
 #[derive(Debug, Clone)]
 pub struct AdditionalSchemaInfo {
-    pub original_ident: Ident,
     pub item: syn::Item,
 }
 

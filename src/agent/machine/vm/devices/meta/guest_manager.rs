@@ -31,6 +31,7 @@ const TRIGGER_SYS_BIND_AFTER: u8 = TRIGGER_AFTER_OFFSET + TRIGGER_SYS_BIND;
 const READ_OFFSET_LAST_BOOT_TIME: u64 = 0;
 const READ_OFFSET_FIRST_BOOT_TIME: u64 = 8;
 
+#[allow(unused)]
 #[derive(Debug, Clone, Copy)]
 enum TriggerCode {
     BeforeListen { port: u16, addr: Ipv4Addr },

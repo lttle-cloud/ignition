@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use anyhow::Result;
 use schemars::{JsonSchema, Schema};
 use serde::{Serialize, de::DeserializeOwned};

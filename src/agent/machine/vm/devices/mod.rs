@@ -5,7 +5,7 @@ pub mod virtio;
 
 use std::{
     fs::OpenOptions,
-    io::{BufWriter, stdout},
+    io::BufWriter,
     sync::{Arc, Mutex},
 };
 
@@ -84,7 +84,6 @@ pub async fn setup_devices(
         event_manager,
         memory,
         kernel_cmdline,
-        device_event_tx.clone(),
     )?;
 
     let mut blocks = vec![];
@@ -188,7 +187,6 @@ fn setup_network_device(
     event_manager: &mut EventManager<Arc<Mutex<dyn MutEventSubscriber + Send>>>,
     memory: &GuestMemoryMmap,
     kernel_cmdline: &mut Cmdline,
-    device_event_tx: async_broadcast::Sender<DeviceEvent>,
 ) -> Result<Arc<Mutex<Net>>> {
     let mmio_range = {
         let range = mmio_allocator.allocate(0x1000, 4, AllocPolicy::FirstMatch)?;
@@ -211,7 +209,7 @@ fn setup_network_device(
         kernel_cmdline,
     };
 
-    let net = Net::new(&mut env, io_manager, network.clone(), device_event_tx)?;
+    let net = Net::new(&mut env, io_manager, network.clone())?;
     Ok(net)
 }
 
