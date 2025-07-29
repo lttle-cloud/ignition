@@ -28,42 +28,61 @@
     }
   ],
   "$defs": {
-    "MachineSnapshotStrategy": {
+    "MachinePhase": {
       "oneOf": [
         {
           "type": "string",
           "enum": [
-            "first-listen",
-            "user-space-ready",
-            "manual"
+            "idle",
+            "pulling-image",
+            "creating",
+            "booting",
+            "ready",
+            "suspending",
+            "suspended",
+            "stopping",
+            "stopped"
           ]
         },
         {
           "type": "object",
           "properties": {
-            "nth-listen": {
-              "type": "integer",
-              "format": "uint32",
-              "minimum": 0
+            "error": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "message"
+              ]
             }
           },
           "required": [
-            "nth-listen"
+            "error"
           ],
           "additionalProperties": false
+        }
+      ]
+    },
+    "MachineMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "regular"
+          ]
         },
         {
           "type": "object",
           "properties": {
-            "listen-on-port": {
-              "type": "integer",
-              "format": "uint16",
-              "minimum": 0,
-              "maximum": 65535
+            "flash": {
+              "$ref": "#/$defs/MachineSnapshotStrategy"
             }
           },
           "required": [
-            "listen-on-port"
+            "flash"
           ],
           "additionalProperties": false
         }
@@ -122,66 +141,6 @@
         "resources"
       ]
     },
-    "MachineMode": {
-      "oneOf": [
-        {
-          "type": "string",
-          "enum": [
-            "regular"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "flash": {
-              "$ref": "#/$defs/MachineSnapshotStrategy"
-            }
-          },
-          "required": [
-            "flash"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "MachinePhase": {
-      "oneOf": [
-        {
-          "type": "string",
-          "enum": [
-            "idle",
-            "pulling-image",
-            "creating",
-            "booting",
-            "ready",
-            "suspending",
-            "suspended",
-            "stopping",
-            "stopped"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "error": {
-              "type": "object",
-              "properties": {
-                "message": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "message"
-              ]
-            }
-          },
-          "required": [
-            "error"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
     "MachineResources": {
       "type": "object",
       "properties": {
@@ -200,6 +159,47 @@
       "required": [
         "cpu",
         "memory"
+      ]
+    },
+    "MachineSnapshotStrategy": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "first-listen",
+            "user-space-ready",
+            "manual"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "nth-listen": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "nth-listen"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "listen-on-port": {
+              "type": "integer",
+              "format": "uint16",
+              "minimum": 0,
+              "maximum": 65535
+            }
+          },
+          "required": [
+            "listen-on-port"
+          ],
+          "additionalProperties": false
+        }
       ]
     }
   }

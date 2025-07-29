@@ -14,7 +14,10 @@ use std::{
 use anyhow::{Result, bail};
 use guest::GuestManager;
 use mount::mount;
-use nix::unistd::{chdir, chroot};
+use nix::{
+    libc::{CLONE_NEWPID, unshare},
+    unistd::{chdir, chroot},
+};
 use oci_config::{EnvVar, OciConfig};
 use serial::SerialWriter;
 use takeoff_proto::proto::TakeoffInitArgs;
@@ -67,6 +70,8 @@ async fn takeoff() -> Result<()> {
     }
 
     info!("envs: {:#?}", envs);
+
+    unsafe { unshare(CLONE_NEWPID) };
 
     let cmd = Command::new(cmd[0].clone())
         .args(&cmd[1..])
