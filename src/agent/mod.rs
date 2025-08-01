@@ -3,6 +3,7 @@ pub mod image;
 pub mod job;
 pub mod machine;
 pub mod net;
+pub mod proxy;
 pub mod volume;
 
 use std::sync::{Arc, Weak};
@@ -15,6 +16,7 @@ use crate::{
         job::JobAgent,
         machine::{MachineAgent, MachineAgentConfig},
         net::{NetAgent, NetAgentConfig},
+        proxy::{ProxyAgent, ProxyAgentConfig},
         volume::{VolumeAgent, VolumeAgentConfig},
     },
     controller::scheduler::Scheduler,
@@ -28,6 +30,7 @@ pub struct AgentConfig {
     pub volume_config: VolumeAgentConfig,
     pub image_config: ImageAgentConfig,
     pub machine_config: MachineAgentConfig,
+    pub proxy_config: ProxyAgentConfig,
 }
 
 pub struct Agent {
@@ -36,6 +39,7 @@ pub struct Agent {
     volume: Arc<VolumeAgent>,
     image: Arc<ImageAgent>,
     machine: Arc<MachineAgent>,
+    proxy: Arc<ProxyAgent>,
 }
 
 impl Agent {
@@ -53,12 +57,15 @@ impl Agent {
             scheduler.clone(),
         ));
 
+        let proxy = ProxyAgent::new(config.proxy_config.clone(), machine.clone()).await?;
+
         Ok(Self {
             job: Arc::new(JobAgent::new(scheduler)),
             net,
             volume,
             image,
             machine,
+            proxy,
         })
     }
 
@@ -80,5 +87,9 @@ impl Agent {
 
     pub fn machine(&self) -> Arc<MachineAgent> {
         self.machine.clone()
+    }
+
+    pub fn proxy(&self) -> Arc<ProxyAgent> {
+        self.proxy.clone()
     }
 }

@@ -15,8 +15,9 @@ use tokio::{
     fs::create_dir_all,
     sync::{Mutex, RwLock},
     task::JoinHandle,
+    time::{Duration as TokioDuration, sleep},
 };
-use tracing::warn;
+use tracing::{info, warn};
 use vm_allocator::AddressAllocator;
 use vm_device::device_manager::IoManager;
 use vm_memory::{GuestAddress, GuestMemory, GuestMemoryMmap};
@@ -88,6 +89,7 @@ pub struct MachineResources {
 #[derive(Debug, Clone)]
 pub struct MachineConfig {
     pub name: String,
+    pub network_tag: String,
     pub controller_key: ControllerKey,
     pub mode: MachineMode,
     pub state_retention_mode: MachineStateRetentionMode,
@@ -149,9 +151,61 @@ pub struct Machine {
     device_watcher_task: Mutex<Option<JoinHandle<()>>>,
     devices: VmDevices,
     event_manager_task: std::thread::JoinHandle<()>,
+    startup_lock: Mutex<()>,
+    connection_count: Mutex<u32>,
+    suspend_timeout_task: Mutex<Option<JoinHandle<()>>>,
 }
 
 pub type MachineRef = Arc<Machine>;
+
+/// A connection to a machine that keeps it alive while held.
+/// When dropped, it decrements the connection count and may trigger suspension.
+///
+/// # Example
+/// ```rust
+/// # use std::sync::Arc;
+/// # use anyhow::Result;
+/// # async fn example(machine: Arc<Machine>) -> Result<()> {
+/// // Get a connection to the machine (starts it if needed)
+/// let connection = machine.get_connection().await?;
+///
+/// // Use the machine's IP address
+/// let ip = connection.ip_address();
+/// println!("Machine IP: {}", ip);
+///
+/// // The machine stays alive while connection is held
+/// // ... do work with the machine ...
+///
+/// // When connection is dropped, a 10-second timeout starts
+/// // If no new connections are made, the machine will suspend
+/// # Ok(())
+/// # }
+/// ```
+pub struct MachineConnection {
+    machine: MachineRef,
+    _phantom: std::marker::PhantomData<()>,
+}
+
+impl MachineConnection {
+    /// Get the IP address of the connected machine
+    pub fn ip_address(&self) -> String {
+        self.machine.config.network.ip_address.clone()
+    }
+
+    /// Get a reference to the underlying machine
+    pub fn machine(&self) -> &MachineRef {
+        &self.machine
+    }
+}
+
+impl Drop for MachineConnection {
+    fn drop(&mut self) {
+        let machine = Arc::clone(&self.machine);
+        tokio::spawn(async move {
+            machine.decrement_connection_count().await;
+        });
+    }
+}
 
 impl Machine {
     pub async fn new(
@@ -303,6 +357,9 @@ impl Machine {
             device_event_rx,
             device_event_tx,
             device_watcher_task: Mutex::new(None),
+            startup_lock: Mutex::new(()),
+            connection_count: Mutex::new(0),
+            suspend_timeout_task: Mutex::new(None),
         });
 
         let watcher_machine = machine.clone();
@@ -350,6 +407,156 @@ impl Machine {
         *machine.device_watcher_task.lock().await = Some(device_watcher_task);
 
         Ok(machine)
+    }
+
+    /// Get a connection to this machine, starting it if necessary.
+    /// The machine will be kept alive while the connection is held.
+    /// When the connection is dropped, a 10-second timeout starts before suspension.
+    pub async fn get_connection(self: &Arc<Self>) -> Result<MachineConnection> {
+        let current_state = self.get_state().await;
+
+        // If already ready, increment connection count and return
+        if current_state == MachineState::Ready {
+            self.increment_connection_count().await;
+            return Ok(MachineConnection {
+                machine: Arc::clone(self),
+                _phantom: std::marker::PhantomData,
+            });
+        }
+
+        // If booting, wait for ready state then increment connection count
+        if current_state == MachineState::Booting {
+            self.wait_for_state(MachineState::Ready).await?;
+            self.increment_connection_count().await;
+            return Ok(MachineConnection {
+                machine: Arc::clone(self),
+                _phantom: std::marker::PhantomData,
+            });
+        }
+
+        // If not in a startable state, return error
+        if !matches!(
+            current_state,
+            MachineState::Idle | MachineState::Stopped | MachineState::Suspended
+        ) {
+            bail!("Machine can't be started from state: {:?}", current_state);
+        }
+
+        // Acquire startup lock to prevent multiple simultaneous startups
+        let _guard = self.startup_lock.lock().await;
+
+        // Check state again after acquiring lock
+        let state_after_lock = self.get_state().await;
+        if state_after_lock == MachineState::Ready {
+            self.increment_connection_count().await;
+            return Ok(MachineConnection {
+                machine: Arc::clone(self),
+                _phantom: std::marker::PhantomData,
+            });
+        }
+        if state_after_lock == MachineState::Booting {
+            self.wait_for_state(MachineState::Ready).await?;
+            self.increment_connection_count().await;
+            return Ok(MachineConnection {
+                machine: Arc::clone(self),
+                _phantom: std::marker::PhantomData,
+            });
+        }
+
+        // Start the machine and wait for ready state
+        self.start().await?;
+        self.wait_for_state(MachineState::Ready).await?;
+
+        // Increment connection count and return connection
+        self.increment_connection_count().await;
+        Ok(MachineConnection {
+            machine: Arc::clone(self),
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
+    /// Increment the connection count and cancel any pending suspend timeout
+    async fn increment_connection_count(&self) {
+        let mut count = self.connection_count.lock().await;
+        *count += 1;
+        info!(
+            "Connection created for machine '{}', connection count: {}",
+            self.config.name, *count
+        );
+
+        // Cancel any pending suspend timeout
+        if let Some(timeout_task) = self.suspend_timeout_task.lock().await.take() {
+            info!(
+                "Cancelling suspend timeout for machine '{}'",
+                self.config.name
+            );
+            timeout_task.abort();
+        }
+    }
+
+    /// Decrement the connection count and start suspend timeout if count reaches 0
+    async fn decrement_connection_count(self: &Arc<Self>) {
+        let mut count = self.connection_count.lock().await;
+        if *count == 0 {
+            warn!(
+                "Attempted to decrement connection count below 0 for machine: {}",
+                self.config.name
+            );
+            return;
+        }
+
+        *count -= 1;
+        info!(
+            "Connection destroyed for machine '{}', connection count: {}",
+            self.config.name, *count
+        );
+
+        // If this was the last connection, start the suspend timeout
+        if *count == 0 {
+            info!(
+                "Last connection dropped for machine '{}', starting suspend timeout",
+                self.config.name
+            );
+            self.start_suspend_timeout().await;
+        }
+    }
+
+    /// Start a 10-second timeout before suspending the machine
+    async fn start_suspend_timeout(self: &Arc<Self>) {
+        info!(
+            "Setting suspend timeout for machine '{}' (10 seconds)",
+            self.config.name
+        );
+
+        let machine = Arc::clone(self);
+        let timeout_task = tokio::spawn(async move {
+            sleep(TokioDuration::from_secs(10)).await;
+
+            // Check if we still have no connections
+            let count = machine.connection_count.lock().await;
+            if *count == 0 {
+                info!(
+                    "Suspend timeout expired for machine '{}', connection count: {}",
+                    machine.config.name, *count
+                );
+                // Only suspend if we're in flash mode
+                if matches!(machine.config.mode, MachineMode::Flash(_)) {
+                    if let Err(e) = machine.suspend().await {
+                        warn!(
+                            "Failed to suspend machine {} after timeout: {}",
+                            machine.config.name, e
+                        );
+                    }
+                }
+            } else {
+                info!(
+                    "Suspend timeout expired for machine '{}' but connection count is {} > 0, not suspending",
+                    machine.config.name, *count
+                );
+            }
+        });
+
+        *self.suspend_timeout_task.lock().await = Some(timeout_task);
     }
 
     async fn set_state(&self, state: MachineState) -> Result<()> {

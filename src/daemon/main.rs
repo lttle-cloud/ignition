@@ -3,8 +3,12 @@ use std::{path::Path, sync::Arc};
 use anyhow::Result;
 use ignition::{
     agent::{
-        Agent, AgentConfig, image::ImageAgentConfig, machine::MachineAgentConfig,
-        net::NetAgentConfig, volume::VolumeAgentConfig,
+        Agent, AgentConfig,
+        image::ImageAgentConfig,
+        machine::MachineAgentConfig,
+        net::NetAgentConfig,
+        proxy::{BindingMode, ExternalBindingRouting, ProxyAgentConfig, ProxyBinding},
+        volume::VolumeAgentConfig,
     },
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
     controller::{
@@ -62,6 +66,12 @@ async fn main() -> Result<()> {
                                     "i8042.nokbd reboot=t panic=1 noapic clocksource=kvm-clock tsc=reliable console=ttyS0"
                                         .to_string(),
                             },
+                            proxy_config: ProxyAgentConfig {
+                                external_bind_address: "151.80.18.214".to_string(),
+                                default_tls_cert_path: "./certs/server.cert".to_string(),
+                                default_tls_key_path: "./certs/server.key".to_string(),
+                                evergreen_external_ports: vec![80, 443],
+                            },
                         },
                         agent_scheduler,
                     )
@@ -84,6 +94,26 @@ async fn main() -> Result<()> {
     let repository = scheduler.repository.clone();
 
     let auth_handler = Arc::new(AuthHandler::new(TEMP_JWT_SECRET));
+
+    scheduler
+        .agent
+        .proxy()
+        .set_binding(
+            "landing-page",
+            ProxyBinding {
+                // target_network_tag: "test_tenant-default/caddy-test".to_string(),
+                target_network_tag: "test_tenant-default/landing-page".to_string(),
+                target_port: 80,
+                mode: BindingMode::External {
+                    port: 443,
+                    routing: ExternalBindingRouting::TlsSni {
+                        host: "alpha1.ovh-rbx.lttle.host".to_string(),
+                    },
+                },
+            },
+        )
+        .await
+        .expect("failed to add test proxy binding");
 
     let api_server = ApiServer::new(
         store.clone(),

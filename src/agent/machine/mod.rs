@@ -69,4 +69,13 @@ impl MachineAgent {
         };
         bail!("Machine '{}' not found", name)
     }
+
+    pub async fn get_machine_by_network_tag(&self, network_tag: &str) -> Option<MachineRef> {
+        let machines = self.machines.pin();
+
+        machines
+            .values()
+            .find(|m| m.config.network_tag == network_tag)
+            .cloned()
+    }
 }

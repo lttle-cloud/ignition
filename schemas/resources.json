@@ -28,6 +28,117 @@
     }
   ],
   "$defs": {
+    "MachinePhase": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "idle",
+            "pulling-image",
+            "creating",
+            "booting",
+            "ready",
+            "suspending",
+            "suspended",
+            "stopping",
+            "stopped"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "message"
+              ]
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "MachineResources": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "memory": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "cpu",
+        "memory"
+      ]
+    },
+    "MachineV1": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "resources": {
+          "$ref": "#/$defs/MachineResources"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "env": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "image",
+        "resources"
+      ]
+    },
     "MachineMode": {
       "oneOf": [
         {
@@ -86,117 +197,6 @@
           },
           "required": [
             "listen-on-port"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "MachineV1": {
-      "type": "object",
-      "properties": {
-        "tags": {
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "string"
-          }
-        },
-        "namespace": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "image": {
-          "type": "string"
-        },
-        "resources": {
-          "$ref": "#/$defs/MachineResources"
-        },
-        "mode": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MachineMode"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "env": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [
-        "name",
-        "image",
-        "resources"
-      ]
-    },
-    "MachineResources": {
-      "type": "object",
-      "properties": {
-        "cpu": {
-          "type": "integer",
-          "format": "uint8",
-          "minimum": 0,
-          "maximum": 255
-        },
-        "memory": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0
-        }
-      },
-      "required": [
-        "cpu",
-        "memory"
-      ]
-    },
-    "MachinePhase": {
-      "oneOf": [
-        {
-          "type": "string",
-          "enum": [
-            "idle",
-            "pulling-image",
-            "creating",
-            "booting",
-            "ready",
-            "suspending",
-            "suspended",
-            "stopping",
-            "stopped"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "error": {
-              "type": "object",
-              "properties": {
-                "message": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "message"
-              ]
-            }
-          },
-          "required": [
-            "error"
           ],
           "additionalProperties": false
         }

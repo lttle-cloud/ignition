@@ -12,7 +12,7 @@ use oci_client::{
 use tar::Archive;
 use tracing::{error, info};
 
-use crate::agent::image::credentials::{AnonymousOciCredentialsProvider, OciCredentialsProvider};
+use crate::agent::image::credentials::{DockerCredentialsProvider, OciCredentialsProvider};
 
 pub fn remove_whiteouts(dir: impl AsRef<Path>) -> Result<()> {
     let dir_path = dir.as_ref();
@@ -52,7 +52,7 @@ pub const SUPPORTED_LAYER_MEDIA_TYPES: &[&str] = &[
 ];
 
 pub async fn create_default_oci_client(reference: &Reference) -> Result<(Client, RegistryAuth)> {
-    let credentials_provider = AnonymousOciCredentialsProvider;
+    let credentials_provider = DockerCredentialsProvider {};
     let auth = credentials_provider.get_credentials_for_reference(reference)?;
 
     let client = Client::new(ClientConfig {

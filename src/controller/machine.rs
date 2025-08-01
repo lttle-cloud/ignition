@@ -390,6 +390,8 @@ impl Controller for MachineController {
                     .machine()
                     .create_machine(MachineConfig {
                         name: name.clone(),
+                        // TODO: network tag should be something similar to the app name (for scaling issues)
+                        network_tag: name.clone(),
                         controller_key: key.clone(),
                         image,
                         mode,

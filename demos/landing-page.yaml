@@ -1,0 +1,9 @@
+machine:
+  name: landing-page
+  image: ghcr.io/laurci/lttle-cloud-landing:latest
+  mode:
+    flash:
+      listen-on-port: 80 # snapshot when listening on port 80
+  resources:
+    cpu: 1
+    memory: 512
