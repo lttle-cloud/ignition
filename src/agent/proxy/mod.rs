@@ -1,17 +1,12 @@
 pub mod proto;
 pub mod tls;
 
-use std::{collections::HashSet, convert::Infallible, sync::Arc};
+use std::{collections::HashSet, convert::Infallible, sync::Arc, time::Duration};
 
 use anyhow::{Result, bail};
 use papaya::HashMap;
 use rustls::{ServerConfig, sign::CertifiedKey};
-use tokio::{
-    io::{AsyncWriteExt, copy_bidirectional},
-    net::{TcpListener, TcpStream},
-    spawn,
-    task::JoinHandle,
-};
+use tokio::{io::AsyncWriteExt, net::TcpListener, spawn, task::JoinHandle};
 use tokio_rustls::TlsAcceptor;
 use tracing::{info, warn};
 
@@ -327,23 +322,24 @@ async fn external_listener(
                         );
                     };
 
-                    let machine_connection = machine.get_connection().await?;
-                    let machine_ip = machine_connection.ip_address();
+                    let mut machine_connection = machine
+                        .get_traffic_aware_connection(
+                            binding.target_port,
+                            Duration::from_secs(5), // inactivity timeout
+                        )
+                        .await?;
 
                     info!(
-                        "Proxying HTTP connection from {} to {}:{}",
-                        target_host, machine_ip, binding.target_port
+                        "Proxying HTTP connection from {} to machine on port {}",
+                        target_host, binding.target_port
                     );
-                    let mut conn =
-                        TcpStream::connect(format!("{machine_ip}:{}", binding.target_port)).await?;
 
-                    conn.write_all(&head).await?;
-                    copy_bidirectional(&mut stream, &mut conn).await?;
+                    machine_connection.upstream_socket.write_all(&head).await?;
+                    machine_connection.proxy_from_client(stream).await?;
                 }
                 SniffedProtocol::Tls => {
                     info!("Handling TLS connection");
-                    // we think protocol is tls.
-                    let mut tls_stream = tls_acceptor.accept(&mut stream).await?;
+                    let tls_stream = tls_acceptor.accept(&mut stream).await?;
                     let (_tcp_stream, server_conn) = tls_stream.get_ref();
 
                     let Some(server_name) = server_conn.server_name() else {
@@ -388,16 +384,18 @@ async fn external_listener(
                         );
                     };
 
-                    let machine_connection = machine.get_connection().await?;
-                    let machine_ip = machine_connection.ip_address();
+                    let mut machine_connection = machine
+                        .get_traffic_aware_connection(
+                            binding.target_port,
+                            Duration::from_secs(5), // inactivity timeout
+                        )
+                        .await?;
 
                     info!(
-                        "Proxying TLS connection from {} to {}:{}",
-                        server_name, machine_ip, binding.target_port
+                        "Proxying TLS connection from {} to machine on port {}",
+                        server_name, binding.target_port
                     );
-                    let mut conn =
-                        TcpStream::connect(format!("{machine_ip}:{}", binding.target_port)).await?;
-                    copy_bidirectional(&mut tls_stream, &mut conn).await?;
+                    machine_connection.proxy_from_tls_client(tls_stream).await?;
                 }
             }
 
@@ -437,17 +435,18 @@ async fn internal_listener(
                 );
             };
 
-            let machine_connection = machine.get_connection().await?;
-            let machine_ip = machine_connection.ip_address();
+            let mut machine_connection = machine
+                .get_traffic_aware_connection(
+                    binding.target_port,
+                    Duration::from_secs(5), // inactivity timeout
+                )
+                .await?;
 
             info!(
-                "Proxying internal connection to {}:{}",
-                machine_ip, binding.target_port
+                "Proxying internal connection to machine on port {}",
+                binding.target_port
             );
-            let mut conn =
-                TcpStream::connect(format!("{machine_ip}:{}", binding.target_port)).await?;
-
-            copy_bidirectional(&mut stream, &mut conn).await?;
+            machine_connection.proxy_from_client(stream).await?;
 
             Ok(())
         });

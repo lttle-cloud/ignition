@@ -13,6 +13,8 @@ use takeoff_proto::proto::{MountPoint, TakeoffInitArgs};
 use tempfile::tempdir;
 use tokio::{
     fs::create_dir_all,
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
     sync::{Mutex, RwLock},
     task::JoinHandle,
     time::{Duration as TokioDuration, sleep},
@@ -122,6 +124,20 @@ pub enum MachineStopReason {
     Suspend,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConnectionState {
+    Active,
+    Inactive,
+}
+
+pub struct TrafficAwareConnection {
+    machine: MachineRef,
+    pub upstream_socket: TcpStream,
+    state: Arc<RwLock<ConnectionState>>,
+    last_activity: Arc<RwLock<Instant>>,
+    inactivity_timeout: Duration,
+}
+
 #[allow(unused)]
 pub struct Machine {
     pub config: MachineConfig,
@@ -153,46 +169,22 @@ pub struct Machine {
     event_manager_task: std::thread::JoinHandle<()>,
     startup_lock: Mutex<()>,
     connection_count: Mutex<u32>,
+    active_connection_count: Mutex<u32>,
     suspend_timeout_task: Mutex<Option<JoinHandle<()>>>,
 }
 
 pub type MachineRef = Arc<Machine>;
 
-/// A connection to a machine that keeps it alive while held.
-/// When dropped, it decrements the connection count and may trigger suspension.
-///
-/// # Example
-/// ```rust
-/// # use std::sync::Arc;
-/// # use anyhow::Result;
-/// # async fn example(machine: Arc<Machine>) -> Result<()> {
-/// // Get a connection to the machine (starts it if needed)
-/// let connection = machine.get_connection().await?;
-///
-/// // Use the machine's IP address
-/// let ip = connection.ip_address();
-/// println!("Machine IP: {}", ip);
-///
-/// // The machine stays alive while connection is held
-/// // ... do work with the machine ...
-///
-/// // When connection is dropped, a 10-second timeout starts
-/// // If no new connections are made, the machine will suspend
-/// # Ok(())
-/// # }
-/// ```
 pub struct MachineConnection {
     machine: MachineRef,
     _phantom: std::marker::PhantomData<()>,
 }
 
 impl MachineConnection {
-    /// Get the IP address of the connected machine
     pub fn ip_address(&self) -> String {
         self.machine.config.network.ip_address.clone()
     }
 
-    /// Get a reference to the underlying machine
     pub fn machine(&self) -> &MachineRef {
         &self.machine
     }
@@ -202,6 +194,222 @@ impl Drop for MachineConnection {
     fn drop(&mut self) {
         let machine = Arc::clone(&self.machine);
         tokio::spawn(async move {
+            machine.decrement_connection_count().await;
+        });
+    }
+}
+
+impl TrafficAwareConnection {
+    pub async fn new(
+        machine: MachineRef,
+        target_port: u16,
+        inactivity_timeout: Duration,
+    ) -> Result<Self> {
+        let machine_ip = machine.config.network.ip_address.clone();
+        let upstream_socket = TcpStream::connect(format!("{machine_ip}:{}", target_port)).await?;
+
+        machine.increment_connection_count().await;
+        machine.increment_active_connection_count().await;
+
+        Ok(Self {
+            machine,
+            upstream_socket,
+            state: Arc::new(RwLock::new(ConnectionState::Active)),
+            last_activity: Arc::new(RwLock::new(Instant::now())),
+            inactivity_timeout,
+        })
+    }
+
+    pub fn ip_address(&self) -> String {
+        self.machine.config.network.ip_address.clone()
+    }
+
+    pub fn machine(&self) -> &MachineRef {
+        &self.machine
+    }
+
+    pub async fn proxy_from_client(&mut self, mut client_stream: TcpStream) -> Result<()> {
+        let mut client_buf = [0u8; 8192];
+        let mut upstream_buf = [0u8; 8192];
+
+        loop {
+            tokio::select! {
+                // Client -> Upstream traffic
+                result = client_stream.readable() => {
+                    if result.is_ok() {
+                        self.mark_active().await;
+                        match client_stream.try_read(&mut client_buf) {
+                            Ok(n) => {
+                                if n > 0 {
+                                    if let Err(_) = self.upstream_socket.write_all(&client_buf[..n]).await {
+                                        // Upstream write failed, close both connections
+                                        break;
+                                    }
+                                } else {
+                                    // Client closed, close both connections
+                                    break;
+                                }
+                            }
+                            Err(_) => {
+                                // Client read error, close both connections
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Upstream -> Client traffic
+                result = self.upstream_socket.readable() => {
+                    if result.is_ok() {
+                        self.mark_active().await;
+                        match self.upstream_socket.try_read(&mut upstream_buf) {
+                            Ok(n) => {
+                                if n > 0 {
+                                    if let Err(_) = client_stream.write_all(&upstream_buf[..n]).await {
+                                        // Client write failed, close both connections
+                                        break;
+                                    }
+                                } else {
+                                    // Upstream closed, close both connections
+                                    break;
+                                }
+                            }
+                            Err(_) => {
+                                // Upstream read error, close both connections
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Check for inactivity periodically
+                _ = sleep(TokioDuration::from_secs(5)) => {
+                    self.check_inactivity().await;
+                }
+            }
+        }
+
+        // Close both connections when either side closes
+        let _ = client_stream.shutdown().await;
+        let _ = self.upstream_socket.shutdown().await;
+
+        Ok(())
+    }
+
+    async fn mark_active(&self) {
+        let mut state = self.state.write().await;
+        let mut last_activity = self.last_activity.write().await;
+
+        if *state == ConnectionState::Inactive {
+            *state = ConnectionState::Active;
+            self.machine.increment_active_connection_count().await;
+            info!(
+                "Connection to machine '{}' became active",
+                self.machine.config.name
+            );
+        }
+
+        *last_activity = Instant::now();
+    }
+
+    async fn check_inactivity(&self) {
+        let last_activity = self.last_activity.read().await;
+        let elapsed = last_activity.elapsed();
+
+        if elapsed >= self.inactivity_timeout {
+            let mut state = self.state.write().await;
+            if *state == ConnectionState::Active {
+                // Transition from active to inactive
+                *state = ConnectionState::Inactive;
+                self.machine.decrement_active_connection_count().await;
+                info!(
+                    "Connection to machine '{}' became inactive (timeout: {}s)",
+                    self.machine.config.name,
+                    self.inactivity_timeout.as_secs()
+                );
+            }
+        }
+    }
+
+    pub async fn proxy_from_tls_client<T>(&mut self, mut tls_stream: T) -> Result<()>
+    where
+        T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
+        let mut tls_buf = [0u8; 8192];
+        let mut upstream_buf = [0u8; 8192];
+
+        self.mark_active().await;
+
+        loop {
+            tokio::select! {
+                // TLS -> Upstream traffic
+                result = tls_stream.read(&mut tls_buf) => {
+                    match result {
+                        Ok(n) => {
+                            if n > 0 {
+                                self.mark_active().await;
+                                if let Err(_) = self.upstream_socket.write_all(&tls_buf[..n]).await {
+                                    // Upstream write failed, close both connections
+                                    break;
+                                }
+                            } else {
+                                // TLS stream closed, close both connections
+                                break;
+                            }
+                        }
+                        Err(_) => {
+                            // TLS read error, close both connections
+                            break;
+                        }
+                    }
+                }
+
+                // Upstream -> TLS traffic
+                result = self.upstream_socket.read(&mut upstream_buf) => {
+                    match result {
+                        Ok(n) => {
+                            if n > 0 {
+                                self.mark_active().await;
+                                if let Err(_) = tls_stream.write_all(&upstream_buf[..n]).await {
+                                    // TLS write failed, close both connections
+                                    break;
+                                }
+                            } else {
+                                // Upstream closed, close both connections
+                                break;
+                            }
+                        }
+                        Err(_) => {
+                            // Upstream read error, close both connections
+                            break;
+                        }
+                    }
+                }
+
+                // Check for inactivity periodically
+                _ = sleep(TokioDuration::from_secs(5)) => {
+                    self.check_inactivity().await;
+                }
+            }
+        }
+
+        let _ = tls_stream.shutdown().await;
+        let _ = self.upstream_socket.shutdown().await;
+
+        Ok(())
+    }
+}
+
+impl Drop for TrafficAwareConnection {
+    fn drop(&mut self) {
+        let machine = self.machine.clone();
+        let state = self.state.clone();
+
+        tokio::spawn(async move {
+            let current_state = state.read().await;
+            if *current_state == ConnectionState::Active {
+                machine.decrement_active_connection_count().await;
+            }
             machine.decrement_connection_count().await;
         });
     }
@@ -359,6 +567,7 @@ impl Machine {
             device_watcher_task: Mutex::new(None),
             startup_lock: Mutex::new(()),
             connection_count: Mutex::new(0),
+            active_connection_count: Mutex::new(0),
             suspend_timeout_task: Mutex::new(None),
         });
 
@@ -475,7 +684,50 @@ impl Machine {
         })
     }
 
-    /// Increment the connection count and cancel any pending suspend timeout
+    pub async fn get_traffic_aware_connection(
+        self: &Arc<Self>,
+        target_port: u16,
+        inactivity_timeout: Duration,
+    ) -> Result<TrafficAwareConnection> {
+        let current_state = self.get_state().await;
+
+        if current_state == MachineState::Ready {
+            return TrafficAwareConnection::new(self.clone(), target_port, inactivity_timeout)
+                .await;
+        }
+
+        if current_state == MachineState::Booting {
+            self.wait_for_state(MachineState::Ready).await?;
+            return TrafficAwareConnection::new(self.clone(), target_port, inactivity_timeout)
+                .await;
+        }
+
+        if !matches!(
+            current_state,
+            MachineState::Idle | MachineState::Stopped | MachineState::Suspended
+        ) {
+            bail!("Machine can't be started from state: {:?}", current_state);
+        }
+
+        let _guard = self.startup_lock.lock().await;
+
+        let state_after_lock = self.get_state().await;
+        if state_after_lock == MachineState::Ready {
+            return TrafficAwareConnection::new(self.clone(), target_port, inactivity_timeout)
+                .await;
+        }
+        if state_after_lock == MachineState::Booting {
+            self.wait_for_state(MachineState::Ready).await?;
+            return TrafficAwareConnection::new(self.clone(), target_port, inactivity_timeout)
+                .await;
+        }
+
+        self.start().await?;
+        self.wait_for_state(MachineState::Ready).await?;
+
+        TrafficAwareConnection::new(self.clone(), target_port, inactivity_timeout).await
+    }
+
     async fn increment_connection_count(&self) {
         let mut count = self.connection_count.lock().await;
         *count += 1;
@@ -484,7 +736,6 @@ impl Machine {
             self.config.name, *count
         );
 
-        // Cancel any pending suspend timeout
         if let Some(timeout_task) = self.suspend_timeout_task.lock().await.take() {
             info!(
                 "Cancelling suspend timeout for machine '{}'",
@@ -494,7 +745,6 @@ impl Machine {
         }
     }
 
-    /// Decrement the connection count and start suspend timeout if count reaches 0
     async fn decrement_connection_count(self: &Arc<Self>) {
         let mut count = self.connection_count.lock().await;
         if *count == 0 {
@@ -511,10 +761,52 @@ impl Machine {
             self.config.name, *count
         );
 
-        // If this was the last connection, start the suspend timeout
         if *count == 0 {
             info!(
                 "Last connection dropped for machine '{}', starting suspend timeout",
+                self.config.name
+            );
+            self.start_suspend_timeout().await;
+        }
+    }
+
+    async fn increment_active_connection_count(&self) {
+        let mut count = self.active_connection_count.lock().await;
+        *count += 1;
+        info!(
+            "Active connection count for machine '{}': {}",
+            self.config.name, *count
+        );
+
+        // Cancel any pending suspend timeout
+        if let Some(timeout_task) = self.suspend_timeout_task.lock().await.take() {
+            info!(
+                "Cancelling suspend timeout for machine '{}'",
+                self.config.name
+            );
+            timeout_task.abort();
+        }
+    }
+
+    async fn decrement_active_connection_count(self: &Arc<Self>) {
+        let mut count = self.active_connection_count.lock().await;
+        if *count == 0 {
+            warn!(
+                "Attempted to decrement active connection count below 0 for machine: {}",
+                self.config.name
+            );
+            return;
+        }
+
+        *count -= 1;
+        info!(
+            "Active connection count for machine '{}': {}",
+            self.config.name, *count
+        );
+
+        if *count == 0 {
+            info!(
+                "Last active connection dropped for machine '{}', starting suspend timeout",
                 self.config.name
             );
             self.start_suspend_timeout().await;
@@ -532,14 +824,12 @@ impl Machine {
         let timeout_task = tokio::spawn(async move {
             sleep(TokioDuration::from_secs(10)).await;
 
-            // Check if we still have no connections
-            let count = machine.connection_count.lock().await;
+            let count = machine.active_connection_count.lock().await;
             if *count == 0 {
                 info!(
-                    "Suspend timeout expired for machine '{}', connection count: {}",
+                    "Suspend timeout expired for machine '{}', active connection count: {}",
                     machine.config.name, *count
                 );
-                // Only suspend if we're in flash mode
                 if matches!(machine.config.mode, MachineMode::Flash(_)) {
                     if let Err(e) = machine.suspend().await {
                         warn!(
@@ -550,7 +840,7 @@ impl Machine {
                 }
             } else {
                 info!(
-                    "Suspend timeout expired for machine '{}' but connection count is {} > 0, not suspending",
+                    "Suspend timeout expired for machine '{}' but active connection count is {} > 0, not suspending",
                     machine.config.name, *count
                 );
             }
