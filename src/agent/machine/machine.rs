@@ -187,72 +187,8 @@ impl TrafficAwareConnection {
         &self.machine
     }
 
-    pub async fn proxy_from_client(&mut self, mut client_stream: TcpStream) -> Result<()> {
-        let mut client_buf = [0u8; 8192];
-        let mut upstream_buf = [0u8; 8192];
-
-        loop {
-            tokio::select! {
-                // Client -> Upstream traffic
-                result = client_stream.readable() => {
-                    if result.is_ok() {
-                        self.mark_active().await;
-                        match client_stream.try_read(&mut client_buf) {
-                            Ok(n) => {
-                                if n > 0 {
-                                    if let Err(_) = self.upstream_socket.write_all(&client_buf[..n]).await {
-                                        // Upstream write failed, close both connections
-                                        break;
-                                    }
-                                } else {
-                                    // Client closed, close both connections
-                                    break;
-                                }
-                            }
-                            Err(_) => {
-                                // Client read error, close both connections
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // Upstream -> Client traffic
-                result = self.upstream_socket.readable() => {
-                    if result.is_ok() {
-                        self.mark_active().await;
-                        match self.upstream_socket.try_read(&mut upstream_buf) {
-                            Ok(n) => {
-                                if n > 0 {
-                                    if let Err(_) = client_stream.write_all(&upstream_buf[..n]).await {
-                                        // Client write failed, close both connections
-                                        break;
-                                    }
-                                } else {
-                                    // Upstream closed, close both connections
-                                    break;
-                                }
-                            }
-                            Err(_) => {
-                                // Upstream read error, close both connections
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                _ = sleep(CONNECTION_CHECK_INTERVAL) => {
-                    if matches!(self.mode, TrafficAwareMode::Enabled { .. }) {
-                        self.check_inactivity().await;
-                    }
-                }
-            }
-        }
-
-        let _ = client_stream.shutdown().await;
-        let _ = self.upstream_socket.shutdown().await;
-
-        Ok(())
+    pub fn upstream_socket(&mut self) -> &mut TcpStream {
+        &mut self.upstream_socket
     }
 
     async fn mark_active(&self) {
@@ -291,7 +227,7 @@ impl TrafficAwareConnection {
         }
     }
 
-    pub async fn proxy_from_tls_client<T>(&mut self, mut tls_stream: T) -> Result<()>
+    pub async fn proxy_from_client<T>(&mut self, mut tls_stream: T) -> Result<()>
     where
         T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
     {
@@ -617,27 +553,24 @@ impl Machine {
     pub async fn get_connection(
         self: &Arc<Self>,
         target_port: u16,
-        inactivity_timeout: Duration,
+        inactivity_timeout: Option<Duration>,
     ) -> Result<TrafficAwareConnection> {
         let current_state = self.get_state().await;
 
+        let inactivity_mode = match inactivity_timeout {
+            Some(timeout) => TrafficAwareMode::Enabled {
+                inactivity_timeout: timeout,
+            },
+            None => TrafficAwareMode::Disabled,
+        };
+
         if current_state == MachineState::Ready {
-            return TrafficAwareConnection::new(
-                self.clone(),
-                target_port,
-                TrafficAwareMode::Enabled { inactivity_timeout },
-            )
-            .await;
+            return TrafficAwareConnection::new(self.clone(), target_port, inactivity_mode).await;
         }
 
         if current_state == MachineState::Booting {
             self.wait_for_state(MachineState::Ready).await?;
-            return TrafficAwareConnection::new(
-                self.clone(),
-                target_port,
-                TrafficAwareMode::Enabled { inactivity_timeout },
-            )
-            .await;
+            return TrafficAwareConnection::new(self.clone(), target_port, inactivity_mode).await;
         }
 
         if !matches!(
@@ -651,32 +584,17 @@ impl Machine {
 
         let state_after_lock = self.get_state().await;
         if state_after_lock == MachineState::Ready {
-            return TrafficAwareConnection::new(
-                self.clone(),
-                target_port,
-                TrafficAwareMode::Enabled { inactivity_timeout },
-            )
-            .await;
+            return TrafficAwareConnection::new(self.clone(), target_port, inactivity_mode).await;
         }
         if state_after_lock == MachineState::Booting {
             self.wait_for_state(MachineState::Ready).await?;
-            return TrafficAwareConnection::new(
-                self.clone(),
-                target_port,
-                TrafficAwareMode::Enabled { inactivity_timeout },
-            )
-            .await;
+            return TrafficAwareConnection::new(self.clone(), target_port, inactivity_mode).await;
         }
 
         self.start().await?;
         self.wait_for_state(MachineState::Ready).await?;
 
-        TrafficAwareConnection::new(
-            self.clone(),
-            target_port,
-            TrafficAwareMode::Enabled { inactivity_timeout },
-        )
-        .await
+        TrafficAwareConnection::new(self.clone(), target_port, inactivity_mode).await
     }
 
     async fn increment_connection_count(&self) {

@@ -1,17 +1,31 @@
 pub mod proto;
 pub mod tls;
 
-use std::{collections::HashSet, convert::Infallible, sync::Arc, time::Duration};
+use std::{collections::HashSet, convert::Infallible, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Result, bail};
+use hyper::{Request, Uri, Version, service::service_fn};
+use hyper_util::{
+    client::legacy::{Client, connect::HttpConnector},
+    rt::{TokioExecutor, TokioIo},
+    server::conn::auto::Builder,
+};
 use papaya::HashMap;
 use rustls::{ServerConfig, sign::CertifiedKey};
-use tokio::{io::AsyncWriteExt, net::TcpListener, spawn, task::JoinHandle};
+use tokio::{
+    io::AsyncWriteExt,
+    net::{TcpListener, TcpStream},
+    spawn,
+    task::JoinHandle,
+};
 use tokio_rustls::TlsAcceptor;
 use tracing::{info, warn};
 
 use crate::agent::{
-    machine::MachineAgent,
+    machine::{
+        MachineAgent,
+        machine::{Machine, TrafficAwareConnection},
+    },
     proxy::{proto::SniffedProtocol, tls::ProxyTlsCertResolver},
 };
 
@@ -72,8 +86,19 @@ pub enum BindingMode {
 
 #[derive(Clone, Debug)]
 pub enum ExternalBindingRouting {
-    HttpHostHeader { host: String },
-    TlsSni { host: String },
+    HttpHostHeader {
+        host: String,
+    },
+    TlsSni {
+        host: String,
+        nested_protocol: ExternnalBindingRoutingTlsNestedProtocol,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExternnalBindingRoutingTlsNestedProtocol {
+    Http,
+    Unknown,
 }
 
 impl ProxyBinding {
@@ -113,8 +138,10 @@ impl ProxyAgent {
             tls_server_config_builder.crypto_provider().clone(),
         ));
 
-        let tls_server_config =
+        let mut tls_server_config =
             tls_server_config_builder.with_cert_resolver(tls_cert_resolver.clone());
+
+        tls_server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
         let tls_acceptor = Arc::new(TlsAcceptor::from(Arc::new(tls_server_config)));
 
@@ -269,139 +296,238 @@ async fn external_listener(
     let listener = TcpListener::bind(addr).await?;
 
     loop {
-        let (mut stream, _) = listener.accept().await?;
+        let (stream, _) = listener.accept().await?;
         let bindings = bindings.clone();
         let machine_agent = machine_agent.clone();
         let tls_acceptor = tls_acceptor.clone();
 
         spawn(async move {
-            let protocol = proto::sniff_protocol(&mut stream).await?;
-
-            match protocol {
-                SniffedProtocol::Unknown => {
-                    warn!("Received connection with unknown protocol");
-                    bail!("Unknown protocol");
-                }
-                SniffedProtocol::Http => {
-                    info!("Handling HTTP connection");
-                    let (target_host, head) = proto::extract_http_host(&mut stream).await?;
-                    let binding = {
-                        let bindings = bindings.pin_owned();
-                        bindings
-                            .values()
-                            .find(|b| match &b.mode {
-                                BindingMode::External { routing, .. } => match routing {
-                                    ExternalBindingRouting::HttpHostHeader { host }
-                                        if *host == target_host =>
-                                    {
-                                        true
-                                    }
-                                    _ => false,
-                                },
-                                _ => false,
-                            })
-                            .cloned()
-                    };
-
-                    let Some(binding) = binding else {
-                        warn!("No binding found for HTTP host: {}", target_host);
-                        bail!("No binding found for host {target_host}");
-                    };
-
-                    let Some(machine) = machine_agent
-                        .get_machine_by_network_tag(&binding.target_network_tag)
-                        .await
-                    else {
-                        warn!(
-                            "No machine found for network tag: {}",
-                            binding.target_network_tag
-                        );
-                        bail!(
-                            "No machine found for network tag {}",
-                            binding.target_network_tag
-                        );
-                    };
-
-                    let mut machine_connection = machine
-                        .get_connection(
-                            binding.target_port,
-                            Duration::from_secs(5), // inactivity timeout
-                        )
-                        .await?;
-
-                    info!(
-                        "Proxying HTTP connection from {} to machine on port {}",
-                        target_host, binding.target_port
-                    );
-
-                    machine_connection.upstream_socket.write_all(&head).await?;
-                    machine_connection.proxy_from_client(stream).await?;
-                }
-                SniffedProtocol::Tls => {
-                    info!("Handling TLS connection");
-                    let tls_stream = tls_acceptor.accept(&mut stream).await?;
-                    let (_tcp_stream, server_conn) = tls_stream.get_ref();
-
-                    let Some(server_name) = server_conn.server_name() else {
-                        warn!("No server name in TLS connection");
-                        bail!("No server name in TLS connection");
-                    };
-
-                    let binding = {
-                        let bindings = bindings.pin_owned();
-                        bindings
-                            .values()
-                            .find(|b| match &b.mode {
-                                BindingMode::External { routing, .. } => match routing {
-                                    ExternalBindingRouting::TlsSni { host }
-                                        if *host == server_name =>
-                                    {
-                                        true
-                                    }
-                                    _ => false,
-                                },
-                                _ => false,
-                            })
-                            .cloned()
-                    };
-
-                    let Some(binding) = binding else {
-                        warn!("No binding found for TLS server name: {}", server_name);
-                        bail!("No binding found for server name {server_name}");
-                    };
-
-                    let Some(machine) = machine_agent
-                        .get_machine_by_network_tag(&binding.target_network_tag)
-                        .await
-                    else {
-                        warn!(
-                            "No machine found for network tag: {}",
-                            binding.target_network_tag
-                        );
-                        bail!(
-                            "No machine found for network tag {}",
-                            binding.target_network_tag
-                        );
-                    };
-
-                    let mut machine_connection = machine
-                        .get_connection(
-                            binding.target_port,
-                            Duration::from_secs(5), // inactivity timeout
-                        )
-                        .await?;
-
-                    info!(
-                        "Proxying TLS connection from {} to machine on port {}",
-                        server_name, binding.target_port
-                    );
-                    machine_connection.proxy_from_tls_client(tls_stream).await?;
-                }
-            }
-
-            Ok(())
+            handle_external_connection(stream, bindings, machine_agent, tls_acceptor).await
         });
     }
+}
+
+async fn handle_external_connection(
+    mut stream: TcpStream,
+    bindings: Arc<HashMap<String, ProxyBinding>>,
+    machine_agent: Arc<MachineAgent>,
+    tls_acceptor: Arc<TlsAcceptor>,
+) -> Result<()> {
+    let protocol = proto::sniff_protocol(&mut stream).await?;
+
+    match protocol {
+        SniffedProtocol::Unknown => {
+            warn!("Received connection with unknown protocol");
+            bail!("Unknown protocol");
+        }
+        SniffedProtocol::Http => {
+            info!("Handling HTTP connection");
+            handle_http_connection(stream, bindings, machine_agent).await
+        }
+        SniffedProtocol::Tls => {
+            info!("Handling TLS connection");
+            let tls_stream = tls_acceptor.accept(stream).await?;
+            handle_tls_connection(tls_stream, bindings, machine_agent).await
+        }
+    }
+}
+
+async fn handle_http_connection(
+    mut stream: TcpStream,
+    bindings: Arc<HashMap<String, ProxyBinding>>,
+    machine_agent: Arc<MachineAgent>,
+) -> Result<()> {
+    let (target_host, head) = proto::extract_http_host(&mut stream).await?;
+
+    let binding = find_http_binding(&bindings, &target_host)?;
+    let machine = find_machine(&machine_agent, &binding.target_network_tag).await?;
+    let mut machine_connection =
+        get_machine_connection(&machine, binding.target_port, Some(Duration::from_secs(5))).await?;
+
+    info!(
+        "Proxying HTTP connection from {} to machine on port {}",
+        target_host, binding.target_port
+    );
+
+    machine_connection.upstream_socket.write_all(&head).await?;
+    machine_connection.proxy_from_client(stream).await?;
+
+    Ok(())
+}
+
+async fn handle_https_connection(
+    tls_stream: tokio_rustls::server::TlsStream<TcpStream>,
+    binding: &ProxyBinding,
+    machine_agent: Arc<MachineAgent>,
+) -> Result<()> {
+    let io = TokioIo::new(tls_stream);
+
+    let svc = service_fn(move |mut req: Request<hyper::body::Incoming>| {
+        let machine_agent = machine_agent.clone();
+        let binding = binding.clone();
+
+        let mut base = HttpConnector::new();
+        base.enforce_http(true);
+
+        let client = Client::builder(TokioExecutor::new()).build(base);
+
+        async move {
+            let Ok(machine) = find_machine(&machine_agent, &binding.target_network_tag).await
+            else {
+                return Err("failed to find machine");
+            };
+
+            let Ok(machine_connection) =
+                get_machine_connection(&machine, binding.target_port, None).await
+            else {
+                return Err("failed to get machine connection");
+            };
+
+            let upstream_uri = format!(
+                "http://{}:{}",
+                machine_connection.ip_address(),
+                binding.target_port
+            );
+            info!("Proxying HTTPS connection to {}", upstream_uri);
+
+            let client = client.clone();
+            let upstream_uri = upstream_uri.clone();
+
+            let original_uri = req.uri();
+            let path_and_query = original_uri
+                .path_and_query()
+                .map(|pq| pq.as_str())
+                .unwrap_or("/");
+
+            let new_uri = format!("{}{}", upstream_uri, path_and_query);
+            *req.uri_mut() = Uri::from_str(&new_uri).expect("failed to parse uri");
+            *req.version_mut() = Version::HTTP_11;
+
+            info!("Modified request URI: {:?}", req.uri());
+
+            let Ok(response) = client.request(req).await else {
+                return Err("failed to get response from origin");
+            };
+
+            Ok(response)
+        }
+    });
+
+    if let Err(e) = Builder::new(TokioExecutor::new())
+        .serve_connection(io, svc)
+        .await
+    {
+        warn!("Error proxying HTTPS connection: {e}");
+        bail!("Error proxying HTTPS connection: {e}");
+    }
+
+    Ok(())
+}
+
+async fn handle_tls_connection(
+    mut tls_stream: tokio_rustls::server::TlsStream<TcpStream>,
+    bindings: Arc<HashMap<String, ProxyBinding>>,
+    machine_agent: Arc<MachineAgent>,
+) -> Result<()> {
+    let (_, server_conn) = tls_stream.get_ref();
+
+    let Some(server_name) = server_conn.server_name() else {
+        warn!("No server name in TLS connection");
+        bail!("No server name in TLS connection");
+    };
+
+    let (binding, nested_protocol) = find_tls_binding(&bindings, server_name)?;
+
+    if nested_protocol == ExternnalBindingRoutingTlsNestedProtocol::Http {
+        info!("Handling HTTP connection over TLS");
+        return handle_https_connection(tls_stream, &binding, machine_agent).await;
+    }
+
+    let machine = find_machine(&machine_agent, &binding.target_network_tag).await?;
+    let mut machine_connection =
+        get_machine_connection(&machine, binding.target_port, Some(Duration::from_secs(5))).await?;
+
+    info!(
+        "Proxying TLS connection from {} to machine on port {}",
+        server_name, binding.target_port
+    );
+
+    machine_connection
+        .proxy_from_client(&mut tls_stream)
+        .await?;
+
+    Ok(())
+}
+
+fn find_http_binding(
+    bindings: &Arc<HashMap<String, ProxyBinding>>,
+    target_host: &str,
+) -> Result<ProxyBinding> {
+    let bindings = bindings.pin_owned();
+    bindings
+        .values()
+        .find(|b| match &b.mode {
+            BindingMode::External { routing, .. } => match routing {
+                ExternalBindingRouting::HttpHostHeader { host } if *host == target_host => true,
+                _ => false,
+            },
+            _ => false,
+        })
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("No binding found for HTTP host {target_host}"))
+}
+
+fn find_tls_binding(
+    bindings: &Arc<HashMap<String, ProxyBinding>>,
+    server_name: &str,
+) -> Result<(ProxyBinding, ExternnalBindingRoutingTlsNestedProtocol)> {
+    let bindings = bindings.pin_owned();
+    let binding = bindings
+        .values()
+        .find(|b| match &b.mode {
+            BindingMode::External { routing, .. } => match routing {
+                ExternalBindingRouting::TlsSni { host, .. } if *host == server_name => true,
+                _ => false,
+            },
+            _ => false,
+        })
+        .cloned();
+
+    let Some(binding) = binding else {
+        bail!("No binding found for TLS server name {server_name}");
+    };
+
+    let nested_protocol = match &binding.mode {
+        BindingMode::External { routing, .. } => match routing {
+            ExternalBindingRouting::TlsSni {
+                nested_protocol, ..
+            } => nested_protocol.clone(),
+            _ => bail!("No nested protocol found for TLS server name {server_name}"),
+        },
+        _ => bail!("No nested protocol found for TLS server name {server_name}"),
+    };
+
+    Ok((binding, nested_protocol))
+}
+
+async fn find_machine(
+    machine_agent: &Arc<MachineAgent>,
+    network_tag: &str,
+) -> Result<Arc<Machine>> {
+    machine_agent
+        .get_machine_by_network_tag(network_tag)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("No machine found for network tag {network_tag}"))
+}
+
+async fn get_machine_connection(
+    machine: &Arc<Machine>,
+    target_port: u16,
+    inactivity_timeout: Option<Duration>,
+) -> Result<TrafficAwareConnection> {
+    machine
+        .get_connection(target_port, inactivity_timeout)
+        .await
 }
 
 async fn internal_listener(
@@ -416,7 +542,7 @@ async fn internal_listener(
     let listener = TcpListener::bind(addr).await?;
 
     loop {
-        let (mut stream, _) = listener.accept().await?;
+        let (stream, _) = listener.accept().await?;
         let machine_agent = machine_agent.clone();
         let binding = binding.clone();
 
@@ -438,7 +564,7 @@ async fn internal_listener(
             let mut machine_connection = machine
                 .get_connection(
                     binding.target_port,
-                    Duration::from_secs(5), // inactivity timeout
+                    Some(Duration::from_secs(5)), // inactivity timeout
                 )
                 .await?;
 

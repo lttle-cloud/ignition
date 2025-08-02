@@ -7,7 +7,10 @@ use ignition::{
         image::ImageAgentConfig,
         machine::MachineAgentConfig,
         net::NetAgentConfig,
-        proxy::{BindingMode, ExternalBindingRouting, ProxyAgentConfig, ProxyBinding},
+        proxy::{
+            BindingMode, ExternalBindingRouting, ExternnalBindingRoutingTlsNestedProtocol,
+            ProxyAgentConfig, ProxyBinding,
+        },
         volume::VolumeAgentConfig,
     },
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
@@ -107,7 +110,8 @@ async fn main() -> Result<()> {
                 mode: BindingMode::External {
                     port: 443,
                     routing: ExternalBindingRouting::TlsSni {
-                        host: "alpha1.ovh-rbx.lttle.host".to_string(),
+                        host: "landing.alpha1.ovh-rbx.lttle.host".to_string(),
+                        nested_protocol: ExternnalBindingRoutingTlsNestedProtocol::Http,
                     },
                 },
             },
