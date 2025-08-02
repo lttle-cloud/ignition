@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use anyhow::{Result, anyhow, bail};
 use async_trait::async_trait;
@@ -359,20 +359,33 @@ impl Controller for MachineController {
                     None | Some(resources::machine::MachineMode::Regular) => MachineMode::Regular,
                     Some(resources::machine::MachineMode::Flash(strategy)) => match strategy {
                         resources::machine::MachineSnapshotStrategy::WaitForUserSpaceReady => {
-                            MachineMode::Flash(SnapshotStrategy::WaitForUserSpaceReady)
+                            MachineMode::Flash {
+                                snapshot_strategy: SnapshotStrategy::WaitForUserSpaceReady,
+                                suspend_timeout: Duration::from_secs(10),
+                            }
                         }
                         resources::machine::MachineSnapshotStrategy::WaitForFirstListen => {
-                            MachineMode::Flash(SnapshotStrategy::WaitForFirstListen)
+                            MachineMode::Flash {
+                                snapshot_strategy: SnapshotStrategy::WaitForFirstListen,
+                                suspend_timeout: Duration::from_secs(10),
+                            }
                         }
                         resources::machine::MachineSnapshotStrategy::WaitForNthListen(n) => {
-                            MachineMode::Flash(SnapshotStrategy::WaitForNthListen(n))
+                            MachineMode::Flash {
+                                snapshot_strategy: SnapshotStrategy::WaitForNthListen(n),
+                                suspend_timeout: Duration::from_secs(10),
+                            }
                         }
                         resources::machine::MachineSnapshotStrategy::WaitForListenOnPort(n) => {
-                            MachineMode::Flash(SnapshotStrategy::WaitForListenOnPort(n))
+                            MachineMode::Flash {
+                                snapshot_strategy: SnapshotStrategy::WaitForListenOnPort(n),
+                                suspend_timeout: Duration::from_secs(10),
+                            }
                         }
-                        resources::machine::MachineSnapshotStrategy::Manual => {
-                            MachineMode::Flash(SnapshotStrategy::Manual)
-                        }
+                        resources::machine::MachineSnapshotStrategy::Manual => MachineMode::Flash {
+                            snapshot_strategy: SnapshotStrategy::Manual,
+                            suspend_timeout: Duration::from_secs(10),
+                        },
                     },
                 };
 

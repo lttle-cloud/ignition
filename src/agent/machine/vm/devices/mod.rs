@@ -71,7 +71,9 @@ pub async fn setup_devices(
 
     let snapshot_strategy = match &machine_config.mode {
         MachineMode::Regular => None,
-        MachineMode::Flash(strategy) => Some(strategy.clone()),
+        MachineMode::Flash {
+            snapshot_strategy, ..
+        } => Some(snapshot_strategy.clone()),
     };
     let guest_manager = GuestManagerDevice::new(device_event_tx.clone(), snapshot_strategy);
 

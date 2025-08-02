@@ -17,7 +17,7 @@ use tokio::{
     net::TcpStream,
     sync::{Mutex, RwLock},
     task::JoinHandle,
-    time::{Duration as TokioDuration, sleep},
+    time::sleep,
 };
 use tracing::{info, warn};
 use vm_allocator::AddressAllocator;
@@ -49,6 +49,8 @@ use crate::{
     },
 };
 
+const CONNECTION_CHECK_INTERVAL: Duration = Duration::from_secs(3);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MachineState {
     Idle,
@@ -70,7 +72,10 @@ pub enum MachineStateRetentionMode {
 #[derive(Debug, Clone)]
 pub enum MachineMode {
     Regular,
-    Flash(SnapshotStrategy),
+    Flash {
+        snapshot_strategy: SnapshotStrategy,
+        suspend_timeout: Duration,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -126,8 +131,23 @@ pub enum MachineStopReason {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConnectionState {
-    Active,
-    Inactive,
+    Active,   // Strong reference - machine stays alive
+    Inactive, // Weak reference - machine can suspend
+}
+
+#[derive(Debug, Clone)]
+pub enum TrafficAwareMode {
+    Enabled { inactivity_timeout: Duration },
+    Disabled,
+}
+
+impl TrafficAwareMode {
+    pub fn inactivity_timeout(&self) -> Option<Duration> {
+        match self {
+            TrafficAwareMode::Enabled { inactivity_timeout } => Some(*inactivity_timeout),
+            TrafficAwareMode::Disabled => None,
+        }
+    }
 }
 
 pub struct TrafficAwareConnection {
@@ -135,75 +155,14 @@ pub struct TrafficAwareConnection {
     pub upstream_socket: TcpStream,
     state: Arc<RwLock<ConnectionState>>,
     last_activity: Arc<RwLock<Instant>>,
-    inactivity_timeout: Duration,
-}
-
-#[allow(unused)]
-pub struct Machine {
-    pub config: MachineConfig,
-    state: Arc<RwLock<MachineState>>,
-    state_change_rx: async_broadcast::Receiver<MachineState>,
-    state_change_tx: async_broadcast::Sender<MachineState>,
-    scheduler: Weak<Scheduler>,
-    first_boot_duration: Arc<RwLock<Option<Duration>>>,
-    last_start_time: Arc<RwLock<Option<Instant>>>,
-    last_ready_time: Arc<RwLock<Option<Instant>>>,
-
-    guest_memory: GuestMemoryMmap,
-    mmio_allocator: AddressAllocator,
-    kernel_start_address: GuestAddress,
-
-    vm_fd: Arc<VmFd>,
-    vcpu_event_rx: async_broadcast::Receiver<VcpuEvent>,
-    vcpu_event_tx: async_broadcast::Sender<VcpuEvent>,
-    vcpu_watcher_task: Mutex<Option<JoinHandle<()>>>,
-
-    vcpu_start_barrier: Arc<Barrier>,
-    idle_vcpus: Mutex<Vec<Vcpu>>,
-    running_vcpus: Mutex<Vec<RunningVcpuHandle>>,
-
-    device_event_rx: async_broadcast::Receiver<DeviceEvent>,
-    device_event_tx: async_broadcast::Sender<DeviceEvent>,
-    device_watcher_task: Mutex<Option<JoinHandle<()>>>,
-    devices: VmDevices,
-    event_manager_task: std::thread::JoinHandle<()>,
-    startup_lock: Mutex<()>,
-    connection_count: Mutex<u32>,
-    active_connection_count: Mutex<u32>,
-    suspend_timeout_task: Mutex<Option<JoinHandle<()>>>,
-}
-
-pub type MachineRef = Arc<Machine>;
-
-pub struct MachineConnection {
-    machine: MachineRef,
-    _phantom: std::marker::PhantomData<()>,
-}
-
-impl MachineConnection {
-    pub fn ip_address(&self) -> String {
-        self.machine.config.network.ip_address.clone()
-    }
-
-    pub fn machine(&self) -> &MachineRef {
-        &self.machine
-    }
-}
-
-impl Drop for MachineConnection {
-    fn drop(&mut self) {
-        let machine = Arc::clone(&self.machine);
-        tokio::spawn(async move {
-            machine.decrement_connection_count().await;
-        });
-    }
+    mode: TrafficAwareMode,
 }
 
 impl TrafficAwareConnection {
     pub async fn new(
         machine: MachineRef,
         target_port: u16,
-        inactivity_timeout: Duration,
+        mode: TrafficAwareMode,
     ) -> Result<Self> {
         let machine_ip = machine.config.network.ip_address.clone();
         let upstream_socket = TcpStream::connect(format!("{machine_ip}:{}", target_port)).await?;
@@ -216,7 +175,7 @@ impl TrafficAwareConnection {
             upstream_socket,
             state: Arc::new(RwLock::new(ConnectionState::Active)),
             last_activity: Arc::new(RwLock::new(Instant::now())),
-            inactivity_timeout,
+            mode,
         })
     }
 
@@ -282,14 +241,14 @@ impl TrafficAwareConnection {
                     }
                 }
 
-                // Check for inactivity periodically
-                _ = sleep(TokioDuration::from_secs(5)) => {
-                    self.check_inactivity().await;
+                _ = sleep(CONNECTION_CHECK_INTERVAL) => {
+                    if matches!(self.mode, TrafficAwareMode::Enabled { .. }) {
+                        self.check_inactivity().await;
+                    }
                 }
             }
         }
 
-        // Close both connections when either side closes
         let _ = client_stream.shutdown().await;
         let _ = self.upstream_socket.shutdown().await;
 
@@ -316,17 +275,18 @@ impl TrafficAwareConnection {
         let last_activity = self.last_activity.read().await;
         let elapsed = last_activity.elapsed();
 
-        if elapsed >= self.inactivity_timeout {
-            let mut state = self.state.write().await;
-            if *state == ConnectionState::Active {
-                // Transition from active to inactive
-                *state = ConnectionState::Inactive;
-                self.machine.decrement_active_connection_count().await;
-                info!(
-                    "Connection to machine '{}' became inactive (timeout: {}s)",
-                    self.machine.config.name,
-                    self.inactivity_timeout.as_secs()
-                );
+        if let Some(timeout) = self.mode.inactivity_timeout() {
+            if elapsed >= timeout {
+                let mut state = self.state.write().await;
+                if *state == ConnectionState::Active {
+                    *state = ConnectionState::Inactive;
+                    self.machine.decrement_active_connection_count().await;
+                    info!(
+                        "Connection to machine '{}' became inactive (timeout: {}s)",
+                        self.machine.config.name,
+                        timeout.as_secs()
+                    );
+                }
             }
         }
     }
@@ -386,9 +346,10 @@ impl TrafficAwareConnection {
                     }
                 }
 
-                // Check for inactivity periodically
-                _ = sleep(TokioDuration::from_secs(5)) => {
-                    self.check_inactivity().await;
+                _ = sleep(CONNECTION_CHECK_INTERVAL) => {
+                    if matches!(self.mode, TrafficAwareMode::Enabled { .. }) {
+                        self.check_inactivity().await;
+                    }
                 }
             }
         }
@@ -414,6 +375,43 @@ impl Drop for TrafficAwareConnection {
         });
     }
 }
+
+#[allow(unused)]
+pub struct Machine {
+    pub config: MachineConfig,
+    state: Arc<RwLock<MachineState>>,
+    state_change_rx: async_broadcast::Receiver<MachineState>,
+    state_change_tx: async_broadcast::Sender<MachineState>,
+    scheduler: Weak<Scheduler>,
+    first_boot_duration: Arc<RwLock<Option<Duration>>>,
+    last_start_time: Arc<RwLock<Option<Instant>>>,
+    last_ready_time: Arc<RwLock<Option<Instant>>>,
+
+    guest_memory: GuestMemoryMmap,
+    mmio_allocator: AddressAllocator,
+    kernel_start_address: GuestAddress,
+
+    vm_fd: Arc<VmFd>,
+    vcpu_event_rx: async_broadcast::Receiver<VcpuEvent>,
+    vcpu_event_tx: async_broadcast::Sender<VcpuEvent>,
+    vcpu_watcher_task: Mutex<Option<JoinHandle<()>>>,
+
+    vcpu_start_barrier: Arc<Barrier>,
+    idle_vcpus: Mutex<Vec<Vcpu>>,
+    running_vcpus: Mutex<Vec<RunningVcpuHandle>>,
+
+    device_event_rx: async_broadcast::Receiver<DeviceEvent>,
+    device_event_tx: async_broadcast::Sender<DeviceEvent>,
+    device_watcher_task: Mutex<Option<JoinHandle<()>>>,
+    devices: VmDevices,
+    event_manager_task: std::thread::JoinHandle<()>,
+    startup_lock: Mutex<()>,
+    connection_count: Mutex<u32>,
+    active_connection_count: Mutex<u32>,
+    suspend_timeout_task: Mutex<Option<JoinHandle<()>>>,
+}
+
+pub type MachineRef = Arc<Machine>;
 
 impl Machine {
     pub async fn new(
@@ -576,7 +574,6 @@ impl Machine {
             let mut rx = watcher_machine.vcpu_event_rx.clone();
             while let Ok(event) = rx.recv().await {
                 match event.event_type {
-                    // stop the machine in case any vcpu errors
                     VcpuEventType::Errored => {
                         watcher_machine.stop().await.ok();
                     }
@@ -587,7 +584,6 @@ impl Machine {
                         watcher_machine.suspend().await.ok();
                     }
                     VcpuEventType::Restarted => {
-                        // net handler event won't be sent again. instead we'll use the vcpu event to set ready state
                         watcher_machine.set_state(MachineState::Ready).await.ok();
                     }
                 }
@@ -604,7 +600,7 @@ impl Machine {
                         watcher_machine.set_state(MachineState::Ready).await.ok();
                     }
                     DeviceEvent::StopRequested => {
-                        if matches!(watcher_machine.config.mode, MachineMode::Flash(_)) {
+                        if matches!(watcher_machine.config.mode, MachineMode::Flash { .. }) {
                             watcher_machine.suspend().await.ok();
                         } else {
                             watcher_machine.stop().await.ok();
@@ -618,73 +614,7 @@ impl Machine {
         Ok(machine)
     }
 
-    /// Get a connection to this machine, starting it if necessary.
-    /// The machine will be kept alive while the connection is held.
-    /// When the connection is dropped, a 10-second timeout starts before suspension.
-    pub async fn get_connection(self: &Arc<Self>) -> Result<MachineConnection> {
-        let current_state = self.get_state().await;
-
-        // If already ready, increment connection count and return
-        if current_state == MachineState::Ready {
-            self.increment_connection_count().await;
-            return Ok(MachineConnection {
-                machine: Arc::clone(self),
-                _phantom: std::marker::PhantomData,
-            });
-        }
-
-        // If booting, wait for ready state then increment connection count
-        if current_state == MachineState::Booting {
-            self.wait_for_state(MachineState::Ready).await?;
-            self.increment_connection_count().await;
-            return Ok(MachineConnection {
-                machine: Arc::clone(self),
-                _phantom: std::marker::PhantomData,
-            });
-        }
-
-        // If not in a startable state, return error
-        if !matches!(
-            current_state,
-            MachineState::Idle | MachineState::Stopped | MachineState::Suspended
-        ) {
-            bail!("Machine can't be started from state: {:?}", current_state);
-        }
-
-        // Acquire startup lock to prevent multiple simultaneous startups
-        let _guard = self.startup_lock.lock().await;
-
-        // Check state again after acquiring lock
-        let state_after_lock = self.get_state().await;
-        if state_after_lock == MachineState::Ready {
-            self.increment_connection_count().await;
-            return Ok(MachineConnection {
-                machine: Arc::clone(self),
-                _phantom: std::marker::PhantomData,
-            });
-        }
-        if state_after_lock == MachineState::Booting {
-            self.wait_for_state(MachineState::Ready).await?;
-            self.increment_connection_count().await;
-            return Ok(MachineConnection {
-                machine: Arc::clone(self),
-                _phantom: std::marker::PhantomData,
-            });
-        }
-
-        // Start the machine and wait for ready state
-        self.start().await?;
-        self.wait_for_state(MachineState::Ready).await?;
-
-        // Increment connection count and return connection
-        self.increment_connection_count().await;
-        Ok(MachineConnection {
-            machine: Arc::clone(self),
-            _phantom: std::marker::PhantomData,
-        })
-    }
-
-    pub async fn get_traffic_aware_connection(
+    pub async fn get_connection(
         self: &Arc<Self>,
         target_port: u16,
         inactivity_timeout: Duration,
@@ -692,14 +622,22 @@ impl Machine {
         let current_state = self.get_state().await;
 
         if current_state == MachineState::Ready {
-            return TrafficAwareConnection::new(self.clone(), target_port, inactivity_timeout)
-                .await;
+            return TrafficAwareConnection::new(
+                self.clone(),
+                target_port,
+                TrafficAwareMode::Enabled { inactivity_timeout },
+            )
+            .await;
         }
 
         if current_state == MachineState::Booting {
             self.wait_for_state(MachineState::Ready).await?;
-            return TrafficAwareConnection::new(self.clone(), target_port, inactivity_timeout)
-                .await;
+            return TrafficAwareConnection::new(
+                self.clone(),
+                target_port,
+                TrafficAwareMode::Enabled { inactivity_timeout },
+            )
+            .await;
         }
 
         if !matches!(
@@ -713,19 +651,32 @@ impl Machine {
 
         let state_after_lock = self.get_state().await;
         if state_after_lock == MachineState::Ready {
-            return TrafficAwareConnection::new(self.clone(), target_port, inactivity_timeout)
-                .await;
+            return TrafficAwareConnection::new(
+                self.clone(),
+                target_port,
+                TrafficAwareMode::Enabled { inactivity_timeout },
+            )
+            .await;
         }
         if state_after_lock == MachineState::Booting {
             self.wait_for_state(MachineState::Ready).await?;
-            return TrafficAwareConnection::new(self.clone(), target_port, inactivity_timeout)
-                .await;
+            return TrafficAwareConnection::new(
+                self.clone(),
+                target_port,
+                TrafficAwareMode::Enabled { inactivity_timeout },
+            )
+            .await;
         }
 
         self.start().await?;
         self.wait_for_state(MachineState::Ready).await?;
 
-        TrafficAwareConnection::new(self.clone(), target_port, inactivity_timeout).await
+        TrafficAwareConnection::new(
+            self.clone(),
+            target_port,
+            TrafficAwareMode::Enabled { inactivity_timeout },
+        )
+        .await
     }
 
     async fn increment_connection_count(&self) {
@@ -813,7 +764,6 @@ impl Machine {
         }
     }
 
-    /// Start a 10-second timeout before suspending the machine
     async fn start_suspend_timeout(self: &Arc<Self>) {
         info!(
             "Setting suspend timeout for machine '{}' (10 seconds)",
@@ -822,7 +772,14 @@ impl Machine {
 
         let machine = Arc::clone(self);
         let timeout_task = tokio::spawn(async move {
-            sleep(TokioDuration::from_secs(10)).await;
+            let MachineMode::Flash {
+                suspend_timeout, ..
+            } = machine.config.mode.clone()
+            else {
+                return;
+            };
+
+            sleep(suspend_timeout).await;
 
             let count = machine.active_connection_count.lock().await;
             if *count == 0 {
@@ -830,13 +787,12 @@ impl Machine {
                     "Suspend timeout expired for machine '{}', active connection count: {}",
                     machine.config.name, *count
                 );
-                if matches!(machine.config.mode, MachineMode::Flash(_)) {
-                    if let Err(e) = machine.suspend().await {
-                        warn!(
-                            "Failed to suspend machine {} after timeout: {}",
-                            machine.config.name, e
-                        );
-                    }
+
+                if let Err(e) = machine.suspend().await {
+                    warn!(
+                        "Failed to suspend machine {} after timeout: {}",
+                        machine.config.name, e
+                    );
                 }
             } else {
                 info!(

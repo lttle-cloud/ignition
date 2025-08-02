@@ -323,7 +323,7 @@ async fn external_listener(
                     };
 
                     let mut machine_connection = machine
-                        .get_traffic_aware_connection(
+                        .get_connection(
                             binding.target_port,
                             Duration::from_secs(5), // inactivity timeout
                         )
@@ -385,7 +385,7 @@ async fn external_listener(
                     };
 
                     let mut machine_connection = machine
-                        .get_traffic_aware_connection(
+                        .get_connection(
                             binding.target_port,
                             Duration::from_secs(5), // inactivity timeout
                         )
@@ -436,7 +436,7 @@ async fn internal_listener(
             };
 
             let mut machine_connection = machine
-                .get_traffic_aware_connection(
+                .get_connection(
                     binding.target_port,
                     Duration::from_secs(5), // inactivity timeout
                 )
