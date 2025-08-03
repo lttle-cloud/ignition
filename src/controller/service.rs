@@ -13,6 +13,7 @@ use crate::{
             ProxyBinding,
         },
     },
+    constants::DEFAULT_TRAFFIC_AWARE_INACTIVITY_TIMEOUT_SECS,
     controller::{
         Controller, ReconcileNext,
         context::{ControllerContext, ControllerEvent, ControllerKey},
@@ -28,8 +29,6 @@ use crate::{
         },
     },
 };
-
-const DEFAULT_TRAFFIC_AWARE_INACTIVITY_TIMEOUT_SECS: u64 = 5;
 
 pub struct ServiceController;
 
