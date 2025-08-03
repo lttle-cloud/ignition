@@ -171,7 +171,7 @@ impl Controller for MachineController {
                     Some((stored_machine, status))
                 }
                 (Some(running_machine), None) => {
-                    let Some(_status) = ctx
+                    let Some(status) = ctx
                         .repository
                         .machine(ctx.tenant.clone())
                         .get_status(key.metadata())?
@@ -181,18 +181,35 @@ impl Controller for MachineController {
 
                     info!(
                         "cleaning up machine {} with status: {:?}",
-                        machine_name, _status
+                        machine_name, status
                     );
 
                     // we have a running machine but no stored machine. time to clean up
                     running_machine.stop().await?;
                     ctx.agent.machine().delete_machine(&machine_name).await?;
 
+                    // delete tap device
+                    if let Some(tap_name) = status.machine_tap {
+                        ctx.agent.net().device_delete(&tap_name).await?;
+                    }
+
+                    // delete associated ip reservation
+                    if let Some(ip) = status.machine_ip {
+                        ctx.agent
+                            .net()
+                            .ip_reservation_delete(IpReservationKind::VM, &ip)?;
+                    }
+
+                    // delete image volume
+                    if let Some(volume_id) = status.machine_image_volume_id {
+                        ctx.agent.volume().volume_delete(&volume_id).await?;
+                    }
+
                     ctx.repository
                         .machine(ctx.tenant.clone())
                         .delete_status(key.metadata())
                         .await?;
-                    // we don't have
+
                     None
                 }
                 (None, None) => {

@@ -132,6 +132,10 @@ impl NetAgent {
         self.device_unchecked(&name)
     }
 
+    pub async fn device_delete(&self, name: &str) -> Result<()> {
+        nl_device_delete(name).await
+    }
+
     pub async fn device(&self, name: &str) -> Result<NetDevice> {
         if !nl_device_exists(name).await? {
             device_create(name, &self.config.bridge_name).await?;

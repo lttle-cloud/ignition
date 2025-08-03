@@ -126,7 +126,10 @@ impl VolumeAgent {
             return Err(anyhow::anyhow!("Volume not found"));
         };
 
-        tokio::fs::remove_file(&volume.path).await?;
+        if volume.cloned_from.is_none() {
+            tokio::fs::remove_file(&volume.path).await?;
+        }
+        tokio::fs::remove_file(&volume.ov_path).await?;
 
         let key = Key::<Volume>::not_namespaced()
             .tenant(DEFAULT_AGENT_TENANT)
