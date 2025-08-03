@@ -26,9 +26,10 @@ pub async fn build_services(resources: &[ResourceBuildInfo]) -> Result<()> {
     src.push_str("        context::ServiceRequestContext,\n");
     src.push_str("        resource_service::{ResourceService, ResourceServiceRouter},\n");
     src.push_str("    },\n");
+    src.push_str("    constants::DEFAULT_NAMESPACE,\n");
     src.push_str("    resources::{Convert, ProvideMetadata},\n");
     src.push_str("    repository::Repository,\n");
-    src.push_str("    resources::metadata::{DEFAULT_NAMESPACE, Metadata, Namespace},\n");
+    src.push_str("    resources::metadata::{Metadata, Namespace},\n");
 
     // Add resource imports
     for resource in resources {
@@ -166,6 +167,11 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
         ));
         src.push_str("        ) -> impl IntoResponse {\n");
 
+        src.push_str(&format!(
+            "            let repo = state.repository.{}(ctx.tenant.clone());\n",
+            collection_name
+        ));
+
         // Check admission rules
         if resource
             .configuration
@@ -173,10 +179,6 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
             .contains(&AdmissionRule::DissalowPatchUpdate)
         {
             src.push_str("            // Check if resource already exists (DisallowPatchUpdate admission rule)\n");
-            src.push_str(&format!(
-                "            let repo = state.repository.{}(ctx.tenant.clone());\n",
-                collection_name
-            ));
             src.push_str("            let metadata = resource.metadata();\n");
             if namespaced {
                 src.push_str("            if let Ok(Some(_)) = repo.get(Namespace::from_value_or_default(metadata.namespace.clone()), metadata.name.clone()) {\n");

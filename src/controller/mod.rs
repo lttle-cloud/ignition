@@ -2,6 +2,7 @@ pub mod context;
 pub mod scheduler;
 
 pub mod machine;
+pub mod service;
 
 use anyhow::Result;
 use async_trait::async_trait;

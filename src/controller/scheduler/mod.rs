@@ -151,6 +151,29 @@ impl Scheduler {
                 )
                 .await?;
             }
+
+            let services = self
+                .repository
+                .service(tenant.clone())
+                .list(Namespace::Unspecified)?;
+            for service in services {
+                let metadata = service.metadata();
+
+                let key = ControllerKey::new(
+                    tenant.clone(),
+                    ResourceKind::Service,
+                    metadata.namespace.clone(),
+                    metadata.name.clone(),
+                );
+
+                info!("scheduled bringup for resource {}", key.to_string());
+
+                self.push(
+                    tenant.clone(),
+                    ControllerEvent::BringUp(ResourceKind::Service, metadata),
+                )
+                .await?;
+            }
         }
 
         Ok(())

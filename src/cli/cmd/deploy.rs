@@ -5,12 +5,15 @@ use clap::Args;
 use ignition::{
     api_client::ApiClient,
     resource_index::Resources,
-    resources::{ProvideMetadata, machine::Machine, metadata::Namespace},
+    resources::{ProvideMetadata, machine::Machine, metadata::Namespace, service::Service},
 };
 use tokio::fs::read_to_string;
 
 use crate::{
-    client::get_api_client, cmd::machine::MachineSummary, config::Config, ui::message::message_info,
+    client::get_api_client,
+    cmd::{machine::MachineSummary, service::ServiceSummary},
+    config::Config,
+    ui::message::message_info,
 };
 
 #[derive(Args)]
@@ -29,6 +32,11 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
     for resource in resources {
         if let Ok(machine) = resource.clone().try_into() {
             deploy_machine(config, &api_client, machine).await?;
+            continue;
+        }
+
+        if let Ok(service) = resource.clone().try_into() {
+            deploy_service(config, &api_client, service).await?;
             continue;
         }
 
@@ -68,6 +76,29 @@ async fn deploy_machine(_config: &Config, api_client: &ApiClient, machine: Machi
     ));
 
     let summary = MachineSummary::from((machine, status));
+    summary.print();
+
+    Ok(())
+}
+
+async fn deploy_service(_config: &Config, api_client: &ApiClient, service: Service) -> Result<()> {
+    let metadata = service.metadata();
+    api_client.service().apply(service).await?;
+
+    let (service, status) = api_client
+        .service()
+        .get(
+            Namespace::from_value_or_default(metadata.namespace),
+            metadata.name,
+        )
+        .await?;
+
+    message_info(format!(
+        "Successfully deployed service: {}",
+        service.metadata().to_string()
+    ));
+
+    let summary = ServiceSummary::from((service, status));
     summary.print();
 
     Ok(())

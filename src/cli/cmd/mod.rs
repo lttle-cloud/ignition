@@ -2,6 +2,7 @@ pub mod deploy;
 pub mod login;
 pub mod machine;
 pub mod namespace;
+pub mod service;
 
 use std::fs::File;
 
@@ -41,6 +42,10 @@ pub enum Command {
     #[command(subcommand)]
     Machine(MachineCommand),
 
+    /// Service management (short: svc)
+    #[command(subcommand, alias = "svc")]
+    Service(ServiceCommand),
+
     /// Install completions for your shell (run with root permissions)
     Completions {
         #[arg(value_enum)]
@@ -58,6 +63,20 @@ pub enum MachineCommand {
     Get(GetNamespacedArgs),
 
     /// Delete a machine (short: rm)
+    #[command(alias = "rm")]
+    Delete(DeleteNamespacedArgs),
+}
+
+#[derive(Subcommand)]
+pub enum ServiceCommand {
+    /// List services (short: ls)
+    #[command(alias = "ls")]
+    List(ListNamespacedArgs),
+
+    /// Get a service
+    Get(GetNamespacedArgs),
+
+    /// Delete a service (short: rm)
     #[command(alias = "rm")]
     Delete(DeleteNamespacedArgs),
 }
@@ -82,6 +101,11 @@ pub async fn run_cli(config: &Config) -> Result<()> {
             MachineCommand::List(args) => machine::run_machine_list(config, args).await,
             MachineCommand::Get(args) => machine::run_machine_get(config, args).await,
             MachineCommand::Delete(args) => machine::run_machine_delete(config, args).await,
+        },
+        Command::Service(cmd) => match cmd {
+            ServiceCommand::List(args) => service::run_service_list(config, args).await,
+            ServiceCommand::Get(args) => service::run_service_get(config, args).await,
+            ServiceCommand::Delete(args) => service::run_service_delete(config, args).await,
         },
         Command::Completions { shell } => {
             let mut cmd = Cli::command();

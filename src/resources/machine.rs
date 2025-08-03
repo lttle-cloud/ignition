@@ -26,7 +26,10 @@ mod machine {
         #[serde(rename = "regular")]
         Regular,
         #[serde(rename = "flash")]
-        Flash(MachineSnapshotStrategy),
+        Flash {
+            strategy: MachineSnapshotStrategy,
+            timeout: Option<u64>,
+        },
     }
 
     #[schema]

@@ -6,7 +6,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    agent::data::{Collections, DEFAULT_AGENT_TENANT},
+    agent::data::Collections,
+    constants::DEFAULT_AGENT_TENANT,
     machinery::store::{Key, PartialKey, Store},
 };
 

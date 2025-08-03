@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     agent::{
-        data::{Collections, DEFAULT_AGENT_TENANT},
+        data::Collections,
         net::{
             device::{
                 device_create, nl_device_delete, nl_device_exists, nl_device_list_with_prefix,
@@ -16,6 +16,7 @@ use crate::{
             ip_range::IpRange,
         },
     },
+    constants::DEFAULT_AGENT_TENANT,
     machinery::store::{Key, PartialKey, Store},
     utils::id::short_id,
 };

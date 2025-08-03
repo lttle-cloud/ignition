@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use ignition::resources::machine::{
-    MachineLatest, MachineMode, MachineSnapshotStrategy, MachineStatus,
+use ignition::{
+    constants::DEFAULT_SUSPEND_TIMEOUT_SECS,
+    resources::machine::{MachineLatest, MachineMode, MachineSnapshotStrategy, MachineStatus},
 };
 use meta::{summary, table};
 use ordinal::Ordinal;
@@ -58,6 +59,9 @@ pub struct MachineSummary {
     #[field(name = "snapshot strategy", cell_style = important)]
     snapshot_strategy: Option<String>,
 
+    #[field(name = "suspend timeout")]
+    suspend_timeout: Option<String>,
+
     #[field(name = "internal ip")]
     internal_ip: Option<String>,
 
@@ -106,22 +110,50 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
             _ => "flash".to_string(),
         };
 
-        let snapshot_strategy = match machine.mode {
-            Some(MachineMode::Flash(MachineSnapshotStrategy::Manual)) => Some("manual".to_string()),
-            Some(MachineMode::Flash(MachineSnapshotStrategy::WaitForUserSpaceReady)) => {
-                Some("user-space ready".to_string())
-            }
-            Some(MachineMode::Flash(MachineSnapshotStrategy::WaitForFirstListen)) => {
-                Some("first listen".to_string())
-            }
-            Some(MachineMode::Flash(MachineSnapshotStrategy::WaitForNthListen(n))) => {
-                Some(format!("{} listen", Ordinal(n)))
-            }
-            Some(MachineMode::Flash(MachineSnapshotStrategy::WaitForListenOnPort(port))) => {
-                Some(format!("listen on port {port}"))
-            }
-            _ => None,
+        let (snapshot_strategy, timeout) = match machine.mode {
+            Some(MachineMode::Flash {
+                strategy: MachineSnapshotStrategy::Manual,
+                timeout,
+            }) => (
+                Some("manual".to_string()),
+                Some(timeout.unwrap_or(DEFAULT_SUSPEND_TIMEOUT_SECS)),
+            ),
+            Some(MachineMode::Flash {
+                strategy: MachineSnapshotStrategy::WaitForUserSpaceReady,
+                timeout,
+            }) => (
+                Some("user-space ready".to_string()),
+                Some(timeout.unwrap_or(DEFAULT_SUSPEND_TIMEOUT_SECS)),
+            ),
+            Some(MachineMode::Flash {
+                strategy: MachineSnapshotStrategy::WaitForFirstListen,
+                timeout,
+            }) => (
+                Some("first listen".to_string()),
+                Some(timeout.unwrap_or(DEFAULT_SUSPEND_TIMEOUT_SECS)),
+            ),
+            Some(MachineMode::Flash {
+                strategy: MachineSnapshotStrategy::WaitForNthListen(n),
+                timeout,
+            }) => (
+                Some(format!("{} listen", Ordinal(n))),
+                Some(timeout.unwrap_or(DEFAULT_SUSPEND_TIMEOUT_SECS)),
+            ),
+            Some(MachineMode::Flash {
+                strategy: MachineSnapshotStrategy::WaitForListenOnPort(port),
+                timeout,
+            }) => (
+                Some(format!("listen on port {port}")),
+                Some(timeout.unwrap_or(DEFAULT_SUSPEND_TIMEOUT_SECS)),
+            ),
+            _ => (None, None),
         };
+
+        let timeout = timeout.map(|t| {
+            let duration = Duration::from_secs(t);
+            let duration = humantime::format_duration(duration);
+            duration.to_string()
+        });
 
         Self {
             name: machine.name,
@@ -135,6 +167,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
             memory: format!("{} MiB", machine.resources.memory),
             env,
             volumes: vec![],
+            suspend_timeout: timeout,
             hypervisor_machine_id: status.machine_id.clone(),
             hypervisor_root_volume_id: status.machine_image_volume_id.clone(),
             hypervisor_tap_device: status.machine_tap.clone(),

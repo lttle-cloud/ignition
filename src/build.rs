@@ -1,4 +1,5 @@
 mod build_utils;
+mod constants;
 mod machinery;
 mod resources;
 
@@ -11,8 +12,8 @@ pub async fn main() {
     resource::ResourcesBuilder::new()
         .resource_with_config::<resources::machine::Machine>(|cfg| {
             cfg.add_admission_rule(AdmissionRule::DissalowPatchUpdate)
-                .enable_generate_service_delete()
         })
+        .resource::<resources::service::Service>()
         .build()
         .await
         .expect("failed to build resources repository");

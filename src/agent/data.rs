@@ -1,5 +1,3 @@
-pub const DEFAULT_AGENT_TENANT: &str = "agent";
-
 pub enum Collections {
     ServiceIpReservation,
     VmIpReservation,

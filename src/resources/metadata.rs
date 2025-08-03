@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_NAMESPACE: &str = "default";
+use crate::constants::DEFAULT_NAMESPACE;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Namespace {

@@ -12,6 +12,7 @@ use crate::{
 pub mod core;
 pub mod machine;
 pub mod metadata;
+pub mod service;
 
 pub trait ConvertResource<T> {
     fn convert_up(this: Self) -> T;
@@ -101,7 +102,7 @@ impl ResourceConfiguration {
             generate_service_get: true,
             generate_service_list: true,
             generate_service_set: true,
-            generate_service_delete: false,
+            generate_service_delete: true,
             generate_service_get_status: true,
             admission_rules: vec![],
         }
@@ -127,8 +128,8 @@ impl ResourceConfiguration {
         self
     }
 
-    pub fn enable_generate_service_delete(mut self) -> Self {
-        self.generate_service_delete = true;
+    pub fn disable_generate_service_delete(mut self) -> Self {
+        self.generate_service_delete = false;
         self
     }
 

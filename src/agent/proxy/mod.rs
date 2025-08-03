@@ -37,6 +37,7 @@ pub struct ProxyAgentConfig {
     pub default_tls_key_path: String,
 }
 
+#[allow(unused)]
 pub struct ProxyAgent {
     config: ProxyAgentConfig,
     machine_agent: Arc<MachineAgent>,
@@ -48,12 +49,12 @@ pub struct ProxyAgent {
     servers: HashMap<(String, u16), ProxyServer>,
 }
 
+#[allow(unused)]
 struct ProxyServer {
     address: String,
     port: u16,
     task: JoinHandle<Result<()>>,
     proxy_mode: ProxyServerMode,
-    extensions: Vec<ProxyServerExtension>,
 }
 
 enum ProxyServerMode {
@@ -61,15 +62,12 @@ enum ProxyServerMode {
     External,
 }
 
-enum ProxyServerExtension {
-    PostgresTls,
-}
-
 #[derive(Clone, Debug)]
 pub struct ProxyBinding {
     pub target_network_tag: String,
     pub target_port: u16,
     pub mode: BindingMode,
+    pub inactivity_timeout: Option<Duration>,
 }
 
 #[derive(Clone, Debug)]
@@ -274,7 +272,6 @@ impl ProxyAgent {
                     port: server_key.1,
                     task,
                     proxy_mode,
-                    extensions: Vec::new(),
                 };
 
                 servers.insert(server_key, server);
@@ -342,7 +339,7 @@ async fn handle_http_connection(
     let binding = find_http_binding(&bindings, &target_host)?;
     let machine = find_machine(&machine_agent, &binding.target_network_tag).await?;
     let mut machine_connection =
-        get_machine_connection(&machine, binding.target_port, Some(Duration::from_secs(5))).await?;
+        get_machine_connection(&machine, binding.target_port, binding.inactivity_timeout).await?;
 
     info!(
         "Proxying HTTP connection from {} to machine on port {}",
@@ -445,7 +442,7 @@ async fn handle_tls_connection(
 
     let machine = find_machine(&machine_agent, &binding.target_network_tag).await?;
     let mut machine_connection =
-        get_machine_connection(&machine, binding.target_port, Some(Duration::from_secs(5))).await?;
+        get_machine_connection(&machine, binding.target_port, binding.inactivity_timeout).await?;
 
     info!(
         "Proxying TLS connection from {} to machine on port {}",
@@ -562,10 +559,7 @@ async fn internal_listener(
             };
 
             let mut machine_connection = machine
-                .get_connection(
-                    binding.target_port,
-                    Some(Duration::from_secs(5)), // inactivity timeout
-                )
+                .get_connection(binding.target_port, binding.inactivity_timeout)
                 .await?;
 
             info!(

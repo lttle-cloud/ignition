@@ -10,9 +10,10 @@ use tokio::task::spawn_blocking;
 
 use crate::{
     agent::{
-        data::{Collections, DEFAULT_AGENT_TENANT},
+        data::Collections,
         volume::{VolumeAgent, fs},
     },
+    constants::DEFAULT_AGENT_TENANT,
     machinery::store::{Key, PartialKey, Store},
     utils::time::now_millis,
 };

@@ -14,6 +14,7 @@ use crate::{
         },
         net::{IpReservationKind, compute_mac_for_ip},
     },
+    constants::DEFAULT_SUSPEND_TIMEOUT_SECS,
     controller::{
         Controller, ReconcileNext,
         context::{AsyncWork, ControllerContext, ControllerEvent, ControllerKey},
@@ -34,7 +35,7 @@ fn pull_image_job_key(reference: &Reference) -> String {
     format!("pull-image-{}", reference)
 }
 
-fn machine_name_from_key(key: &ControllerKey) -> String {
+pub fn machine_name_from_key(key: &ControllerKey) -> String {
     format!("{}-{}", key.tenant, key.metadata().to_string())
 }
 
@@ -357,36 +358,50 @@ impl Controller for MachineController {
 
                 let mode = match machine.mode {
                     None | Some(resources::machine::MachineMode::Regular) => MachineMode::Regular,
-                    Some(resources::machine::MachineMode::Flash(strategy)) => match strategy {
-                        resources::machine::MachineSnapshotStrategy::WaitForUserSpaceReady => {
-                            MachineMode::Flash {
-                                snapshot_strategy: SnapshotStrategy::WaitForUserSpaceReady,
-                                suspend_timeout: Duration::from_secs(10),
+                    Some(resources::machine::MachineMode::Flash { strategy, timeout }) => {
+                        match strategy {
+                            resources::machine::MachineSnapshotStrategy::WaitForUserSpaceReady => {
+                                MachineMode::Flash {
+                                    snapshot_strategy: SnapshotStrategy::WaitForUserSpaceReady,
+                                    suspend_timeout: Duration::from_secs(
+                                        timeout.unwrap_or(DEFAULT_SUSPEND_TIMEOUT_SECS),
+                                    ),
+                                }
+                            }
+                            resources::machine::MachineSnapshotStrategy::WaitForFirstListen => {
+                                MachineMode::Flash {
+                                    snapshot_strategy: SnapshotStrategy::WaitForFirstListen,
+                                    suspend_timeout: Duration::from_secs(
+                                        timeout.unwrap_or(DEFAULT_SUSPEND_TIMEOUT_SECS),
+                                    ),
+                                }
+                            }
+                            resources::machine::MachineSnapshotStrategy::WaitForNthListen(n) => {
+                                MachineMode::Flash {
+                                    snapshot_strategy: SnapshotStrategy::WaitForNthListen(n),
+                                    suspend_timeout: Duration::from_secs(
+                                        timeout.unwrap_or(DEFAULT_SUSPEND_TIMEOUT_SECS),
+                                    ),
+                                }
+                            }
+                            resources::machine::MachineSnapshotStrategy::WaitForListenOnPort(n) => {
+                                MachineMode::Flash {
+                                    snapshot_strategy: SnapshotStrategy::WaitForListenOnPort(n),
+                                    suspend_timeout: Duration::from_secs(
+                                        timeout.unwrap_or(DEFAULT_SUSPEND_TIMEOUT_SECS),
+                                    ),
+                                }
+                            }
+                            resources::machine::MachineSnapshotStrategy::Manual => {
+                                MachineMode::Flash {
+                                    snapshot_strategy: SnapshotStrategy::Manual,
+                                    suspend_timeout: Duration::from_secs(
+                                        timeout.unwrap_or(DEFAULT_SUSPEND_TIMEOUT_SECS),
+                                    ),
+                                }
                             }
                         }
-                        resources::machine::MachineSnapshotStrategy::WaitForFirstListen => {
-                            MachineMode::Flash {
-                                snapshot_strategy: SnapshotStrategy::WaitForFirstListen,
-                                suspend_timeout: Duration::from_secs(10),
-                            }
-                        }
-                        resources::machine::MachineSnapshotStrategy::WaitForNthListen(n) => {
-                            MachineMode::Flash {
-                                snapshot_strategy: SnapshotStrategy::WaitForNthListen(n),
-                                suspend_timeout: Duration::from_secs(10),
-                            }
-                        }
-                        resources::machine::MachineSnapshotStrategy::WaitForListenOnPort(n) => {
-                            MachineMode::Flash {
-                                snapshot_strategy: SnapshotStrategy::WaitForListenOnPort(n),
-                                suspend_timeout: Duration::from_secs(10),
-                            }
-                        }
-                        resources::machine::MachineSnapshotStrategy::Manual => MachineMode::Flash {
-                            snapshot_strategy: SnapshotStrategy::Manual,
-                            suspend_timeout: Duration::from_secs(10),
-                        },
-                    },
+                    }
                 };
 
                 let mac = compute_mac_for_ip(&ip)

@@ -3,20 +3,14 @@ use std::{path::Path, sync::Arc};
 use anyhow::Result;
 use ignition::{
     agent::{
-        Agent, AgentConfig,
-        image::ImageAgentConfig,
-        machine::MachineAgentConfig,
-        net::NetAgentConfig,
-        proxy::{
-            BindingMode, ExternalBindingRouting, ExternnalBindingRoutingTlsNestedProtocol,
-            ProxyAgentConfig, ProxyBinding,
-        },
-        volume::VolumeAgentConfig,
+        Agent, AgentConfig, image::ImageAgentConfig, machine::MachineAgentConfig,
+        net::NetAgentConfig, proxy::ProxyAgentConfig, volume::VolumeAgentConfig,
     },
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
     controller::{
         machine::MachineController,
         scheduler::{Scheduler, SchedulerConfig},
+        service::ServiceController,
     },
     machinery::store::Store,
     repository::Repository,
@@ -88,7 +82,10 @@ async fn main() -> Result<()> {
             repository.clone(),
             agent,
             SchedulerConfig { worker_count: 1 },
-            vec![MachineController::new_boxed()],
+            vec![
+                MachineController::new_boxed(),
+                ServiceController::new_boxed(),
+            ],
         );
 
         scheduler
@@ -97,27 +94,6 @@ async fn main() -> Result<()> {
     let repository = scheduler.repository.clone();
 
     let auth_handler = Arc::new(AuthHandler::new(TEMP_JWT_SECRET));
-
-    scheduler
-        .agent
-        .proxy()
-        .set_binding(
-            "landing-page",
-            ProxyBinding {
-                // target_network_tag: "test_tenant-default/caddy-test".to_string(),
-                target_network_tag: "test_tenant-default/landing-page".to_string(),
-                target_port: 80,
-                mode: BindingMode::External {
-                    port: 443,
-                    routing: ExternalBindingRouting::TlsSni {
-                        host: "landing.alpha1.ovh-rbx.lttle.host".to_string(),
-                        nested_protocol: ExternnalBindingRoutingTlsNestedProtocol::Http,
-                    },
-                },
-            },
-        )
-        .await
-        .expect("failed to add test proxy binding");
 
     let api_server = ApiServer::new(
         store.clone(),
@@ -130,7 +106,8 @@ async fn main() -> Result<()> {
         },
     )
     .add_service::<CoreService>()
-    .add_service::<services::MachineService>();
+    .add_service::<services::MachineService>()
+    .add_service::<services::ServiceService>();
 
     scheduler.start_workers();
     scheduler.schedule_bringup().await?;

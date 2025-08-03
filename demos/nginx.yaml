@@ -4,3 +4,14 @@ machine:
   resources:
     cpu: 1
     memory: 128
+---
+service:
+  name: nginx-test
+  target:
+    name: nginx-test
+    port: 80
+    protocol: http
+  bind:
+    external:
+      host: nginx.alpha1.ovh-rbx.lttle.host
+      protocol: https

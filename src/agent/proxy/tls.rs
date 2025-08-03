@@ -51,6 +51,7 @@ pub async fn load_cert_from_disk(
 }
 
 #[derive(Debug)]
+#[allow(unused)]
 pub struct ProxyTlsCertResolver {
     cert_pool: Arc<HashMap<String, Arc<CertifiedKey>>>,
     default_cert: Arc<CertifiedKey>,
