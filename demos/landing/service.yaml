@@ -1,0 +1,10 @@
+service:
+  name: landing-page
+  target:
+    name: landing-page
+    port: 80
+    protocol: http
+  bind:
+    external:
+      host: landing.alpha1.ovh-rbx.lttle.host
+      protocol: https

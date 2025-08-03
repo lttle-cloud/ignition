@@ -1,2 +1,6 @@
 [target.'cfg(all())']
 runner = [".cargo/runner.sh"]
+
+[alias]
+test-long = "test -- --ignored"
+test-all = "test -- --include-ignored"

@@ -1,0 +1,220 @@
+use std::{
+    borrow::{Borrow, BorrowMut},
+    sync::{Arc, Mutex},
+};
+
+use anyhow::{Result, anyhow, bail};
+use virtio_device::{VirtioConfig, VirtioDeviceActions, VirtioDeviceType, VirtioMmioDevice};
+use virtio_queue::{Queue, QueueT};
+use vm_device::{
+    MutDeviceMmio,
+    bus::{MmioAddress, MmioAddressOffset},
+    device_manager::IoManager,
+};
+use vm_memory::GuestMemoryMmap;
+
+use crate::agent::machine::{
+    machine::NetworkConfig,
+    vm::devices::virtio::{
+        Env, SingleFdSignalQueue,
+        features::{
+            VIRTIO_F_IN_ORDER, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_VERSION_1, VIRTIO_NET_F_CSUM,
+            VIRTIO_NET_F_GUEST_CSUM, VIRTIO_NET_F_GUEST_TSO4, VIRTIO_NET_F_GUEST_TSO6,
+            VIRTIO_NET_F_GUEST_UFO, VIRTIO_NET_F_HOST_TSO4, VIRTIO_NET_F_HOST_TSO6,
+            VIRTIO_NET_F_HOST_UFO, VIRTIO_NET_F_MAC,
+        },
+        mmio::VirtioMmioDeviceConfig,
+    },
+};
+
+use super::{
+    bindings,
+    handler::{NetHandler, QueueHandler},
+    tap::Tap,
+};
+
+const QUEUE_MAX_SIZE: u16 = 256;
+
+pub const VIRTIO_NET_HDR_SIZE: usize = 12;
+
+pub const NET_DEVICE_ID: u32 = 1;
+
+pub const RXQ_INDEX: u16 = 0;
+pub const TXQ_INDEX: u16 = 1;
+
+pub struct Net {
+    config: NetworkConfig,
+    device: VirtioMmioDeviceConfig,
+    memory: GuestMemoryMmap,
+    handler: Option<Arc<Mutex<QueueHandler>>>,
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Default, Copy, Clone)]
+struct VirtioNetConfig {
+    mac: [u8; 6],
+}
+
+impl VirtioNetConfig {
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                (self as *const Self) as *const u8,
+                std::mem::size_of::<Self>(),
+            )
+        }
+    }
+}
+
+fn mac_to_hw_addr(mac: &str) -> [u8; 6] {
+    let mut hw_addr = [0u8; 6];
+    let mac_bytes: Vec<u8> = mac
+        .split(':')
+        .map(|s| u8::from_str_radix(s, 16).unwrap())
+        .collect();
+    hw_addr.copy_from_slice(&mac_bytes);
+    hw_addr
+}
+
+impl Net {
+    pub fn new(
+        env: &mut Env,
+        io_manager: &mut IoManager,
+        config: NetworkConfig,
+    ) -> Result<Arc<Mutex<Self>>> {
+        let device_features: u64 = (1 << VIRTIO_F_VERSION_1)
+            | (1 << VIRTIO_F_RING_EVENT_IDX)
+            | (1 << VIRTIO_F_IN_ORDER)
+            | (1 << VIRTIO_NET_F_CSUM)
+            | (1 << VIRTIO_NET_F_GUEST_CSUM)
+            | (1 << VIRTIO_NET_F_GUEST_TSO4)
+            | (1 << VIRTIO_NET_F_GUEST_TSO6)
+            | (1 << VIRTIO_NET_F_GUEST_UFO)
+            | (1 << VIRTIO_NET_F_HOST_TSO4)
+            | (1 << VIRTIO_NET_F_HOST_TSO6)
+            | (1 << VIRTIO_NET_F_HOST_UFO)
+            | (1 << VIRTIO_NET_F_MAC);
+
+        let queues = vec![Queue::new(QUEUE_MAX_SIZE)?, Queue::new(QUEUE_MAX_SIZE)?];
+
+        let cfg = VirtioNetConfig {
+            mac: mac_to_hw_addr(&config.mac_address),
+        };
+
+        let virtio_cfg = VirtioConfig::new(device_features, queues, cfg.as_bytes().to_vec());
+
+        env.kernel_cmdline.insert_str(format!(
+            "ip={ip}::{gateway}:{netmask}::eth0:off",
+            ip = config.ip_address,
+            gateway = config.gateway,
+            netmask = config.netmask,
+        ))?;
+
+        let device = VirtioMmioDeviceConfig::new(virtio_cfg, env)?;
+
+        let net = Net {
+            config,
+            memory: env.mem.clone(),
+            device,
+            handler: None,
+        };
+        let net = Arc::new(Mutex::new(net));
+
+        env.register_mmio_device(io_manager, net.clone())?;
+
+        Ok(net)
+    }
+
+    pub fn finalize_activate(&mut self, handler: Arc<Mutex<QueueHandler>>) -> Result<()> {
+        self.device.finalize_activate(handler.clone())?;
+        self.handler = Some(handler);
+
+        Ok(())
+    }
+}
+
+impl VirtioDeviceType for Net {
+    fn device_type(&self) -> u32 {
+        NET_DEVICE_ID
+    }
+}
+
+impl Borrow<VirtioConfig<Queue>> for Net {
+    fn borrow(&self) -> &VirtioConfig<Queue> {
+        &self.device.virtio
+    }
+}
+impl BorrowMut<VirtioConfig<Queue>> for Net {
+    fn borrow_mut(&mut self) -> &mut VirtioConfig<Queue> {
+        &mut self.device.virtio
+    }
+}
+
+impl VirtioDeviceActions for Net {
+    type E = anyhow::Error;
+
+    fn activate(&mut self) -> Result<()> {
+        let Ok(tap) = Tap::open_named(&self.config.tap_device) else {
+            bail!("Failed to open tap device: {}", self.config.tap_device);
+        };
+
+        tap.set_offload(
+            bindings::TUN_F_CSUM
+                | bindings::TUN_F_UFO
+                | bindings::TUN_F_TSO4
+                | bindings::TUN_F_TSO6,
+        )
+        .map_err(|_| {
+            anyhow!(
+                "Failed to set offload flags for tap device: {}",
+                self.config.tap_device
+            )
+        })?;
+
+        tap.set_vnet_hdr_size(VIRTIO_NET_HDR_SIZE as i32)
+            .map_err(|_| {
+                anyhow!(
+                    "Failed to set vnet hdr size for tap device: {}",
+                    self.config.tap_device
+                )
+            })?;
+
+        let driver_notify = SingleFdSignalQueue {
+            irqfd: self.device.irqfd.clone(),
+            interrupt_status: self.device.virtio.interrupt_status.clone(),
+        };
+
+        let mut ioevents = self.device.prepare_activate()?;
+
+        let rxq = self.device.virtio.queues.remove(0);
+        let txq = self.device.virtio.queues.remove(0);
+
+        let handler = NetHandler::new(self.memory.clone(), driver_notify, rxq, txq, tap);
+
+        let handler = Arc::new(Mutex::new(QueueHandler {
+            inner: handler,
+            rx_ioevent: ioevents.remove(0),
+            tx_ioevent: ioevents.remove(0),
+        }));
+
+        self.finalize_activate(handler)?;
+
+        Ok(())
+    }
+
+    fn reset(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl VirtioMmioDevice for Net {}
+
+impl MutDeviceMmio for Net {
+    fn mmio_read(&mut self, _base: MmioAddress, offset: MmioAddressOffset, data: &mut [u8]) {
+        self.read(offset, data);
+    }
+
+    fn mmio_write(&mut self, _base: MmioAddress, offset: MmioAddressOffset, data: &[u8]) {
+        self.write(offset, data);
+    }
+}

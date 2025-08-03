@@ -1,0 +1,862 @@
+{
+  "services": [
+    {
+      "name": "Core",
+      "tag": "core",
+      "crate_path": "resources::core",
+      "namespaced": false,
+      "methods": [
+        {
+          "name": "me",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "me"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "Me"
+          }
+        },
+        {
+          "name": "list_namespaces",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "namespaces"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "ListNamespaces"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Machine",
+      "tag": "machine",
+      "crate_path": "resources::machine",
+      "namespaced": true,
+      "methods": [
+        {
+          "name": "get",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "machine"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": false,
+            "optional": false,
+            "names": [
+              "MachineV1",
+              "MachineStatus"
+            ]
+          }
+        },
+        {
+          "name": "list",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "machine"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": true,
+            "optional": false,
+            "names": [
+              "MachineV1",
+              "MachineStatus"
+            ]
+          }
+        },
+        {
+          "name": "delete",
+          "verb": "DELETE",
+          "path": [
+            {
+              "type": "static",
+              "value": "machine"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": null
+        },
+        {
+          "name": "apply",
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "machine"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "Machine"
+          },
+          "response": null
+        },
+        {
+          "name": "get_status",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "machine"
+            },
+            {
+              "type": "resource_name"
+            },
+            {
+              "type": "static",
+              "value": "status"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "MachineStatus"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Service",
+      "tag": "service",
+      "crate_path": "resources::service",
+      "namespaced": true,
+      "methods": [
+        {
+          "name": "get",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "service"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": false,
+            "optional": false,
+            "names": [
+              "ServiceV1",
+              "ServiceStatus"
+            ]
+          }
+        },
+        {
+          "name": "list",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "service"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": true,
+            "optional": false,
+            "names": [
+              "ServiceV1",
+              "ServiceStatus"
+            ]
+          }
+        },
+        {
+          "name": "delete",
+          "verb": "DELETE",
+          "path": [
+            {
+              "type": "static",
+              "value": "service"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": null
+        },
+        {
+          "name": "apply",
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "service"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "Service"
+          },
+          "response": null
+        },
+        {
+          "name": "get_status",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "service"
+            },
+            {
+              "type": "resource_name"
+            },
+            {
+              "type": "static",
+              "value": "status"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "ServiceStatus"
+          }
+        }
+      ]
+    }
+  ],
+  "defs": {
+    "ListNamespaces": {
+      "type": "object",
+      "properties": {
+        "namespaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Namespace"
+          }
+        }
+      },
+      "required": [
+        "namespaces"
+      ],
+      "title": "ListNamespaces",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "Namespace": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": "integer",
+              "format": "uint128",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "name",
+            "created_at"
+          ]
+        }
+      }
+    },
+    "Machine": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "machine": {
+              "$ref": "#/$defs/MachineV1"
+            }
+          },
+          "required": [
+            "machine"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "machine.v1": {
+              "$ref": "#/$defs/MachineV1"
+            }
+          },
+          "required": [
+            "machine.v1"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "MachineMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "regular"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "flash": {
+              "type": "object",
+              "properties": {
+                "strategy": {
+                  "$ref": "#/$defs/MachineSnapshotStrategy"
+                },
+                "timeout": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "strategy"
+              ]
+            }
+          },
+          "required": [
+            "flash"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "MachinePhase": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "idle",
+            "pulling-image",
+            "creating",
+            "booting",
+            "ready",
+            "suspending",
+            "suspended",
+            "stopping",
+            "stopped"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "message"
+              ]
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "MachineResources": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "memory": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "cpu",
+        "memory"
+      ]
+    },
+    "MachineSnapshotStrategy": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "first-listen",
+            "user-space-ready",
+            "manual"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "nth-listen": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "nth-listen"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "listen-on-port": {
+              "type": "integer",
+              "format": "uint16",
+              "minimum": 0,
+              "maximum": 65535
+            }
+          },
+          "required": [
+            "listen-on-port"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "MachineStatus": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "$ref": "#/$defs/MachinePhase"
+        },
+        "image_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image_resolved_reference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_ip": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_tap": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_image_volume_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_boot_time_us": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint128",
+          "minimum": 0
+        },
+        "first_boot_time_us": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint128",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "phase"
+      ]
+    },
+    "MachineV1": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "resources": {
+          "$ref": "#/$defs/MachineResources"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "env": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "image",
+        "resources"
+      ]
+    },
+    "Me": {
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant"
+      ],
+      "title": "Me",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "Namespace": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "integer",
+          "format": "uint128",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "created_at"
+      ],
+      "title": "Namespace",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "Service": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "service": {
+              "$ref": "#/$defs/ServiceV1"
+            }
+          },
+          "required": [
+            "service"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "service.v1": {
+              "$ref": "#/$defs/ServiceV1"
+            }
+          },
+          "required": [
+            "service.v1"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ServiceBind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "internal": {
+              "type": "object",
+              "properties": {
+                "port": {
+                  "description": "If not provided, the port will be inferred from target port.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint16",
+                  "minimum": 0,
+                  "maximum": 65535
+                }
+              }
+            }
+          },
+          "required": [
+            "internal"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "external": {
+              "type": "object",
+              "properties": {
+                "host": {
+                  "type": "string"
+                },
+                "port": {
+                  "description": "If not provided, the port will be inferred from protocol or target port.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint16",
+                  "minimum": 0,
+                  "maximum": 65535
+                },
+                "protocol": {
+                  "$ref": "#/$defs/ServiceBindExternalProtocol"
+                },
+                "certificate": {
+                  "description": "If not provided, the default certificate will be served.",
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/ServiceBindExternalCertificate"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "host",
+                "protocol"
+              ]
+            }
+          },
+          "required": [
+            "external"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ServiceBindExternalCertificate": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "ServiceBindExternalProtocol": {
+      "type": "string",
+      "enum": [
+        "http",
+        "https",
+        "tls"
+      ]
+    },
+    "ServiceStatus": {
+      "type": "object",
+      "properties": {
+        "service_ip": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "ServiceTarget": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "protocol": {
+          "$ref": "#/$defs/ServiceTargetProtocol"
+        },
+        "connection-tracking": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServiceTargetConnectionTracking"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "port",
+        "protocol"
+      ]
+    },
+    "ServiceTargetConnectionTracking": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "connection-aware"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "traffic-aware": {
+              "type": "object",
+              "properties": {
+                "inactivity-timeout": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": [
+            "traffic-aware"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ServiceTargetProtocol": {
+      "type": "string",
+      "enum": [
+        "http",
+        "tcp"
+      ]
+    },
+    "ServiceV1": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/ServiceTarget"
+        },
+        "bind": {
+          "$ref": "#/$defs/ServiceBind"
+        }
+      },
+      "required": [
+        "name",
+        "target",
+        "bind"
+      ]
+    }
+  }
+}

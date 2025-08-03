@@ -1,0 +1,6 @@
+machine:
+  name: caddy-test
+  image: caddy:latest
+  resources:
+    cpu: 1
+    memory: 256

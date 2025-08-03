@@ -1,4 +1,0 @@
-syntax = "proto3";
-package ignition.util;
-
-message Empty {}

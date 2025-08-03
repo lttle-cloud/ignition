@@ -4,6 +4,6 @@
         "editor.defaultFormatter": "tooltitudeteam.tooltitude-pb",
     },
     "yaml.schemas": {
-        "src/cli/schema.json": "demos/*.yaml"
+        "schemas/resources.json": "demos/**/*.yaml"
     },
 }

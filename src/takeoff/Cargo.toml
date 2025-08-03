@@ -1,15 +1,14 @@
 [package]
 name = "takeoff"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-nix = { version = "0.29.0", features = ["fs", "mman", "mount"] }
-util = { path = "../util" }
-ping = "0.5.2"
-axum = "0.8.1"
+takeoff-proto = { path = "../takeoff-proto" }
+tokio = { version = "1.47.0", features = ["full"] }
+nix = { version = "0.30.1", features = ["fs", "mman", "mount"] }
+anyhow = "1.0.98"
+tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
-mime_guess = "2.0.5"
+serde_json = "1.0.141"
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.140"
-clap = { version = "4.5.37", features = ["derive"] }

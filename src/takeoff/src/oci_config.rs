@@ -1,6 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
-use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
+use anyhow::{Error, bail};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 #[serde(rename_all = "PascalCase")]
@@ -147,5 +151,26 @@ where
             map.end()
         }
         None => serializer.serialize_none(),
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EnvVar {
+    pub key: String,
+    pub value: String,
+}
+
+impl FromStr for EnvVar {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.splitn(2, '=').collect();
+        if parts.len() != 2 {
+            bail!("invalid env var: {}", s);
+        }
+        Ok(EnvVar {
+            key: parts[0].to_string(),
+            value: parts[1].to_string(),
+        })
     }
 }

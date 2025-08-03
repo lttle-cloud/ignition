@@ -1,0 +1,83 @@
+use std::path::PathBuf;
+
+use anyhow::{Result, bail};
+use ignition::api_client::ApiClientConfig;
+use serde::{Deserialize, Serialize};
+use tokio::fs::{create_dir_all, read_to_string, write};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Config {
+    #[serde(skip_serializing, skip_deserializing)]
+    pub config_path: PathBuf,
+    pub api_url: Option<String>,
+    pub token: Option<String>,
+}
+
+impl Config {
+    pub async fn load() -> Result<Self> {
+        let config_path_env = std::env::var("LTTLE_CONFIG");
+        let config_path = if let Ok(path) = config_path_env {
+            &PathBuf::from(path)
+        } else {
+            let Some(project_dirs) = directories::ProjectDirs::from("cloud", "lttle", "lttle")
+            else {
+                bail!("Failed to get config dir");
+            };
+
+            let config_dir = project_dirs.config_dir();
+            if !config_dir.exists() {
+                create_dir_all(config_dir).await?;
+            };
+
+            &config_dir.join("config.toml")
+        };
+
+        if !config_path.exists() {
+            let config = Self {
+                config_path: config_path.clone(),
+                api_url: None,
+                token: None,
+            };
+
+            config.save().await?;
+
+            Ok(config)
+        } else {
+            let config_str = read_to_string(config_path).await?;
+            let mut config: Self = toml::from_str(&config_str)?;
+            config.config_path = config_path.clone();
+
+            Ok(config)
+        }
+    }
+
+    pub async fn save(&self) -> Result<()> {
+        let config_str = toml::to_string_pretty(&self)?;
+        write(&self.config_path, config_str).await?;
+
+        Ok(())
+    }
+}
+
+impl TryInto<ApiClientConfig> for &Config {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<ApiClientConfig, Self::Error> {
+        let Some(api_addr) = &self.api_url else {
+            bail!(
+                "No API address found in config. Please make sure you have configured your CLI with `lttle login`"
+            );
+        };
+
+        let Some(token) = &self.token else {
+            bail!(
+                "No token found in config. Please make sure you have configured your CLI with `lttle login`"
+            );
+        };
+
+        Ok(ApiClientConfig {
+            base_url: api_addr.clone(),
+            token: token.clone(),
+        })
+    }
+}
