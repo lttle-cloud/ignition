@@ -9,14 +9,20 @@ echo "net.ipv4.ip_forward = 1" | sudo tee /etc/sysctl.d/99-sysctl.conf
 sudo nft add table ip nat
 
 # Postrouting chain: masquerade 10.0.0.0/16 → enp6s0
-sudo nft 'add chain ip nat POSTROUTING { type nat hook postrouting priority 100 \; }'
+sudo nft 'add chain ip nat POSTROUTING { type nat hook postrouting priority 100; }'
 sudo nft 'add rule ip nat POSTROUTING ip saddr 10.0.0.0/16 oifname "enp6s0" masquerade'
 
 # Create a `filter` table
 sudo nft add table ip filter
 
 # Forward chain: DROP by default
-sudo nft 'add chain ip filter FORWARD { type filter hook forward priority 0 \; policy drop \; }'
+sudo nft 'add chain ip filter FORWARD { type filter hook forward priority 0; policy drop; }'
+
+# Create bridge
+sudo ip link add ltbr0 type bridge
+
+# Bring it up
+sudo ip link set ltbr0 up
 
 # 4.1 Allow VM→Internet (ltbr0 → enp6s0)
 sudo nft 'add rule ip filter FORWARD iif "ltbr0" oif "enp6s0" accept'
