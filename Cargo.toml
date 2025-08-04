@@ -90,6 +90,9 @@ tokio-rustls = "0.26.2"
 rustls-pemfile = "2.2.0"
 hyper = "1.6.0"
 hyper-util = "0.1.16"
+hickory-server = "0.24"
+hickory-resolver = "0.24"
+hickory-proto = "0.24"
 
 [build-dependencies]
 meta = { path = "meta" }

@@ -3,8 +3,9 @@ use std::{path::Path, sync::Arc};
 use anyhow::Result;
 use ignition::{
     agent::{
-        Agent, AgentConfig, image::ImageAgentConfig, machine::MachineAgentConfig,
-        net::NetAgentConfig, proxy::ProxyAgentConfig, volume::VolumeAgentConfig,
+        Agent, AgentConfig, dns::config::DnsAgentConfig, image::ImageAgentConfig,
+        machine::MachineAgentConfig, net::NetAgentConfig, proxy::ProxyAgentConfig,
+        volume::VolumeAgentConfig,
     },
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
     controller::{
@@ -68,6 +69,11 @@ async fn main() -> Result<()> {
                                 default_tls_cert_path: "./certs/server.cert".to_string(),
                                 default_tls_key_path: "./certs/server.key".to_string(),
                                 evergreen_external_ports: vec![80, 443],
+                            },
+                            dns_config: DnsAgentConfig {
+                                bind_address: "10.0.1.1:53".to_string(),
+                                zone_suffix: "lttle.local".to_string(),
+                                default_ttl: 300,
                             },
                         },
                         agent_scheduler,
