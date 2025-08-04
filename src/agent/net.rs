@@ -158,30 +158,37 @@ impl NetAgent {
         kind: IpReservationKind,
         tag: Option<String>,
     ) -> Result<IpReservation> {
-        let ip = match kind {
-            IpReservationKind::VM => self.vm_ip_range.random(),
-            IpReservationKind::Service => self.service_ip_range.random(),
+        let ip_range = match kind {
+            IpReservationKind::VM => &self.vm_ip_range,
+            IpReservationKind::Service => &self.service_ip_range,
         };
 
-        let collection = match kind {
-            IpReservationKind::VM => Collections::VmIpReservation,
-            IpReservationKind::Service => Collections::ServiceIpReservation,
-        };
+        loop {
+            let ip = ip_range.random();
 
-        let key = Key::<IpReservation>::not_namespaced()
-            .tenant(DEFAULT_AGENT_TENANT)
-            .collection(collection)
-            .key(ip.to_string());
+            let collection = match kind {
+                IpReservationKind::VM => Collections::VmIpReservation,
+                IpReservationKind::Service => Collections::ServiceIpReservation,
+            };
 
-        let reservation = IpReservation {
-            kind,
-            ip: ip.to_string(),
-            tag,
-        };
+            let key = Key::<IpReservation>::not_namespaced()
+                .tenant(DEFAULT_AGENT_TENANT)
+                .collection(collection)
+                .key(ip.to_string());
 
-        self.store.put(&key, &reservation)?;
+            if self.store.get::<IpReservation>(&key)?.is_some() {
+                continue;
+            }
 
-        Ok(reservation)
+            let reservation = IpReservation {
+                kind,
+                ip: ip.to_string(),
+                tag,
+            };
+
+            self.store.put(&key, &reservation)?;
+            return Ok(reservation);
+        }
     }
 
     pub fn ip_reservation_list(&self, kind: IpReservationKind) -> Result<Vec<IpReservation>> {
