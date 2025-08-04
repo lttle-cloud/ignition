@@ -50,14 +50,21 @@ impl IpRange {
 
     pub fn random(&self) -> Ipv4Addr {
         let mut rng = rand::rng();
-        let mut ip = self.net;
-        ip = (ip & self.mask) | (rng.random_range(0..=u32::MAX) & !self.mask);
-        Ipv4Addr::new(
-            ((ip >> 24) & 0xff) as u8,
-            ((ip >> 16) & 0xff) as u8,
-            ((ip >> 8) & 0xff) as u8,
-            (ip & 0xff) as u8,
-        )
+        let gateway_u32 = (self.net & self.mask) | 1; // Gateway is always .1
+
+        loop {
+            let mut ip = self.net;
+            ip = (ip & self.mask) | (rng.random_range(0..=u32::MAX) & !self.mask);
+
+            if ip != gateway_u32 {
+                return Ipv4Addr::new(
+                    ((ip >> 24) & 0xff) as u8,
+                    ((ip >> 16) & 0xff) as u8,
+                    ((ip >> 8) & 0xff) as u8,
+                    (ip & 0xff) as u8,
+                );
+            }
+        }
     }
 
     pub fn gateway(&self) -> Ipv4Addr {
