@@ -23,6 +23,7 @@ use crate::{
     },
     controller::scheduler::Scheduler,
     machinery::store::Store,
+    repository::Repository,
 };
 
 #[derive(Debug, Clone)]
@@ -47,7 +48,11 @@ pub struct Agent {
 }
 
 impl Agent {
-    pub async fn new(config: AgentConfig, scheduler: Weak<Scheduler>) -> Result<Self> {
+    pub async fn new(
+        config: AgentConfig,
+        scheduler: Weak<Scheduler>,
+        repository: Arc<Repository>,
+    ) -> Result<Self> {
         let store = Arc::new(Store::new(&config.store_path).await?);
 
         let net = Arc::new(NetAgent::new(config.net_config.clone(), store.clone()).await?);
@@ -65,11 +70,12 @@ impl Agent {
 
         let dns = DnsAgent::new(
             config.dns_config.clone(),
-            store.clone(),
             net.clone(),
             machine.clone(),
-        ).await?;
-        
+            repository,
+        )
+        .await?;
+
         // Start the DNS server
         dns.start().await?;
 

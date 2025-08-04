@@ -38,6 +38,7 @@ async fn main() -> Result<()> {
         let repository = Arc::new(Repository::new(store.clone(), scheduler_weak.clone()));
 
         let agent_scheduler = scheduler_weak.clone();
+        let repository_clone = repository.clone();
 
         let agent = block_in_place(move || {
             runtime::Handle::current().block_on(async {
@@ -77,6 +78,7 @@ async fn main() -> Result<()> {
                             },
                         },
                         agent_scheduler,
+                        repository_clone,
                     )
                     .await
                     .expect("Failed to create agent"))

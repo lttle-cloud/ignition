@@ -54,6 +54,7 @@ pub struct IpReservation {
     pub kind: IpReservationKind,
     pub ip: String,
     pub tag: Option<String>,
+    pub tenant: String,
 }
 
 pub fn compute_mac_for_ip(ip: &str) -> Result<String> {
@@ -157,6 +158,7 @@ impl NetAgent {
         &self,
         kind: IpReservationKind,
         tag: Option<String>,
+        tenant: Option<String>,
     ) -> Result<IpReservation> {
         let ip_range = match kind {
             IpReservationKind::VM => &self.vm_ip_range,
@@ -184,6 +186,7 @@ impl NetAgent {
                 kind,
                 ip: ip.to_string(),
                 tag,
+                tenant: tenant.unwrap_or_else(|| DEFAULT_AGENT_TENANT.to_string()),
             };
 
             self.store.put(&key, &reservation)?;
@@ -225,6 +228,30 @@ impl NetAgent {
 
         Ok(())
     }
+
+    pub fn find_tenant_by_ip(&self, ip: impl AsRef<str>) -> Result<Option<String>> {
+        let ip_str = ip.as_ref();
+
+        let vm_key = Key::<IpReservation>::not_namespaced()
+            .tenant(DEFAULT_AGENT_TENANT)
+            .collection(Collections::VmIpReservation)
+            .key(ip_str.to_string());
+
+        if let Some(reservation) = self.store.get::<IpReservation>(&vm_key)? {
+            return Ok(Some(reservation.tenant));
+        }
+
+        let service_key = Key::<IpReservation>::not_namespaced()
+            .tenant(DEFAULT_AGENT_TENANT)
+            .collection(Collections::ServiceIpReservation)
+            .key(ip_str.to_string());
+
+        if let Some(reservation) = self.store.get::<IpReservation>(&service_key)? {
+            return Ok(Some(reservation.tenant));
+        }
+
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
@@ -253,7 +280,7 @@ mod tests {
         let agent = create_test_agent(store_dir.path()).await;
 
         let ip = agent
-            .ip_reservation_create(IpReservationKind::VM, None)
+            .ip_reservation_create(IpReservationKind::VM, None, None)
             .unwrap();
 
         assert_eq!(ip.kind, IpReservationKind::VM);
@@ -271,10 +298,10 @@ mod tests {
         let agent = create_test_agent(store_dir.path()).await;
 
         let ip = agent
-            .ip_reservation_create(IpReservationKind::VM, None)
+            .ip_reservation_create(IpReservationKind::VM, None, None)
             .unwrap();
         let ip2 = agent
-            .ip_reservation_create(IpReservationKind::VM, None)
+            .ip_reservation_create(IpReservationKind::VM, None, None)
             .unwrap();
 
         let ips = agent.ip_reservation_list(IpReservationKind::VM).unwrap();
