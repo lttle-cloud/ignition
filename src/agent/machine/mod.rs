@@ -28,18 +28,21 @@ pub struct MachineAgent {
 }
 
 impl MachineAgent {
-    pub fn new(config: MachineAgentConfig, scheduler: Weak<Scheduler>) -> Self {
-        Self {
+    pub async fn new(config: MachineAgentConfig, scheduler: Weak<Scheduler>) -> Result<Self> {
+        if !config.transient_state_path.exists() {
+            tokio::fs::create_dir_all(&config.transient_state_path).await?;
+        }
+
+        Ok(Self {
             config,
             scheduler,
             machines: Arc::new(HashMap::new()),
-        }
+        })
     }
 
     pub fn transient_dir(&self, rel: impl AsRef<Path>) -> String {
-        let mut path = self.config.transient_state_path.clone();
-        path.push("machines");
-        path.push(rel);
+        let path = self.config.transient_state_path.clone().join(rel);
+        println!("transient_dir: {:?}", path);
         path.to_string_lossy().to_string()
     }
 
