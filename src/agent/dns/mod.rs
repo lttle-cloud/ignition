@@ -1,47 +1,31 @@
 pub mod config;
 mod handler;
 
-use std::{
-    collections::HashMap,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
-};
+use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::{Result, bail};
-use hickory_proto::{
-    op::{Header, MessageType, OpCode, ResponseCode},
-    rr::{DNSClass, Name, RData, Record, RecordType},
-};
-use hickory_server::{
-    ServerFuture,
-    authority::MessageResponseBuilder,
-    server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
-};
-use papaya::HashMap as PapayaHashMap;
+use hickory_server::ServerFuture;
 use tokio::{net::UdpSocket, spawn, sync::Mutex, task::JoinHandle};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::{
     agent::{dns::config::DnsAgentConfig, machine::MachineAgent, net::NetAgent},
-    constants::DEFAULT_AGENT_TENANT,
-    machinery::store::Store,
     repository::Repository,
-    resources::metadata::Metadata,
 };
 
 pub struct DnsAgent {
     config: DnsAgentConfig,
-    store: Arc<Store>,
     net_agent: Arc<NetAgent>,
     machine_agent: Arc<MachineAgent>,
+    repository: Arc<Repository>,
     server_task: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 struct DnsHandler {
-    store: Arc<Store>,
+    net_agent: Arc<NetAgent>,
     machine_agent: Arc<MachineAgent>,
+    repository: Arc<Repository>,
     default_ttl: u32,
-    service_cache: Arc<PapayaHashMap<String, ServiceDnsEntry>>,
 }
 
 #[derive(Clone, Debug)]
@@ -55,15 +39,15 @@ struct ServiceDnsEntry {
 impl DnsAgent {
     pub async fn new(
         config: DnsAgentConfig,
-        store: Arc<Store>,
         net_agent: Arc<NetAgent>,
         machine_agent: Arc<MachineAgent>,
+        repository: Arc<Repository>,
     ) -> Result<Arc<Self>> {
         Ok(Arc::new(Self {
             config,
-            store,
             net_agent,
             machine_agent,
+            repository,
             server_task: Arc::new(Mutex::new(None)),
         }))
     }
@@ -78,10 +62,10 @@ impl DnsAgent {
         info!("Starting DNS server on {}", bind_addr);
 
         let handler = DnsHandler {
-            store: self.store.clone(),
+            net_agent: self.net_agent.clone(),
             machine_agent: self.machine_agent.clone(),
+            repository: self.repository.clone(),
             default_ttl: self.config.default_ttl,
-            service_cache: Arc::new(PapayaHashMap::new()),
         };
 
         let mut server = ServerFuture::new(handler);

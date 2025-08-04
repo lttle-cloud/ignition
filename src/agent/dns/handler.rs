@@ -1,8 +1,8 @@
-use std::{net::Ipv4Addr, sync::Arc};
+use std::net::Ipv4Addr;
 
 use hickory_proto::{
-    op::{Header, MessageType, OpCode, ResponseCode},
-    rr::{DNSClass, Name, RData, Record, RecordType, rdata::A},
+    op::{MessageType, OpCode, ResponseCode},
+    rr::{RData, Record, RecordType, rdata::A},
 };
 use hickory_server::{
     authority::MessageResponseBuilder,
@@ -10,10 +10,7 @@ use hickory_server::{
 };
 use tracing::{debug, warn};
 
-use crate::{
-    agent::machine::MachineAgent, constants::DEFAULT_AGENT_TENANT, machinery::store::Store,
-    repository::Repository, resources::metadata::Metadata,
-};
+use crate::resources::{Convert, metadata::Metadata};
 
 use super::{DnsHandler, ServiceDnsEntry};
 
@@ -34,19 +31,18 @@ impl DnsSubdomain {
 }
 
 impl DnsHandler {
-    async fn resolve_service(&self, name: &str, namespace: &str) -> Option<ServiceDnsEntry> {
-        let tenant = DEFAULT_AGENT_TENANT;
-        let cache_key = format!("{}.{}.{}", name, namespace, tenant);
+    async fn find_tenant_by_ip(&self, ip: &str) -> Option<String> {
+        self.net_agent.find_tenant_by_ip(ip).ok().flatten()
+    }
 
-        // Check cache first
-        let guard = self.service_cache.guard();
-        if let Some(entry) = self.service_cache.get(&cache_key, &guard) {
-            return Some(entry.clone());
-        }
-
+    async fn resolve_service(
+        &self,
+        name: &str,
+        namespace: &str,
+        tenant: &str,
+    ) -> Option<ServiceDnsEntry> {
         // Look up service in repository
-        let repository = Repository::new(self.store.clone(), std::sync::Weak::new());
-        let service_repo = repository.service(tenant.to_string());
+        let service_repo = self.repository.service(tenant.to_string());
 
         let metadata = Metadata {
             name: name.to_string(),
@@ -66,17 +62,13 @@ impl DnsHandler {
                 port: service.target.port,
             };
 
-            // Update cache
-            let guard = self.service_cache.guard();
-            self.service_cache.insert(cache_key, entry.clone(), &guard);
             return Some(entry);
         }
 
         None
     }
 
-    async fn resolve_machine(&self, name: &str, namespace: &str) -> Option<String> {
-        let tenant = DEFAULT_AGENT_TENANT;
+    async fn resolve_machine(&self, name: &str, namespace: &str, tenant: &str) -> Option<String> {
         // Look up machine by network tag
         let network_tag = format!("{}-{}-{}", tenant, namespace, name);
 
@@ -96,7 +88,28 @@ impl DnsHandler {
         let name = query.name();
         let record_type = query.query_type();
 
-        debug!("DNS query: {} {:?}", name, record_type);
+        // Get source IP to determine tenant
+        let src_ip = match request.src() {
+            std::net::SocketAddr::V4(addr) => addr.ip().to_string(),
+            std::net::SocketAddr::V6(addr) => {
+                debug!("IPv6 source address not supported: {}", addr);
+                return vec![];
+            }
+        };
+
+        // Find tenant from source IP
+        let tenant = match self.find_tenant_by_ip(&src_ip).await {
+            Some(t) => t,
+            None => {
+                debug!("No tenant found for source IP: {}", src_ip);
+                return vec![];
+            }
+        };
+
+        debug!(
+            "DNS query from tenant {}: {} {:?}",
+            tenant, name, record_type
+        );
 
         // Only handle A record queries for now
         if record_type != RecordType::A {
@@ -122,13 +135,14 @@ impl DnsHandler {
                     match subdomain {
                         DnsSubdomain::Service => {
                             // Service query: <service>.<namespace>.svc.lttle.local
-                            if let Some(entry) =
-                                self.resolve_service(resource_name, namespace).await
+                            if let Some(entry) = self
+                                .resolve_service(resource_name, namespace, &tenant)
+                                .await
                             {
                                 if let Some(service_ip) = entry.service_ip {
                                     if let Ok(ip) = service_ip.parse::<Ipv4Addr>() {
                                         return vec![Record::from_rdata(
-                                            name.clone(),
+                                            name.clone().into(),
                                             self.default_ttl,
                                             RData::A(A(ip)),
                                         )];
@@ -138,12 +152,13 @@ impl DnsHandler {
                         }
                         DnsSubdomain::Machine => {
                             // Machine query: <machine>.<namespace>.machine.lttle.local
-                            if let Some(machine_ip) =
-                                self.resolve_machine(resource_name, namespace).await
+                            if let Some(machine_ip) = self
+                                .resolve_machine(resource_name, namespace, &tenant)
+                                .await
                             {
                                 if let Ok(ip) = machine_ip.parse::<Ipv4Addr>() {
                                     return vec![Record::from_rdata(
-                                        name.clone(),
+                                        name.clone().into(),
                                         self.default_ttl,
                                         RData::A(A(ip)),
                                     )];
@@ -166,38 +181,40 @@ impl RequestHandler for DnsHandler {
         request: &Request,
         mut response_handle: R,
     ) -> ResponseInfo {
-        let mut response = MessageResponseBuilder::from_message_request(request);
+        let response = MessageResponseBuilder::from_message_request(request);
 
-        match request.message_type() {
-            MessageType::Query => match request.op_code() {
-                OpCode::Query => {
-                    let answers = self.handle_query(request).await;
+        if request.message_type() == MessageType::Query && request.op_code() == OpCode::Query {
+            let answers = self.handle_query(request).await;
 
-                    if answers.is_empty() {
-                        response.error_msg(request.header(), ResponseCode::NXDomain);
-                    } else {
-                        for answer in answers {
-                            response.answers(answer);
-                        }
-                    }
-                }
-                _ => {
-                    response.error_msg(request.header(), ResponseCode::NotImp);
-                }
-            },
-            _ => {
-                response.error_msg(request.header(), ResponseCode::NotImp);
+            if answers.is_empty() {
+                let response_message = response.error_msg(request.header(), ResponseCode::NXDomain);
+                response_handle
+                    .send_response(response_message)
+                    .await
+                    .map_err(|e| warn!("Error sending DNS response: {}", e))
+                    .ok()
+                    .expect("DNS response handler should return ResponseInfo")
+            } else {
+                let mut header = *request.header();
+                header.set_response_code(ResponseCode::NoError);
+                header.set_answer_count(answers.len() as u16);
+
+                let response_message = response.build(header, answers.iter(), &[], &[], &[]);
+                response_handle
+                    .send_response(response_message)
+                    .await
+                    .map_err(|e| warn!("Error sending DNS response: {}", e))
+                    .ok()
+                    .expect("DNS response handler should return ResponseInfo")
             }
-        }
-
-        let response_message = response.build_no_records(ResponseCode::NoError);
-
-        match response_handle.send_response(response_message).await {
-            Ok(info) => info,
-            Err(e) => {
-                warn!("Error sending DNS response: {}", e);
-                ResponseInfo::empty()
-            }
+        } else {
+            let response_message = response.error_msg(request.header(), ResponseCode::NotImp);
+            response_handle
+                .send_response(response_message)
+                .await
+                .map_err(|e| warn!("Error sending DNS response: {}", e))
+                .ok()
+                .expect("DNS response handler should return ResponseInfo")
         }
     }
 }
