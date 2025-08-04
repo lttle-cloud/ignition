@@ -84,83 +84,21 @@
         }
       ]
     },
-    "ServiceTargetProtocol": {
-      "type": "string",
-      "enum": [
-        "http",
-        "tcp"
-      ]
-    },
-    "ServiceV1": {
+    "ServiceBindExternalCertificate": {
       "type": "object",
       "properties": {
-        "tags": {
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "string"
-          }
+        "name": {
+          "type": "string"
         },
         "namespace": {
           "type": [
             "string",
             "null"
           ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "target": {
-          "$ref": "#/$defs/ServiceTarget"
-        },
-        "bind": {
-          "$ref": "#/$defs/ServiceBind"
         }
       },
       "required": [
-        "name",
-        "target",
-        "bind"
-      ]
-    },
-    "MachinePhase": {
-      "oneOf": [
-        {
-          "type": "string",
-          "enum": [
-            "idle",
-            "pulling-image",
-            "creating",
-            "booting",
-            "ready",
-            "suspending",
-            "suspended",
-            "stopping",
-            "stopped"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "error": {
-              "type": "object",
-              "properties": {
-                "message": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "message"
-              ]
-            }
-          },
-          "required": [
-            "error"
-          ],
-          "additionalProperties": false
-        }
+        "name"
       ]
     },
     "MachineV1": {
@@ -216,146 +154,103 @@
         "resources"
       ]
     },
-    "MachineSnapshotStrategy": {
+    "MachinePhase": {
       "oneOf": [
         {
           "type": "string",
           "enum": [
-            "first-listen",
-            "user-space-ready",
-            "manual"
+            "idle",
+            "pulling-image",
+            "creating",
+            "booting",
+            "ready",
+            "suspending",
+            "suspended",
+            "stopping",
+            "stopped"
           ]
         },
         {
           "type": "object",
           "properties": {
-            "nth-listen": {
-              "type": "integer",
-              "format": "uint32",
-              "minimum": 0
-            }
-          },
-          "required": [
-            "nth-listen"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "listen-on-port": {
-              "type": "integer",
-              "format": "uint16",
-              "minimum": 0,
-              "maximum": 65535
-            }
-          },
-          "required": [
-            "listen-on-port"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "ServiceBindExternalProtocol": {
-      "type": "string",
-      "enum": [
-        "http",
-        "https",
-        "tls"
-      ]
-    },
-    "ServiceTarget": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "namespace": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "port": {
-          "type": "integer",
-          "format": "uint16",
-          "minimum": 0,
-          "maximum": 65535
-        },
-        "protocol": {
-          "$ref": "#/$defs/ServiceTargetProtocol"
-        },
-        "connection-tracking": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ServiceTargetConnectionTracking"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "name",
-        "port",
-        "protocol"
-      ]
-    },
-    "ServiceBindExternalCertificate": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "namespace": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "name"
-      ]
-    },
-    "MachineMode": {
-      "oneOf": [
-        {
-          "type": "string",
-          "enum": [
-            "regular"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "flash": {
+            "error": {
               "type": "object",
               "properties": {
-                "strategy": {
-                  "$ref": "#/$defs/MachineSnapshotStrategy"
-                },
-                "timeout": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ],
-                  "format": "uint64",
-                  "minimum": 0
+                "message": {
+                  "type": "string"
                 }
               },
               "required": [
-                "strategy"
+                "message"
               ]
             }
           },
           "required": [
-            "flash"
+            "error"
           ],
           "additionalProperties": false
         }
+      ]
+    },
+    "ServiceV1": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/ServiceTarget"
+        },
+        "bind": {
+          "$ref": "#/$defs/ServiceBind"
+        }
+      },
+      "required": [
+        "name",
+        "target",
+        "bind"
+      ]
+    },
+    "ServiceTargetProtocol": {
+      "type": "string",
+      "enum": [
+        "http",
+        "tcp"
+      ]
+    },
+    "MachineResources": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "memory": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "cpu",
+        "memory"
       ]
     },
     "ServiceBind": {
@@ -431,24 +326,129 @@
         }
       ]
     },
-    "MachineResources": {
+    "MachineMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "regular"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "flash": {
+              "type": "object",
+              "properties": {
+                "strategy": {
+                  "$ref": "#/$defs/MachineSnapshotStrategy"
+                },
+                "timeout": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "strategy"
+              ]
+            }
+          },
+          "required": [
+            "flash"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ServiceTarget": {
       "type": "object",
       "properties": {
-        "cpu": {
-          "type": "integer",
-          "format": "uint8",
-          "minimum": 0,
-          "maximum": 255
+        "name": {
+          "type": "string"
         },
-        "memory": {
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
           "type": "integer",
-          "format": "uint64",
-          "minimum": 0
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "protocol": {
+          "$ref": "#/$defs/ServiceTargetProtocol"
+        },
+        "connection-tracking": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServiceTargetConnectionTracking"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
-        "cpu",
-        "memory"
+        "name",
+        "port",
+        "protocol"
+      ]
+    },
+    "MachineSnapshotStrategy": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "first-listen",
+            "user-space-ready",
+            "manual"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "nth-listen": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "nth-listen"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "listen-on-port": {
+              "type": "integer",
+              "format": "uint16",
+              "minimum": 0,
+              "maximum": 65535
+            }
+          },
+          "required": [
+            "listen-on-port"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ServiceBindExternalProtocol": {
+      "type": "string",
+      "enum": [
+        "http",
+        "https",
+        "tls"
       ]
     }
   }

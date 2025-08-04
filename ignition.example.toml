@@ -1,0 +1,24 @@
+data-dir = "./data"
+
+[api]
+host = "127.0.0.1"
+port = 5100
+jwt-secret = "dGVtcF9qd3Rfc2VjcmV0" # base64 "temp_jwt_secret"
+
+[net]
+# check docs/net.md for more info on how to configure the network
+bridge-name = "ltbr0"
+vm-ip-cidr = "10.0.0.0/16"
+service-ip-cidr = "10.1.0.0/16"
+
+[proxy]
+external-bind-address = "<your public ip>" # TODO: autodiscover
+# check docs/cert.md for more info on how to generate certs
+default-tls-cert-path = "./certs/server.cert"
+default-tls-key-path = "./certs/server.key"
+
+[machine]
+kernel-path = "../linux/vmlinux"
+initrd-path = "./target/takeoff.cpio"
+# any additional kernel cmdline arguments
+# append-cmd-line = ""
