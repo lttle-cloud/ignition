@@ -19,7 +19,7 @@ use nix::{
 use oci_config::{EnvVar, OciConfig};
 use serial::SerialWriter;
 use takeoff_proto::proto::TakeoffInitArgs;
-use tokio::{fs, time::sleep};
+use tokio::{fs, io::AsyncWriteExt, time::sleep};
 use tracing::{info, warn};
 
 async fn takeoff() -> Result<()> {
