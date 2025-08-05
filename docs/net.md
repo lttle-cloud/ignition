@@ -21,8 +21,14 @@ sudo nft 'add chain ip filter FORWARD { type filter hook forward priority 0; pol
 # Create bridge
 sudo ip link add ltbr0 type bridge
 
+# Adds host → vm routes
+sudo ip addr add 10.0.0.1/16 dev ltbr0
+
 # Bring it up
 sudo ip link set ltbr0 up
+
+# 4.0 Allow host → VM traffic
+sudo nft 'add rule ip filter FORWARD iif "enp6s0" oif "ltbr0" accept'
 
 # 4.1 Allow VM→Internet (ltbr0 → enp6s0)
 sudo nft 'add rule ip filter FORWARD iif "ltbr0" oif "enp6s0" accept'
