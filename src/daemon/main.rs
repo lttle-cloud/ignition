@@ -113,7 +113,7 @@ async fn main() -> Result<()> {
                                 evergreen_external_ports: vec![80, 443],
                             },
                             dns_config: DnsAgentConfig {
-                                bind_address: "10.0.1.1:53".to_string(),
+                                bind_address: "10.1.0.1:53".to_string(),
                                 zone_suffix: "lttle.local".to_string(),
                                 default_ttl: 300,
                             },
