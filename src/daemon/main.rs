@@ -113,9 +113,9 @@ async fn main() -> Result<()> {
                                 evergreen_external_ports: vec![80, 443],
                             },
                             dns_config: DnsAgentConfig {
-                                bind_address: "10.1.0.1:53".to_string(),
-                                zone_suffix: "lttle.local".to_string(),
-                                default_ttl: 300,
+                                bind_address: scheduler_config.dns_config.bind_address,
+                                zone_suffix: scheduler_config.dns_config.zone_suffix,
+                                default_ttl: scheduler_config.dns_config.default_ttl,
                             },
                         },
                         agent_scheduler,

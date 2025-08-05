@@ -22,3 +22,8 @@ kernel-path = "../linux/vmlinux"
 initrd-path = "./target/takeoff.cpio"
 # any additional kernel cmdline arguments
 # append-cmd-line = ""
+
+[dns]
+bind-address = "10.1.0.1:53"
+zone-suffix = "lttle.local"
+default-ttl = 300
