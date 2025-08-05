@@ -13,57 +13,54 @@ use tracing::{debug, warn};
 use crate::{
     controller::context::ControllerKey,
     resource_index::ResourceKind,
-    resources::{
-        Convert,
-        metadata::{Metadata, Namespace},
-    },
+    resources::metadata::{Metadata, Namespace},
     utils::machine_name_from_key,
 };
 
-use super::{DnsHandler, ServiceDnsEntry};
+use super::DnsHandler;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum DnsSubdomain {
-    Service,
-    Machine,
+    Service { name: String, namespace: String },
+    Machine { name: String, namespace: String },
 }
 
 impl DnsSubdomain {
-    fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "svc" => Some(Self::Service),
-            "machine" => Some(Self::Machine),
+    fn parse_address(address: &str) -> Option<Self> {
+        let parts: Vec<&str> = address.trim_end_matches('.').split('.').collect();
+
+        // Check if this is an Ignition domain query (expect exactly 5 parts)
+        if parts.len() != 5 || parts[3] != "lttle" || parts[4] != "local" {
+            return None;
+        }
+
+        let name = parts[0];
+        let namespace = parts[1];
+        let subdomain_type = parts[2];
+
+        match subdomain_type {
+            "svc" => Some(Self::Service {
+                name: name.to_string(),
+                namespace: namespace.to_string(),
+            }),
+            "machine" => Some(Self::Machine {
+                name: name.to_string(),
+                namespace: namespace.to_string(),
+            }),
             _ => None,
         }
     }
 }
 
 impl DnsHandler {
-    async fn resolve_service(
-        &self,
-        name: &str,
-        namespace: &str,
-        tenant: &str,
-    ) -> Option<ServiceDnsEntry> {
+    async fn resolve_service(&self, name: &str, namespace: &str, tenant: &str) -> Option<String> {
         // Look up service in repository
         let service_repo = self.repository.service(tenant.to_string());
 
         let metadata = Metadata::new(name.to_string(), Namespace::specified(namespace));
 
-        if let Ok(Some((service, status))) = service_repo.get_with_status(metadata) {
-            let service = service.latest();
-            let entry = ServiceDnsEntry {
-                service_ip: status.service_ip,
-                target_machine: service.target.name.clone(),
-                target_namespace: service
-                    .target
-                    .namespace
-                    .or(service.namespace)
-                    .unwrap_or_default(),
-                port: service.target.port,
-            };
-
-            return Some(entry);
+        if let Ok(Some((_, status))) = service_repo.get_with_status(metadata) {
+            return status.service_ip;
         }
 
         None
@@ -120,52 +117,42 @@ impl DnsHandler {
 
         // Parse the query name
         let name_str = name.to_string();
-        let parts: Vec<&str> = name_str.trim_end_matches('.').split('.').collect();
 
-        // Check if this is an Ignition domain query
-        if parts.len() >= 4
-            && parts[parts.len() - 2] == "lttle"
-            && parts[parts.len() - 1] == "local"
-        {
-            let subdomain_str = parts[parts.len() - 3];
-
-            if let Some(subdomain) = DnsSubdomain::from_str(subdomain_str) {
-                if parts.len() >= 5 {
-                    let resource_name = parts[0];
-                    let namespace = parts[1];
-
-                    match subdomain {
-                        DnsSubdomain::Service => {
-                            // Service query: <service>.<namespace>.svc.lttle.local
-                            if let Some(entry) = self
-                                .resolve_service(resource_name, namespace, &tenant)
-                                .await
-                            {
-                                if let Some(service_ip) = entry.service_ip {
-                                    if let Ok(ip) = service_ip.parse::<Ipv4Addr>() {
-                                        return vec![Record::from_rdata(
-                                            name.clone().into(),
-                                            self.default_ttl,
-                                            RData::A(A(ip)),
-                                        )];
-                                    }
-                                }
-                            }
+        if let Some(subdomain) = DnsSubdomain::parse_address(&name_str) {
+            match subdomain {
+                DnsSubdomain::Service {
+                    name: resource_name,
+                    namespace,
+                } => {
+                    // Service query: <service>.<namespace>.svc.lttle.local
+                    if let Some(service_ip) = self
+                        .resolve_service(&resource_name, &namespace, &tenant)
+                        .await
+                    {
+                        if let Ok(ip) = service_ip.parse::<Ipv4Addr>() {
+                            return vec![Record::from_rdata(
+                                name.clone().into(),
+                                self.default_ttl,
+                                RData::A(A(ip)),
+                            )];
                         }
-                        DnsSubdomain::Machine => {
-                            // Machine query: <machine>.<namespace>.machine.lttle.local
-                            if let Some(machine_ip) = self
-                                .resolve_machine(resource_name, namespace, &tenant)
-                                .await
-                            {
-                                if let Ok(ip) = machine_ip.parse::<Ipv4Addr>() {
-                                    return vec![Record::from_rdata(
-                                        name.clone().into(),
-                                        self.default_ttl,
-                                        RData::A(A(ip)),
-                                    )];
-                                }
-                            }
+                    }
+                }
+                DnsSubdomain::Machine {
+                    name: resource_name,
+                    namespace,
+                } => {
+                    // Machine query: <machine>.<namespace>.machine.lttle.local
+                    if let Some(machine_ip) = self
+                        .resolve_machine(&resource_name, &namespace, &tenant)
+                        .await
+                    {
+                        if let Ok(ip) = machine_ip.parse::<Ipv4Addr>() {
+                            return vec![Record::from_rdata(
+                                name.clone().into(),
+                                self.default_ttl,
+                                RData::A(A(ip)),
+                            )];
                         }
                     }
                 }
