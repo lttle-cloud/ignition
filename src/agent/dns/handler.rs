@@ -10,7 +10,12 @@ use hickory_server::{
 };
 use tracing::{debug, warn};
 
-use crate::resources::{Convert, metadata::Metadata};
+use crate::{
+    controller::context::ControllerKey,
+    resource_index::ResourceKind,
+    resources::{Convert, metadata::Metadata},
+    utils::machine_name_from_key,
+};
 
 use super::{DnsHandler, ServiceDnsEntry};
 
@@ -66,7 +71,13 @@ impl DnsHandler {
 
     async fn resolve_machine(&self, name: &str, namespace: &str, tenant: &str) -> Option<String> {
         // Look up machine by network tag
-        let network_tag = format!("{}-{}-{}", tenant, namespace, name);
+        let key = ControllerKey::new(
+            tenant,
+            ResourceKind::Machine,
+            Some(namespace),
+            name,
+        );
+        let network_tag = machine_name_from_key(&key);
 
         if let Some(machine) = self
             .machine_agent
