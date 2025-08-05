@@ -48,14 +48,16 @@ impl DnsSubdomain {
 }
 
 impl DnsHandler {
-    fn create_upstream_resolver(&self) -> Option<TokioAsyncResolver> {
-        if self.upstream_dns_servers.is_empty() {
+    pub(super) fn create_upstream_resolver(
+        upstream_dns_servers: &[String],
+    ) -> Option<TokioAsyncResolver> {
+        if upstream_dns_servers.is_empty() {
             return None;
         }
 
         let mut resolver_config = ResolverConfig::new();
 
-        for server in &self.upstream_dns_servers {
+        for server in upstream_dns_servers {
             if let Ok(addr) = server.parse::<SocketAddr>() {
                 resolver_config.add_name_server(NameServerConfig {
                     socket_addr: addr,
@@ -152,7 +154,7 @@ impl DnsHandler {
         }
 
         // If not an internal service, try upstream DNS resolution
-        if let Some(resolver) = self.create_upstream_resolver() {
+        if let Some(ref resolver) = self.upstream_resolver {
             debug!("Forwarding query to upstream DNS: {}", name_str);
 
             match resolver.lookup_ip(name_str.trim_end_matches('.')).await {

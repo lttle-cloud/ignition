@@ -24,7 +24,7 @@ struct DnsHandler {
     net_agent: Arc<NetAgent>,
     repository: Arc<Repository>,
     default_ttl: u32,
-    upstream_dns_servers: Vec<String>,
+    upstream_resolver: Option<hickory_resolver::TokioAsyncResolver>,
 }
 
 impl DnsAgent {
@@ -55,7 +55,7 @@ impl DnsAgent {
             net_agent: self.net_agent.clone(),
             repository: self.repository.clone(),
             default_ttl: self.config.default_ttl,
-            upstream_dns_servers: self.config.upstream_dns_servers.clone(),
+            upstream_resolver: DnsHandler::create_upstream_resolver(&self.config.upstream_dns_servers),
         };
 
         let mut server = ServerFuture::new(handler);
