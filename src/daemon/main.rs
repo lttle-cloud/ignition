@@ -116,6 +116,7 @@ async fn main() -> Result<()> {
                                 bind_address: scheduler_config.dns_config.bind_address,
                                 zone_suffix: scheduler_config.dns_config.zone_suffix,
                                 default_ttl: scheduler_config.dns_config.default_ttl,
+                                upstream_dns_servers: scheduler_config.dns_config.upstream_dns_servers,
                             },
                         },
                         agent_scheduler,

@@ -79,6 +79,8 @@ pub struct DnsConfig {
     pub zone_suffix: String,
     #[serde(rename = "default-ttl")]
     pub default_ttl: u32,
+    #[serde(rename = "upstream-dns-servers", default)]
+    pub upstream_dns_servers: Vec<String>,
 }
 
 async fn resolve_config_path(path_override: Option<PathBuf>) -> Result<PathBuf> {

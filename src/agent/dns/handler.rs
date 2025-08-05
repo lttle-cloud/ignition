@@ -1,8 +1,13 @@
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddr};
+use std::time::Duration;
 
 use hickory_proto::{
     op::{MessageType, OpCode, ResponseCode},
     rr::{RData, Record, RecordType, rdata::A},
+};
+use hickory_resolver::{
+    TokioAsyncResolver,
+    config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts},
 };
 use hickory_server::{
     authority::MessageResponseBuilder,
@@ -43,6 +48,32 @@ impl DnsSubdomain {
 }
 
 impl DnsHandler {
+    fn create_upstream_resolver(&self) -> Option<TokioAsyncResolver> {
+        if self.upstream_dns_servers.is_empty() {
+            return None;
+        }
+
+        let mut resolver_config = ResolverConfig::new();
+
+        for server in &self.upstream_dns_servers {
+            if let Ok(addr) = server.parse::<SocketAddr>() {
+                resolver_config.add_name_server(NameServerConfig {
+                    socket_addr: addr,
+                    protocol: Protocol::Udp,
+                    tls_dns_name: None,
+                    trust_negative_responses: true,
+                    bind_addr: None,
+                });
+            }
+        }
+
+        let mut opts = ResolverOpts::default();
+        opts.timeout = Duration::from_secs(2);
+        opts.attempts = 2;
+
+        Some(TokioAsyncResolver::tokio(resolver_config, opts))
+    }
+
     async fn resolve_service(&self, name: &str, namespace: &str, tenant: &str) -> Option<String> {
         // Look up service in repository
         let service_repo = self.repository.service(tenant.to_string());
@@ -71,18 +102,21 @@ impl DnsHandler {
         };
 
         // Find tenant from source IP
-        let tenant = match self.net_agent.ip_reservation_lookup(&src_ip).ok().flatten() {
-            Some(t) => t.tenant.clone(),
-            None => {
-                debug!("No tenant found for source IP: {}", src_ip);
-                return vec![];
-            }
-        };
+        let tenant = self
+            .net_agent
+            .ip_reservation_lookup(&src_ip)
+            .ok()
+            .flatten()
+            .map(|t| t.tenant.clone());
 
-        debug!(
-            "DNS query from tenant {}: {} {:?}",
-            tenant, name, record_type
-        );
+        if let Some(ref t) = tenant {
+            debug!("DNS query from tenant {}: {} {:?}", t, name, record_type);
+        } else {
+            debug!(
+                "DNS query from unknown source {}: {} {:?}",
+                src_ip, name, record_type
+            );
+        }
 
         // Only handle A record queries for now
         if record_type != RecordType::A {
@@ -92,25 +126,56 @@ impl DnsHandler {
         // Parse the query name
         let name_str = name.to_string();
 
-        if let Some(subdomain) = DnsSubdomain::parse_address(&name_str) {
-            match subdomain {
-                DnsSubdomain::Service {
-                    name: resource_name,
-                    namespace,
-                } => {
-                    // Service query: <service>.<namespace>.svc.lttle.local
-                    if let Some(service_ip) = self
-                        .resolve_service(&resource_name, &namespace, &tenant)
-                        .await
-                    {
-                        if let Ok(ip) = service_ip.parse::<Ipv4Addr>() {
-                            return vec![Record::from_rdata(
-                                name.clone().into(),
-                                self.default_ttl,
-                                RData::A(A(ip)),
-                            )];
+        // First check if this is an internal service query
+        if let Some(ref t) = tenant {
+            if let Some(subdomain) = DnsSubdomain::parse_address(&name_str) {
+                match subdomain {
+                    DnsSubdomain::Service {
+                        name: resource_name,
+                        namespace,
+                    } => {
+                        // Service query: <service>.<namespace>.svc.lttle.local
+                        if let Some(service_ip) =
+                            self.resolve_service(&resource_name, &namespace, t).await
+                        {
+                            if let Ok(ip) = service_ip.parse::<Ipv4Addr>() {
+                                return vec![Record::from_rdata(
+                                    name.clone().into(),
+                                    self.default_ttl,
+                                    RData::A(A(ip)),
+                                )];
+                            }
                         }
                     }
+                }
+            }
+        }
+
+        // If not an internal service, try upstream DNS resolution
+        if let Some(resolver) = self.create_upstream_resolver() {
+            debug!("Forwarding query to upstream DNS: {}", name_str);
+
+            match resolver.lookup_ip(name_str.trim_end_matches('.')).await {
+                Ok(lookup) => {
+                    let records: Vec<Record> = lookup
+                        .iter()
+                        .filter_map(|ip| match ip {
+                            std::net::IpAddr::V4(ipv4) => Some(Record::from_rdata(
+                                name.clone().into(),
+                                self.default_ttl,
+                                RData::A(A(ipv4)),
+                            )),
+                            std::net::IpAddr::V6(_) => None, // Skip IPv6 for now
+                        })
+                        .collect();
+
+                    if !records.is_empty() {
+                        debug!("Upstream DNS returned {} records", records.len());
+                        return records;
+                    }
+                }
+                Err(e) => {
+                    debug!("Upstream DNS lookup failed: {}", e);
                 }
             }
         }
@@ -143,6 +208,8 @@ impl RequestHandler for DnsHandler {
                 let mut header = *request.header();
                 header.set_response_code(ResponseCode::NoError);
                 header.set_answer_count(answers.len() as u16);
+                header.set_recursion_available(true);
+                header.set_message_type(MessageType::Response);
 
                 let response_message = response.build(header, answers.iter(), &[], &[], &[]);
                 response_handle
