@@ -21,7 +21,6 @@ use crate::{
     },
     resource_index::ResourceKind,
     resources::{self, Convert, machine::MachinePhase},
-    utils::machine_name_from_key,
 };
 
 pub struct MachineController;
@@ -36,6 +35,9 @@ fn pull_image_job_key(reference: &Reference) -> String {
     format!("pull-image-{}", reference)
 }
 
+pub fn machine_name_from_key(key: &ControllerKey) -> String {
+    format!("{}-{}", key.tenant, key.metadata().to_string())
+}
 
 #[async_trait]
 impl Controller for MachineController {

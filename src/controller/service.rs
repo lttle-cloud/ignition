@@ -17,8 +17,8 @@ use crate::{
     controller::{
         Controller, ReconcileNext,
         context::{ControllerContext, ControllerEvent, ControllerKey},
+        machine::machine_name_from_key,
     },
-    utils::machine_name_from_key,
     resource_index::ResourceKind,
     resources::{
         Convert,
