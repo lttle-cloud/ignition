@@ -4,22 +4,23 @@ mod oci_config;
 mod serial;
 
 use std::{
-    io::{self, BufReader},
     process::{Command, Stdio},
     sync::Arc,
-    thread::spawn,
     time::Duration,
 };
 
 use anyhow::{Result, bail};
 use guest::GuestManager;
 use mount::mount;
-use nix::unistd::{chdir, chroot};
+use nix::{
+    libc,
+    unistd::{chdir, chroot},
+};
 use oci_config::{EnvVar, OciConfig};
 use serial::SerialWriter;
 use takeoff_proto::proto::TakeoffInitArgs;
 use tokio::{fs, time::sleep};
-use tracing::info;
+use tracing::{info, warn};
 
 async fn takeoff() -> Result<()> {
     mount("devtmpfs", "/dev", Some("devtmpfs")).await;
@@ -42,6 +43,8 @@ async fn takeoff() -> Result<()> {
 
     mount("devtmpfs", "/dev", Some("devtmpfs")).await;
     mount("proc", "/proc", Some("proc")).await;
+    mount("tmpfs", "/tmp", Some("tmpfs")).await;
+    mount("tmpfs", "/run", Some("tmpfs")).await;
 
     for mount_point in args.mount_points.iter().skip(1) {
         mount(&mount_point.source, &mount_point.target, Some("ext4")).await;
@@ -68,6 +71,16 @@ async fn takeoff() -> Result<()> {
 
     info!("envs: {:#?}", envs);
 
+    let result = unsafe { libc::unshare(libc::CLONE_NEWPID | libc::CLONE_NEWNS) };
+    if result != 0 {
+        let errno = std::io::Error::last_os_error();
+        info!("failed to unshare PID namespace: {}", errno);
+        bail!("failed to unshare PID namespace: {}", errno);
+    }
+
+    // remount proc
+    mount("proc", "/proc", Some("proc")).await;
+
     let cmd = Command::new(cmd[0].clone())
         .args(&cmd[1..])
         .envs(envs)
@@ -76,37 +89,23 @@ async fn takeoff() -> Result<()> {
         .stderr(Stdio::piped())
         .spawn();
 
-    let mut child = match cmd {
+    let child = match cmd {
         Ok(child) => child,
         Err(e) => {
             bail!("failed to spawn command: {}", e);
         }
     };
 
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
-
-    let stdout_thread = spawn(move || {
-        let mut reader = BufReader::new(stdout);
-        let mut writer = SerialWriter;
-        io::copy(&mut reader, &mut writer).unwrap();
-    });
-
-    let stderr_thread = spawn(move || {
-        let mut reader = BufReader::new(stderr);
-        let mut writer = SerialWriter;
-        io::copy(&mut reader, &mut writer).unwrap();
-    });
-
     guest_manager.mark_user_space_ready();
+    let output = child.wait_with_output().unwrap();
 
-    stdout_thread.join().expect("stdout thread join");
-    stderr_thread.join().expect("stderr thread join");
+    info!("command exited with code {}", output.status.code().unwrap());
+    warn!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+    warn!("stderr: {}", String::from_utf8_lossy(&output.stderr));
 
-    info!(
-        "command exited with code {}",
-        child.wait().unwrap().code().unwrap()
-    );
+    if !output.status.success() {
+        bail!("command failed: {}", output.status);
+    }
 
     loop {
         sleep(Duration::from_secs(1)).await;
