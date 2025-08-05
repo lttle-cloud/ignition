@@ -134,7 +134,7 @@ impl Controller for ServiceController {
                 .ip_reservation_create(
                     IpReservationKind::Service,
                     Some(service_name_from_key(&key)),
-                    Some(ctx.tenant.clone()),
+                    ctx.tenant.clone(),
                 )?
                 .ip
                 .clone()

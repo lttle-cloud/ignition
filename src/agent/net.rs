@@ -158,7 +158,7 @@ impl NetAgent {
         &self,
         kind: IpReservationKind,
         tag: Option<String>,
-        tenant: Option<String>,
+        tenant: String,
     ) -> Result<IpReservation> {
         let ip_range = match kind {
             IpReservationKind::VM => &self.vm_ip_range,
@@ -186,7 +186,7 @@ impl NetAgent {
                 kind,
                 ip: ip.to_string(),
                 tag,
-                tenant: tenant.unwrap_or_else(|| DEFAULT_AGENT_TENANT.to_string()),
+                tenant: tenant.to_string(),
             };
 
             self.store.put(&key, &reservation)?;
@@ -259,6 +259,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::constants::DEFAULT_AGENT_TENANT;
 
     async fn create_test_agent(dir: &Path) -> NetAgent {
         let store = Store::new(dir).await.unwrap();
@@ -280,7 +281,11 @@ mod tests {
         let agent = create_test_agent(store_dir.path()).await;
 
         let ip = agent
-            .ip_reservation_create(IpReservationKind::VM, None, None)
+            .ip_reservation_create(
+                IpReservationKind::VM,
+                None,
+                DEFAULT_AGENT_TENANT.to_string(),
+            )
             .unwrap();
 
         assert_eq!(ip.kind, IpReservationKind::VM);
@@ -298,10 +303,18 @@ mod tests {
         let agent = create_test_agent(store_dir.path()).await;
 
         let ip = agent
-            .ip_reservation_create(IpReservationKind::VM, None, None)
+            .ip_reservation_create(
+                IpReservationKind::VM,
+                None,
+                DEFAULT_AGENT_TENANT.to_string(),
+            )
             .unwrap();
         let ip2 = agent
-            .ip_reservation_create(IpReservationKind::VM, None, None)
+            .ip_reservation_create(
+                IpReservationKind::VM,
+                None,
+                DEFAULT_AGENT_TENANT.to_string(),
+            )
             .unwrap();
 
         let ips = agent.ip_reservation_list(IpReservationKind::VM).unwrap();

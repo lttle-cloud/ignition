@@ -354,7 +354,7 @@ impl Controller for MachineController {
                             .ip_reservation_create(
                                 IpReservationKind::VM,
                                 Some(name.clone()),
-                                Some(ctx.tenant.clone()),
+                                ctx.tenant.clone(),
                             )
                             .map_err(|_| anyhow!("failed to allocate IP for machine: {}", name))?
                             .ip
