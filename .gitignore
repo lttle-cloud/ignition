@@ -1,3 +1,5 @@
 /target
 /data
 /certs
+
+ignition.toml

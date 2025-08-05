@@ -260,13 +260,15 @@ async fn build_resources_json_schema(
 ) -> Result<()> {
     let schema_out_path = cargo::workspace_root_dir_path("schemas/resources.json").await?;
 
-    let schema = merge_json_schemas(
+    let mut schema = merge_json_schemas(
         resources
             .iter()
             .map(|r| r.schema.clone())
             .collect::<Vec<_>>(),
         schema_generator,
     );
+
+    schema["$defs"].sort_all_objects();
 
     let src = serde_json::to_string_pretty(&schema)?;
 

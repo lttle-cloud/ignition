@@ -1,6 +1,10 @@
-use std::{path::Path, sync::Arc};
+mod cmd;
+mod config;
+
+use std::sync::Arc;
 
 use anyhow::Result;
+use clap::Parser;
 use ignition::{
     agent::{
         Agent, AgentConfig, dns::config::DnsAgentConfig, image::ImageAgentConfig,
@@ -8,6 +12,7 @@ use ignition::{
         volume::VolumeAgentConfig,
     },
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
+    constants::DEFAULT_KERNEL_CMD_LINE_INIT,
     controller::{
         machine::MachineController,
         scheduler::{Scheduler, SchedulerConfig},
@@ -19,20 +24,25 @@ use ignition::{
     utils::tracing::init_tracing,
 };
 use tokio::{runtime, task::block_in_place};
+use tracing::info;
 
-// TODO: get this from config
-const TEMP_JWT_SECRET: &str = "dGVtcF9qd3Rfc2VjcmV0";
+use crate::config::Config;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     init_tracing();
 
-    let transient_dir = Path::new("./data/transient");
-    if transient_dir.exists() {
-        tokio::fs::remove_dir_all(transient_dir).await?;
+    let args = cmd::Cli::parse();
+
+    let config = Config::load(args.config_path).await?;
+    info!("Loaded config from {}", config.config_path.display());
+    dbg!(&config);
+
+    if !config.absolute_data_dir().exists() {
+        tokio::fs::create_dir_all(&config.absolute_data_dir()).await?;
     }
 
-    let store = Arc::new(Store::new("data").await?);
+    let store = Arc::new(Store::new(&config.absolute_data_dir()).await?);
 
     let scheduler = Arc::new_cyclic(|scheduler_weak| {
         let repository = Arc::new(Repository::new(store.clone(), scheduler_weak.clone()));
@@ -40,35 +50,66 @@ async fn main() -> Result<()> {
         let agent_scheduler = scheduler_weak.clone();
         let repository_clone = repository.clone();
 
+        let scheduler_config = config.clone();
         let agent = block_in_place(move || {
             runtime::Handle::current().block_on(async {
+                let transient_dir = scheduler_config.absolute_data_dir().join("transient");
+                if transient_dir.exists() {
+                    tokio::fs::remove_dir_all(&transient_dir)
+                        .await
+                        .expect("Failed to clear transient directory");
+                }
+
+                let agent_dir = scheduler_config.absolute_data_dir().join("agent");
+
                 Arc::new(
                     Agent::new(
                         AgentConfig {
-                            store_path: "./data/agent/store".to_string(),
+                            store_path: agent_dir.join("store").to_string_lossy().to_string(),
                             net_config: NetAgentConfig {
-                                bridge_name: "ltbr0".to_string(),
-                                vm_ip_cidr: "10.0.0.0/24".to_string(),
-                                service_ip_cidr: "10.0.1.0/24".to_string(),
+                                bridge_name: scheduler_config.net_config.bridge_name,
+                                vm_ip_cidr: scheduler_config.net_config.vm_ip_cidr,
+                                service_ip_cidr: scheduler_config.net_config.service_ip_cidr,
                             },
                             volume_config: VolumeAgentConfig {
-                                base_path: "./data/agent/volumes".to_string(),
+                                base_path: agent_dir.join("volumes").to_string_lossy().to_string(),
                             },
                             image_config: ImageAgentConfig {
-                                base_path: "./data/agent/images".to_string(),
+                                base_path: agent_dir.join("images").to_string_lossy().to_string(),
                             },
                             machine_config: MachineAgentConfig {
-                                transient_state_path: transient_dir.to_path_buf(),
-                                kernel_path: "/home/lttle/linux/vmlinux".to_string(),
-                                initrd_path: "/home/lttle/ignition-v2/target/takeoff.cpio".to_string(),
-                                kernel_cmd_init:
-                                    "i8042.nokbd reboot=t panic=1 noapic clocksource=kvm-clock tsc=reliable console=ttyS0"
-                                        .to_string(),
+                                transient_state_path: transient_dir.to_path_buf().join("machines"),
+                                kernel_path: scheduler_config
+                                    .config_dir
+                                    .join(&scheduler_config.machine_config.kernel_path)
+                                    .to_string_lossy()
+                                    .to_string(),
+                                initrd_path: scheduler_config
+                                    .config_dir
+                                    .join(&scheduler_config.machine_config.initrd_path)
+                                    .to_string_lossy()
+                                    .to_string(),
+                                kernel_cmd_init: format!(
+                                    "{} {}",
+                                    DEFAULT_KERNEL_CMD_LINE_INIT,
+                                    scheduler_config
+                                        .machine_config
+                                        .append_cmd_line
+                                        .unwrap_or_default()
+                                )
+                                .trim()
+                                .to_string(),
                             },
                             proxy_config: ProxyAgentConfig {
-                                external_bind_address: "151.80.18.214".to_string(),
-                                default_tls_cert_path: "./certs/server.cert".to_string(),
-                                default_tls_key_path: "./certs/server.key".to_string(),
+                                external_bind_address: scheduler_config
+                                    .proxy_config
+                                    .external_bind_address,
+                                default_tls_cert_path: scheduler_config
+                                    .proxy_config
+                                    .default_tls_cert_path,
+                                default_tls_key_path: scheduler_config
+                                    .proxy_config
+                                    .default_tls_key_path,
                                 evergreen_external_ports: vec![80, 443],
                             },
                             dns_config: DnsAgentConfig {
@@ -81,7 +122,8 @@ async fn main() -> Result<()> {
                         repository_clone,
                     )
                     .await
-                    .expect("Failed to create agent"))
+                    .expect("Failed to create agent"),
+                )
             })
         });
 
@@ -101,7 +143,7 @@ async fn main() -> Result<()> {
 
     let repository = scheduler.repository.clone();
 
-    let auth_handler = Arc::new(AuthHandler::new(TEMP_JWT_SECRET));
+    let auth_handler = Arc::new(AuthHandler::new(&config.api_server_config.jwt_secret));
 
     let api_server = ApiServer::new(
         store.clone(),
@@ -109,8 +151,8 @@ async fn main() -> Result<()> {
         scheduler.clone(),
         auth_handler.clone(),
         ApiServerConfig {
-            host: "0.0.0.0".to_string(),
-            port: 5100,
+            host: config.api_server_config.host.clone(),
+            port: config.api_server_config.port,
         },
     )
     .add_service::<CoreService>()
