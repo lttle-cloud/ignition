@@ -2,6 +2,7 @@ mod build_utils;
 mod constants;
 mod machinery;
 mod resources;
+mod utils;
 
 use build_utils::resource;
 
@@ -14,6 +15,7 @@ pub async fn main() {
             cfg.add_admission_rule(AdmissionRule::StatusCheck)
         })
         .resource::<resources::service::Service>()
+        .resource::<resources::volume::Volume>()
         .build()
         .await
         .expect("failed to build resources repository");

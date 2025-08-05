@@ -149,7 +149,8 @@ async fn main() -> Result<()> {
     )
     .add_service::<CoreService>()
     .add_service::<services::MachineService>()
-    .add_service::<services::ServiceService>();
+    .add_service::<services::ServiceService>()
+    .add_service::<services::VolumeService>();
 
     scheduler.start_workers();
     scheduler.schedule_bringup().await?;

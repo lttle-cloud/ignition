@@ -49,6 +49,30 @@
         "service.v1"
       ],
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "volume": {
+          "$ref": "#/$defs/VolumeV1"
+        }
+      },
+      "required": [
+        "volume"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "volume.v1": {
+          "$ref": "#/$defs/VolumeV1"
+        }
+      },
+      "required": [
+        "volume.v1"
+      ],
+      "additionalProperties": false
     }
   ],
   "$defs": {
@@ -448,6 +472,48 @@
         "name",
         "target",
         "bind"
+      ],
+      "type": "object"
+    },
+    "VolumeMode": {
+      "enum": [
+        "read-only",
+        "writeable"
+      ],
+      "type": "string"
+    },
+    "VolumeV1": {
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/VolumeMode"
+        },
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "size": {
+          "description": "The size of the volume in human readable format",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "mode",
+        "size"
       ],
       "type": "object"
     }

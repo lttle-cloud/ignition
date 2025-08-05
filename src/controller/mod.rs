@@ -3,6 +3,7 @@ pub mod scheduler;
 
 pub mod machine;
 pub mod service;
+pub mod volume;
 
 use anyhow::Result;
 use async_trait::async_trait;
