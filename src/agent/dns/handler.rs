@@ -26,23 +26,33 @@ enum DnsSubdomain {
 
 impl DnsHandler {
     fn parse_subdomain(&self, address: &str) -> Option<DnsSubdomain> {
+        let expected_suffix = format!(".svc.{}.", self.zone_suffix);
+        if !address.ends_with(&expected_suffix) {
+            return None;
+        }
+
         let parts: Vec<&str> = address.trim_end_matches('.').split('.').collect();
+        let parts = parts
+            .iter()
+            .filter_map(|p| {
+                let p = p.trim();
+                if p.is_empty() {
+                    None
+                } else {
+                    Some(p.to_string())
+                }
+            })
+            .collect::<Vec<String>>();
 
         if parts.len() != 5 {
             return None;
         }
 
-        // Check if the address ends with our zone suffix
-        let expected_suffix = format!(".svc.{}", self.zone_suffix);
-        if !address.ends_with(&expected_suffix) {
-            return None;
-        }
+        let name = &parts[0];
+        let namespace = &parts[1];
+        let subdomain_type = &parts[2];
 
-        let name = parts[0];
-        let namespace = parts[1];
-        let subdomain_type = parts[2];
-
-        match subdomain_type {
+        match subdomain_type.as_str() {
             "svc" => Some(DnsSubdomain::Service {
                 name: name.to_string(),
                 namespace: namespace.to_string(),
@@ -202,7 +212,7 @@ impl RequestHandler for DnsHandler {
             let answers = self.handle_query(request).await;
 
             if answers.is_empty() {
-                let response_message = response.error_msg(request.header(), ResponseCode::NXDomain);
+                let response_message = response.error_msg(request.header(), ResponseCode::NoError);
                 response_handle
                     .send_response(response_message)
                     .await
