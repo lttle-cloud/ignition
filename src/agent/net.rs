@@ -229,7 +229,7 @@ impl NetAgent {
         Ok(())
     }
 
-    pub fn find_tenant_by_ip(&self, ip: impl AsRef<str>) -> Result<Option<String>> {
+    pub fn ip_reservation_lookup(&self, ip: impl AsRef<str>) -> Result<Option<String>> {
         let ip_str = ip.as_ref();
 
         let vm_key = Key::<IpReservation>::not_namespaced()
