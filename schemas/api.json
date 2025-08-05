@@ -465,6 +465,11 @@
     "MachineStatus": {
       "type": "object",
       "properties": {
+        "hash": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
         "phase": {
           "$ref": "#/$defs/MachinePhase"
         },
@@ -522,6 +527,7 @@
         }
       },
       "required": [
+        "hash",
         "phase"
       ]
     },

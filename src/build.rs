@@ -11,7 +11,7 @@ use crate::resources::AdmissionRule;
 pub async fn main() {
     resource::ResourcesBuilder::new()
         .resource_with_config::<resources::machine::Machine>(|cfg| {
-            cfg.add_admission_rule(AdmissionRule::DissalowPatchUpdate)
+            cfg.add_admission_rule(AdmissionRule::StatusCheck)
         })
         .resource::<resources::service::Service>()
         .build()

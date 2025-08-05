@@ -82,6 +82,8 @@ pub struct ResourceBuildInfo {
 pub enum AdmissionRule {
     /// Only allow create through PATCH, disallow update through PATCH.
     DissalowPatchUpdate,
+    /// Custom admission status check
+    StatusCheck,
 }
 
 #[derive(Debug, Clone)]
@@ -159,4 +161,11 @@ pub trait FromResource<T> {
     fn from_resource(resource: T) -> Result<Self>
     where
         Self: Sized;
+}
+
+pub trait AdmissionCheckStatus<TStatus>
+where
+    Self: Sized,
+{
+    fn admission_check_status(&self, status: &TStatus) -> Result<()>;
 }
