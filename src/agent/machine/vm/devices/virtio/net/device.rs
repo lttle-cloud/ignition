@@ -110,6 +110,13 @@ impl Net {
             netmask = config.netmask,
         ))?;
 
+        if !config.dns_servers.is_empty() {
+            for (i, dns_server) in config.dns_servers.iter().enumerate() {
+                env.kernel_cmdline
+                    .insert_str(format!("nameserver{i}={dns_server}", i = i))?;
+            }
+        }
+
         let device = VirtioMmioDeviceConfig::new(virtio_cfg, env)?;
 
         let net = Net {

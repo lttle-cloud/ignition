@@ -122,6 +122,7 @@ pub struct NetworkConfig {
     pub ip_address: String,
     pub gateway: String,
     pub netmask: String,
+    pub dns_servers: Vec<String>,
 }
 
 pub enum MachineStopReason {

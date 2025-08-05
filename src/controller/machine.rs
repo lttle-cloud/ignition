@@ -477,6 +477,7 @@ impl Controller for MachineController {
                             mac_address: mac,
                             gateway: ctx.agent.net().vm_gateway().to_string(),
                             netmask: ctx.agent.net().vm_netmask().to_string(),
+                            dns_servers: vec![ctx.agent.net().service_gateway().to_string()],
                         },
                     })
                     .await
