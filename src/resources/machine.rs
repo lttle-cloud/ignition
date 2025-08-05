@@ -1,8 +1,8 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use meta::resource;
 use std::collections::BTreeMap;
 
-use crate::resources::FromResource;
+use crate::resources::{AdmissionCheckStatus, Convert, FromResource, ProvideMetadata};
 
 #[resource(name = "Machine", tag = "machine")]
 mod machine {
@@ -48,6 +48,7 @@ mod machine {
 
     #[status]
     struct Status {
+        hash: u64,
         phase: MachinePhase,
         image_id: Option<String>,
         image_resolved_reference: Option<String>,
@@ -104,6 +105,7 @@ impl ToString for MachinePhase {
 impl FromResource<Machine> for MachineStatus {
     fn from_resource(_resource: Machine) -> Result<Self> {
         Ok(MachineStatus {
+            hash: 0,
             phase: MachinePhase::Idle,
             image_id: None,
             image_resolved_reference: None,
@@ -114,5 +116,32 @@ impl FromResource<Machine> for MachineStatus {
             last_boot_time_us: None,
             first_boot_time_us: None,
         })
+    }
+}
+
+impl Machine {
+    pub fn hash_with_updated_metadata(&self) -> u64 {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+
+        let metadata = self.metadata();
+        let mut machine = self.stored();
+        machine.namespace = metadata.namespace;
+        let machine: Machine = machine.into();
+
+        let mut hasher = DefaultHasher::new();
+        machine.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+impl AdmissionCheckStatus<MachineStatus> for Machine {
+    fn admission_check_status(&self, status: &MachineStatus) -> Result<()> {
+        let hash = self.hash_with_updated_metadata();
+
+        if hash != status.hash {
+            bail!("Machines are not allowed to change their configuration after creation");
+        }
+
+        Ok(())
     }
 }

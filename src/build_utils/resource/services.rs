@@ -188,10 +188,33 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
                 );
             }
             src.push_str(&format!(
-                "                return (StatusCode::FORBIDDEN, \"{} already exists\".to_string()).into_response();\n",
+                "                return (StatusCode::BAD_REQUEST, \"{} already exists\".to_string()).into_response();\n",
                 resource_name
             ));
             src.push_str("            }\n\n");
+        }
+
+        // Check admission rules
+        if resource
+            .configuration
+            .admission_rules
+            .contains(&AdmissionRule::StatusCheck)
+        {
+            src.push_str(
+                "            // Check custom admission status check (StatusCheck admission rule)\n",
+            );
+            src.push_str("            use crate::resources::AdmissionCheckStatus;\n");
+            src.push_str("            let metadata = resource.metadata();\n");
+            src.push_str("            let status = repo.get_status(metadata);\n");
+            src.push_str("            if let Ok(Some(status)) = status {\n");
+            src.push_str(&format!(
+                "            if let Err(e) = resource.admission_check_status(&status) {{\n",
+            ));
+            src.push_str(
+                "                return (StatusCode::BAD_REQUEST, e.to_string()).into_response();\n",
+            );
+            src.push_str("            }\n");
+            src.push_str("            };\n\n");
         }
 
         src.push_str("            let result = repo.set(resource).await;\n\n");

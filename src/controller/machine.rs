@@ -234,6 +234,14 @@ impl Controller for MachineController {
             return Ok(ReconcileNext::done());
         };
 
+        let hash = machine.hash_with_updated_metadata();
+        ctx.repository
+            .machine(key.tenant.clone())
+            .patch_status(key.metadata(), |status| {
+                status.hash = hash;
+            })
+            .await?;
+
         let machine = machine.latest();
         let reference = Reference::from_str(&machine.image)
             .map_err(|_| anyhow!("invalid image reference: {}", machine.image))?;
