@@ -24,12 +24,17 @@ enum DnsSubdomain {
     Service { name: String, namespace: String },
 }
 
-impl DnsSubdomain {
-    fn parse_address(address: &str) -> Option<Self> {
+impl DnsHandler {
+    fn parse_subdomain(&self, address: &str) -> Option<DnsSubdomain> {
         let parts: Vec<&str> = address.trim_end_matches('.').split('.').collect();
 
-        // Check if this is an Ignition domain query (expect exactly 5 parts)
-        if parts.len() != 5 || parts[3] != "lttle" || parts[4] != "local" {
+        if parts.len() != 5 {
+            return None;
+        }
+
+        // Check if the address ends with our zone suffix
+        let expected_suffix = format!(".svc.{}", self.zone_suffix);
+        if !address.ends_with(&expected_suffix) {
             return None;
         }
 
@@ -38,16 +43,14 @@ impl DnsSubdomain {
         let subdomain_type = parts[2];
 
         match subdomain_type {
-            "svc" => Some(Self::Service {
+            "svc" => Some(DnsSubdomain::Service {
                 name: name.to_string(),
                 namespace: namespace.to_string(),
             }),
             _ => None,
         }
     }
-}
 
-impl DnsHandler {
     pub(super) fn create_upstream_resolver(
         upstream_dns_servers: &[String],
     ) -> Option<TokioAsyncResolver> {
@@ -130,13 +133,13 @@ impl DnsHandler {
 
         // First check if this is an internal service query
         if let Some(ref t) = tenant {
-            if let Some(subdomain) = DnsSubdomain::parse_address(&name_str) {
+            if let Some(subdomain) = self.parse_subdomain(&name_str) {
                 match subdomain {
                     DnsSubdomain::Service {
                         name: resource_name,
                         namespace,
                     } => {
-                        // Service query: <service>.<namespace>.svc.lttle.local
+                        // Service query: <service>.<namespace>.svc.<zone_suffix>
                         if let Some(service_ip) =
                             self.resolve_service(&resource_name, &namespace, t).await
                         {

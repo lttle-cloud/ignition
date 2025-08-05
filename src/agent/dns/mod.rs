@@ -24,6 +24,7 @@ struct DnsHandler {
     net_agent: Arc<NetAgent>,
     repository: Arc<Repository>,
     default_ttl: u32,
+    zone_suffix: String,
     upstream_resolver: Option<hickory_resolver::TokioAsyncResolver>,
 }
 
@@ -55,6 +56,7 @@ impl DnsAgent {
             net_agent: self.net_agent.clone(),
             repository: self.repository.clone(),
             default_ttl: self.config.default_ttl,
+            zone_suffix: self.config.zone_suffix.clone(),
             upstream_resolver: DnsHandler::create_upstream_resolver(&self.config.upstream_dns_servers),
         };
 
