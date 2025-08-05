@@ -13,7 +13,10 @@ use tracing::{debug, warn};
 use crate::{
     controller::context::ControllerKey,
     resource_index::ResourceKind,
-    resources::{Convert, metadata::Metadata},
+    resources::{
+        Convert,
+        metadata::{Metadata, Namespace},
+    },
     utils::machine_name_from_key,
 };
 
@@ -45,10 +48,7 @@ impl DnsHandler {
         // Look up service in repository
         let service_repo = self.repository.service(tenant.to_string());
 
-        let metadata = Metadata {
-            name: name.to_string(),
-            namespace: Some(namespace.to_string()),
-        };
+        let metadata = Metadata::new(name.to_string(), Namespace::specified(namespace));
 
         if let Ok(Some((service, status))) = service_repo.get_with_status(metadata) {
             let service = service.latest();
@@ -71,12 +71,7 @@ impl DnsHandler {
 
     async fn resolve_machine(&self, name: &str, namespace: &str, tenant: &str) -> Option<String> {
         // Look up machine by network tag
-        let key = ControllerKey::new(
-            tenant,
-            ResourceKind::Machine,
-            Some(namespace),
-            name,
-        );
+        let key = ControllerKey::new(tenant, ResourceKind::Machine, Some(namespace), name);
         let network_tag = machine_name_from_key(&key);
 
         if let Some(machine) = self
