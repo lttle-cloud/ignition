@@ -113,7 +113,6 @@ async fn main() -> Result<()> {
                                 evergreen_external_ports: vec![80, 443],
                             },
                             dns_config: DnsAgentConfig {
-                                bind_address: scheduler_config.dns_config.bind_address,
                                 zone_suffix: scheduler_config.dns_config.zone_suffix,
                                 default_ttl: scheduler_config.dns_config.default_ttl,
                                 upstream_dns_servers: scheduler_config.dns_config.upstream_dns_servers,

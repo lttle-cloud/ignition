@@ -24,7 +24,6 @@ initrd-path = "./target/takeoff.cpio"
 # append-cmd-line = ""
 
 [dns]
-bind-address = "10.1.0.1:53"
 zone-suffix = "lttle.local"
 default-ttl = 300
 # Upstream DNS servers for resolving external domains (optional)

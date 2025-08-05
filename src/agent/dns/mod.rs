@@ -47,7 +47,8 @@ impl DnsAgent {
             bail!("DNS server already running");
         }
 
-        let bind_addr = self.config.bind_address.parse::<SocketAddr>()?;
+        let gateway_ip = self.net_agent.service_gateway();
+        let bind_addr = SocketAddr::new(gateway_ip.into(), 53);
         info!("Starting DNS server on {}", bind_addr);
 
         let handler = DnsHandler {

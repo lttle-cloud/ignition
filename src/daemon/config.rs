@@ -73,8 +73,6 @@ pub struct ApiServerConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DnsConfig {
-    #[serde(rename = "bind-address")]
-    pub bind_address: String,
     #[serde(rename = "zone-suffix")]
     pub zone_suffix: String,
     #[serde(rename = "default-ttl")]
