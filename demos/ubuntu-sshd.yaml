@@ -1,13 +1,6 @@
 machine:
   name: ubuntu-ssh-test
-  image: linuxserver/openssh-server:latest
+  image: ghegoiu1/ignition-dns-test:latest
   resources:
     cpu: 1
     memory: 256
-  env:
-    PUID: "1000"
-    PGID: "1000"
-    TZ: "UTC"
-    PASSWORD_ACCESS: "true"
-    USER_PASSWORD: "test123"
-    USER_NAME: "testuser"

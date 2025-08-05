@@ -1,0 +1,10 @@
+FROM node:20-alpine
+
+# Create app directory
+WORKDIR /app
+
+# Copy the test script
+COPY dns-test.js /app/dns-test.js
+
+# Run the test script
+CMD ["node", "dns-test.js"]
