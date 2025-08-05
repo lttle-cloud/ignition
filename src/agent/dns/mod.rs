@@ -9,37 +9,32 @@ use tokio::{net::UdpSocket, spawn, sync::Mutex, task::JoinHandle};
 use tracing::{error, info};
 
 use crate::{
-    agent::{dns::config::DnsAgentConfig, machine::MachineAgent, net::NetAgent},
+    agent::{dns::config::DnsAgentConfig, net::NetAgent},
     repository::Repository,
 };
 
 pub struct DnsAgent {
     config: DnsAgentConfig,
     net_agent: Arc<NetAgent>,
-    machine_agent: Arc<MachineAgent>,
     repository: Arc<Repository>,
     server_task: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 struct DnsHandler {
     net_agent: Arc<NetAgent>,
-    machine_agent: Arc<MachineAgent>,
     repository: Arc<Repository>,
     default_ttl: u32,
 }
-
 
 impl DnsAgent {
     pub async fn new(
         config: DnsAgentConfig,
         net_agent: Arc<NetAgent>,
-        machine_agent: Arc<MachineAgent>,
         repository: Arc<Repository>,
     ) -> Result<Arc<Self>> {
         Ok(Arc::new(Self {
             config,
             net_agent,
-            machine_agent,
             repository,
             server_task: Arc::new(Mutex::new(None)),
         }))
@@ -56,7 +51,6 @@ impl DnsAgent {
 
         let handler = DnsHandler {
             net_agent: self.net_agent.clone(),
-            machine_agent: self.machine_agent.clone(),
             repository: self.repository.clone(),
             default_ttl: self.config.default_ttl,
         };

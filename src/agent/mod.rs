@@ -66,13 +66,7 @@ impl Agent {
 
         let proxy = ProxyAgent::new(config.proxy_config.clone(), machine.clone()).await?;
 
-        let dns = DnsAgent::new(
-            config.dns_config.clone(),
-            net.clone(),
-            machine.clone(),
-            repository,
-        )
-        .await?;
+        let dns = DnsAgent::new(config.dns_config.clone(), net.clone(), repository).await?;
 
         // Start the DNS server
         dns.start().await?;

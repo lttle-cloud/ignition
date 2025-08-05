@@ -10,19 +10,13 @@ use hickory_server::{
 };
 use tracing::{debug, warn};
 
-use crate::{
-    controller::context::ControllerKey,
-    resource_index::ResourceKind,
-    resources::metadata::{Metadata, Namespace},
-    utils::machine_name_from_key,
-};
+use crate::resources::metadata::{Metadata, Namespace};
 
 use super::DnsHandler;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum DnsSubdomain {
     Service { name: String, namespace: String },
-    Machine { name: String, namespace: String },
 }
 
 impl DnsSubdomain {
@@ -43,10 +37,6 @@ impl DnsSubdomain {
                 name: name.to_string(),
                 namespace: namespace.to_string(),
             }),
-            "machine" => Some(Self::Machine {
-                name: name.to_string(),
-                namespace: namespace.to_string(),
-            }),
             _ => None,
         }
     }
@@ -61,22 +51,6 @@ impl DnsHandler {
 
         if let Ok(Some((_, status))) = service_repo.get_with_status(metadata) {
             return status.service_ip;
-        }
-
-        None
-    }
-
-    async fn resolve_machine(&self, name: &str, namespace: &str, tenant: &str) -> Option<String> {
-        // Look up machine by network tag
-        let key = ControllerKey::new(tenant, ResourceKind::Machine, Some(namespace), name);
-        let network_tag = machine_name_from_key(&key);
-
-        if let Some(machine) = self
-            .machine_agent
-            .get_machine_by_network_tag(&network_tag)
-            .await
-        {
-            return Some(machine.config.network.ip_address.clone());
         }
 
         None
@@ -130,24 +104,6 @@ impl DnsHandler {
                         .await
                     {
                         if let Ok(ip) = service_ip.parse::<Ipv4Addr>() {
-                            return vec![Record::from_rdata(
-                                name.clone().into(),
-                                self.default_ttl,
-                                RData::A(A(ip)),
-                            )];
-                        }
-                    }
-                }
-                DnsSubdomain::Machine {
-                    name: resource_name,
-                    namespace,
-                } => {
-                    // Machine query: <machine>.<namespace>.machine.lttle.local
-                    if let Some(machine_ip) = self
-                        .resolve_machine(&resource_name, &namespace, &tenant)
-                        .await
-                    {
-                        if let Ok(ip) = machine_ip.parse::<Ipv4Addr>() {
                             return vec![Record::from_rdata(
                                 name.clone().into(),
                                 self.default_ttl,
