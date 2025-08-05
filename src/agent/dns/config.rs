@@ -7,13 +7,3 @@ pub struct DnsAgentConfig {
     /// TTL for DNS records in seconds
     pub default_ttl: u32,
 }
-
-impl Default for DnsAgentConfig {
-    fn default() -> Self {
-        Self {
-            bind_address: "10.0.1.1:53".to_string(),
-            zone_suffix: "lttle.local".to_string(),
-            default_ttl: 300,
-        }
-    }
-}
