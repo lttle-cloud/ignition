@@ -28,13 +28,6 @@ struct DnsHandler {
     default_ttl: u32,
 }
 
-#[derive(Clone, Debug)]
-struct ServiceDnsEntry {
-    service_ip: Option<String>,
-    target_machine: String,
-    target_namespace: String,
-    port: u16,
-}
 
 impl DnsAgent {
     pub async fn new(
