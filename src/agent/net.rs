@@ -229,7 +229,7 @@ impl NetAgent {
         Ok(())
     }
 
-    pub fn ip_reservation_lookup(&self, ip: impl AsRef<str>) -> Result<Option<String>> {
+    pub fn ip_reservation_lookup(&self, ip: impl AsRef<str>) -> Result<Option<IpReservation>> {
         let ip_str = ip.as_ref();
 
         let vm_key = Key::<IpReservation>::not_namespaced()
@@ -238,7 +238,7 @@ impl NetAgent {
             .key(ip_str.to_string());
 
         if let Some(reservation) = self.store.get::<IpReservation>(&vm_key)? {
-            return Ok(Some(reservation.tenant));
+            return Ok(Some(reservation));
         }
 
         let service_key = Key::<IpReservation>::not_namespaced()
@@ -247,7 +247,7 @@ impl NetAgent {
             .key(ip_str.to_string());
 
         if let Some(reservation) = self.store.get::<IpReservation>(&service_key)? {
-            return Ok(Some(reservation.tenant));
+            return Ok(Some(reservation));
         }
 
         Ok(None)

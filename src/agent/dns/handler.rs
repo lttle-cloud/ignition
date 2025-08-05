@@ -31,10 +31,6 @@ impl DnsSubdomain {
 }
 
 impl DnsHandler {
-    async fn ip_reservation_lookup(&self, ip: &str) -> Option<String> {
-        self.net_agent.ip_reservation_lookup(ip).ok().flatten()
-    }
-
     async fn resolve_service(
         &self,
         name: &str,
@@ -98,8 +94,8 @@ impl DnsHandler {
         };
 
         // Find tenant from source IP
-        let tenant = match self.ip_reservation_lookup(&src_ip).await {
-            Some(t) => t,
+        let tenant = match self.net_agent.ip_reservation_lookup(&src_ip).ok().flatten() {
+            Some(t) => t.tenant.clone(),
             None => {
                 debug!("No tenant found for source IP: {}", src_ip);
                 return vec![];
