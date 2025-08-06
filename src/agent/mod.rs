@@ -1,4 +1,5 @@
 pub mod data;
+pub mod dns;
 pub mod image;
 pub mod job;
 pub mod machine;
@@ -12,6 +13,7 @@ use anyhow::Result;
 
 use crate::{
     agent::{
+        dns::{DnsAgent, config::DnsAgentConfig},
         image::{ImageAgent, ImageAgentConfig},
         job::JobAgent,
         machine::{MachineAgent, MachineAgentConfig},
@@ -21,6 +23,7 @@ use crate::{
     },
     controller::scheduler::Scheduler,
     machinery::store::Store,
+    repository::Repository,
 };
 
 #[derive(Debug, Clone)]
@@ -31,6 +34,7 @@ pub struct AgentConfig {
     pub image_config: ImageAgentConfig,
     pub machine_config: MachineAgentConfig,
     pub proxy_config: ProxyAgentConfig,
+    pub dns_config: DnsAgentConfig,
 }
 
 pub struct Agent {
@@ -40,10 +44,15 @@ pub struct Agent {
     image: Arc<ImageAgent>,
     machine: Arc<MachineAgent>,
     proxy: Arc<ProxyAgent>,
+    dns: Arc<DnsAgent>,
 }
 
 impl Agent {
-    pub async fn new(config: AgentConfig, scheduler: Weak<Scheduler>) -> Result<Self> {
+    pub async fn new(
+        config: AgentConfig,
+        scheduler: Weak<Scheduler>,
+        repository: Arc<Repository>,
+    ) -> Result<Self> {
         let store = Arc::new(Store::new(&config.store_path).await?);
 
         let net = Arc::new(NetAgent::new(config.net_config.clone(), store.clone()).await?);
@@ -57,6 +66,11 @@ impl Agent {
 
         let proxy = ProxyAgent::new(config.proxy_config.clone(), machine.clone()).await?;
 
+        let dns = DnsAgent::new(config.dns_config.clone(), net.clone(), repository).await?;
+
+        // Start the DNS server
+        dns.start().await?;
+
         Ok(Self {
             job: Arc::new(JobAgent::new(scheduler)),
             net,
@@ -64,6 +78,7 @@ impl Agent {
             image,
             machine,
             proxy,
+            dns,
         })
     }
 
@@ -89,5 +104,9 @@ impl Agent {
 
     pub fn proxy(&self) -> Arc<ProxyAgent> {
         self.proxy.clone()
+    }
+
+    pub fn dns(&self) -> Arc<DnsAgent> {
+        self.dns.clone()
     }
 }

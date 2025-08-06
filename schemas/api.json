@@ -855,6 +855,12 @@
             "string",
             "null"
           ]
+        },
+        "internal_dns_hostname": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

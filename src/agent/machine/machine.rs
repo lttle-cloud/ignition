@@ -122,6 +122,7 @@ pub struct NetworkConfig {
     pub ip_address: String,
     pub gateway: String,
     pub netmask: String,
+    pub dns_servers: Vec<String>,
 }
 
 pub enum MachineStopReason {
@@ -630,6 +631,10 @@ impl Machine {
             self.config.name, *count
         );
 
+        let MachineMode::Flash { .. } = self.config.mode else {
+            return;
+        };
+
         if *count == 0 {
             info!(
                 "Last connection dropped for machine '{}', starting suspend timeout",
@@ -673,6 +678,10 @@ impl Machine {
             self.config.name, *count
         );
 
+        let MachineMode::Flash { .. } = self.config.mode else {
+            return;
+        };
+
         if *count == 0 {
             info!(
                 "Last active connection dropped for machine '{}', starting suspend timeout",
@@ -683,11 +692,6 @@ impl Machine {
     }
 
     async fn start_suspend_timeout(self: &Arc<Self>) {
-        info!(
-            "Setting suspend timeout for machine '{}' (10 seconds)",
-            self.config.name
-        );
-
         let machine = Arc::clone(self);
         let timeout_task = tokio::spawn(async move {
             let MachineMode::Flash {
@@ -696,6 +700,11 @@ impl Machine {
             else {
                 return;
             };
+
+            info!(
+                "Setting suspend timeout for machine '{}'",
+                machine.config.name
+            );
 
             sleep(suspend_timeout).await;
 

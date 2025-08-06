@@ -1,0 +1,6 @@
+machine:
+  name: dns-test
+  image: ghegoiu1/ignition-dns-test:latest
+  resources:
+    cpu: 1
+    memory: 256

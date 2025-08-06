@@ -359,7 +359,11 @@ impl Controller for MachineController {
                     None => {
                         ctx.agent
                             .net()
-                            .ip_reservation_create(IpReservationKind::VM, Some(name.clone()))
+                            .ip_reservation_create(
+                                IpReservationKind::VM,
+                                Some(name.clone()),
+                                ctx.tenant.clone(),
+                            )
                             .map_err(|_| anyhow!("failed to allocate IP for machine: {}", name))?
                             .ip
                     }
@@ -473,6 +477,7 @@ impl Controller for MachineController {
                             mac_address: mac,
                             gateway: ctx.agent.net().vm_gateway().to_string(),
                             netmask: ctx.agent.net().vm_netmask().to_string(),
+                            dns_servers: vec![ctx.agent.net().service_gateway().to_string()],
                         },
                     })
                     .await

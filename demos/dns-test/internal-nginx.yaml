@@ -1,0 +1,16 @@
+machine:
+  name: nginx-test
+  image: nginx:latest
+  resources:
+    cpu: 1
+    memory: 128
+---
+service:
+  name: nginx-test
+  target:
+    name: nginx-test
+    port: 80
+    protocol: http
+  bind:
+    internal:
+      port: 80

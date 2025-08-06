@@ -78,12 +78,16 @@ mod service {
     #[status]
     struct Status {
         service_ip: Option<String>,
+        internal_dns_hostname: Option<String>,
     }
 }
 
 impl FromResource<Service> for ServiceStatus {
     fn from_resource(_resource: Service) -> Result<Self> {
-        Ok(ServiceStatus { service_ip: None })
+        Ok(ServiceStatus { 
+            service_ip: None,
+            internal_dns_hostname: None,
+        })
     }
 }
 

@@ -3,7 +3,8 @@ machine:
   image: nginx:latest
   mode:
     flash:
-      listen-on-port: 80 # snapshot when listening on port 80
+      strategy:
+        listen-on-port: 80
   resources:
     cpu: 1
     memory: 128

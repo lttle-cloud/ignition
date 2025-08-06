@@ -13,7 +13,7 @@ use crate::{
             ProxyBinding,
         },
     },
-    constants::DEFAULT_TRAFFIC_AWARE_INACTIVITY_TIMEOUT_SECS,
+    constants::{DEFAULT_NAMESPACE, DEFAULT_TRAFFIC_AWARE_INACTIVITY_TIMEOUT_SECS},
     controller::{
         Controller, ReconcileNext,
         context::{ControllerContext, ControllerEvent, ControllerKey},
@@ -134,6 +134,7 @@ impl Controller for ServiceController {
                 .ip_reservation_create(
                     IpReservationKind::Service,
                     Some(service_name_from_key(&key)),
+                    ctx.tenant.clone(),
                 )?
                 .ip
                 .clone()
@@ -153,6 +154,18 @@ impl Controller for ServiceController {
             service.target.name.clone(),
         );
         let target_network_tag = machine_name_from_key(&target_machine_key);
+
+        let internal_dns_hostname = match &service.bind {
+            ServiceBind::Internal { .. } => {
+                let service_namespace = service.namespace.as_deref().unwrap_or(DEFAULT_NAMESPACE);
+                Some(
+                    ctx.agent
+                        .dns()
+                        .get_internal_dns_for_svc(&service.name, service_namespace),
+                )
+            }
+            ServiceBind::External { .. } => None,
+        };
 
         let binding_mode = match service.bind {
             ServiceBind::Internal { port } => BindingMode::Internal {
@@ -229,6 +242,7 @@ impl Controller for ServiceController {
             .service(ctx.tenant.clone())
             .patch_status(key.metadata().clone(), |status| {
                 status.service_ip = Some(service_ip.clone());
+                status.internal_dns_hostname = internal_dns_hostname.clone();
             })
             .await?;
 

@@ -26,6 +26,9 @@ pub struct Config {
 
     #[serde(rename = "api")]
     pub api_server_config: ApiServerConfig,
+
+    #[serde(rename = "dns")]
+    pub dns_config: DnsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -66,6 +69,16 @@ pub struct ApiServerConfig {
     pub port: u16,
     #[serde(rename = "jwt-secret")]
     pub jwt_secret: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DnsConfig {
+    #[serde(rename = "zone-suffix")]
+    pub zone_suffix: String,
+    #[serde(rename = "default-ttl")]
+    pub default_ttl: u32,
+    #[serde(rename = "upstream-dns-servers", default)]
+    pub upstream_dns_servers: Vec<String>,
 }
 
 async fn resolve_config_path(path_override: Option<PathBuf>) -> Result<PathBuf> {

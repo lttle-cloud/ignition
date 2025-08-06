@@ -7,8 +7,9 @@ use anyhow::Result;
 use clap::Parser;
 use ignition::{
     agent::{
-        Agent, AgentConfig, image::ImageAgentConfig, machine::MachineAgentConfig,
-        net::NetAgentConfig, proxy::ProxyAgentConfig, volume::VolumeAgentConfig,
+        Agent, AgentConfig, dns::config::DnsAgentConfig, image::ImageAgentConfig,
+        machine::MachineAgentConfig, net::NetAgentConfig, proxy::ProxyAgentConfig,
+        volume::VolumeAgentConfig,
     },
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
     constants::DEFAULT_KERNEL_CMD_LINE_INIT,
@@ -47,6 +48,7 @@ async fn main() -> Result<()> {
         let repository = Arc::new(Repository::new(store.clone(), scheduler_weak.clone()));
 
         let agent_scheduler = scheduler_weak.clone();
+        let repository_clone = repository.clone();
 
         let scheduler_config = config.clone();
         let agent = block_in_place(move || {
@@ -110,8 +112,14 @@ async fn main() -> Result<()> {
                                     .default_tls_key_path,
                                 evergreen_external_ports: vec![80, 443],
                             },
+                            dns_config: DnsAgentConfig {
+                                zone_suffix: scheduler_config.dns_config.zone_suffix,
+                                default_ttl: scheduler_config.dns_config.default_ttl,
+                                upstream_dns_servers: scheduler_config.dns_config.upstream_dns_servers,
+                            },
                         },
                         agent_scheduler,
+                        repository_clone,
                     )
                     .await
                     .expect("Failed to create agent"),

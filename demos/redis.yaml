@@ -1,0 +1,21 @@
+machine:
+  image: redis:8
+  name: redis-test
+  resources:
+    cpu: 1
+    memory: 512
+  mode:
+    flash:
+      strategy:
+        listen-on-port: 6379
+---
+service:
+  name: redis-test
+  target:
+    name: redis-test
+    port: 6379
+    protocol: tcp
+  bind:
+    external:
+      host: redis-test.alpha1.ovh-rbx.lttle.host
+      protocol: tls
