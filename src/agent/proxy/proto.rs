@@ -11,18 +11,26 @@ use tokio_rustls::server::TlsStream;
 const MAX_HEADER_BYTES: usize = 16 * 1024; // 16 KiB is NGINXʼs default
 const HEADER_TIMEOUT: Duration = Duration::from_secs(2);
 
+// ProtocolExtensions
+const PG_SSL_REQUEST_CODE: [u8; 4] = [0x04, 0xD2, 0x16, 0x2F]; // PostgreSQL SSLRequest code
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SniffedProtocol {
     Http,
     Tls,
+    PgSsl,
     Unknown,
 }
 
 pub async fn sniff_protocol(stream: &TcpStream) -> Result<SniffedProtocol> {
-    let mut buf = [0u8; 5];
+    let mut buf = [0u8; 8];
     let n = stream.peek(&mut buf).await?;
     if n == 0 {
         return Ok(SniffedProtocol::Unknown);
+    }
+
+    if n == 8 && buf[4..8] == PG_SSL_REQUEST_CODE {
+        return Ok(SniffedProtocol::PgSsl);
     }
 
     // TLS 1.0-1.3 all start with 0x16 (= Handshake) and a version ≥ 0x0301.

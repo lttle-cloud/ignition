@@ -13,7 +13,7 @@ use hyper_util::{
 use papaya::HashMap;
 use rustls::{ServerConfig, sign::CertifiedKey};
 use tokio::{
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     spawn,
     task::JoinHandle,
@@ -321,6 +321,10 @@ async fn handle_external_connection(
             info!("Handling HTTP connection");
             handle_http_connection(stream, bindings, machine_agent).await
         }
+        SniffedProtocol::PgSsl => {
+            info!("Handling PostgreSQL SSL connection");
+            handle_pg_ssl_connection(tls_acceptor.clone(), stream, bindings, machine_agent).await
+        }
         SniffedProtocol::Tls => {
             info!("Handling TLS connection");
             let tls_stream = tls_acceptor.accept(stream).await?;
@@ -350,6 +354,22 @@ async fn handle_http_connection(
     machine_connection.proxy_from_client(stream).await?;
 
     Ok(())
+}
+
+async fn handle_pg_ssl_connection(
+    tls_acceptor: Arc<TlsAcceptor>,
+    mut stream: TcpStream,
+    bindings: Arc<HashMap<String, ProxyBinding>>,
+    machine_agent: Arc<MachineAgent>,
+) -> Result<()> {
+    // read the SSLRequest message and accept the connection with handle_tls_connection
+    let mut _throw_away_buffer = [0u8; 8];
+    stream.read_exact(&mut _throw_away_buffer).await?;
+
+    stream.write_all(b"S").await?;
+
+    let tls_stream = tls_acceptor.accept(stream).await?;
+    handle_tls_connection(tls_stream, bindings, machine_agent).await
 }
 
 async fn handle_https_connection(

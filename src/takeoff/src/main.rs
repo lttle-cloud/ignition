@@ -4,6 +4,7 @@ mod oci_config;
 mod serial;
 
 use std::{
+    collections::HashMap,
     process::{Command, Stdio},
     sync::Arc,
     time::Duration,
@@ -23,8 +24,8 @@ use tokio::{fs, io::AsyncWriteExt, time::sleep};
 use tracing::{info, warn};
 
 async fn takeoff() -> Result<()> {
-    mount("devtmpfs", "/dev", Some("devtmpfs")).await;
     mount("proc", "/proc", Some("proc")).await;
+    mount("devtmpfs", "/dev", Some("devtmpfs")).await;
 
     let guest_manager = Arc::new(GuestManager::new().expect("create guest manager"));
 
@@ -44,8 +45,8 @@ async fn takeoff() -> Result<()> {
     chroot("/real_root").expect("chroot");
     chdir("/").expect("chdir");
 
-    mount("devtmpfs", "/dev", Some("devtmpfs")).await;
     mount("proc", "/proc", Some("proc")).await;
+    mount("devtmpfs", "/dev", Some("devtmpfs")).await;
     mount("tmpfs", "/tmp", Some("tmpfs")).await;
     mount("tmpfs", "/run", Some("tmpfs")).await;
 
@@ -67,13 +68,14 @@ async fn takeoff() -> Result<()> {
     cmd.extend(config.cmd.clone().unwrap_or_default());
     info!("cmd: {:?}", cmd);
 
-    let mut envs = args.envs.clone();
+    let mut envs = HashMap::new();
     if let Some(config_envs) = config.env {
         for env in config_envs {
             let env_var: EnvVar = env.parse().expect("parse env var");
             envs.insert(env_var.key, env_var.value);
         }
     }
+    envs.extend(args.envs);
 
     info!("envs: {:#?}", envs);
 
@@ -87,10 +89,21 @@ async fn takeoff() -> Result<()> {
     // remount proc
     mount("proc", "/proc", Some("proc")).await;
 
+    for (link, target) in [
+        ("/dev/fd", "/proc/self/fd"),
+        ("/dev/stdin", "/proc/self/fd/0"),
+        ("/dev/stdout", "/proc/self/fd/1"),
+        ("/dev/stderr", "/proc/self/fd/2"),
+    ] {
+        let _ = fs::remove_file(link).await; // ignore if absent
+        let _ = fs::symlink(target, link).await; // ignore if already there
+    }
+
     let cmd = Command::new(cmd[0].clone())
         .args(&cmd[1..])
         .envs(envs)
         .current_dir(config.working_dir.unwrap_or("/".to_string()))
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn();
@@ -98,6 +111,7 @@ async fn takeoff() -> Result<()> {
     let child = match cmd {
         Ok(child) => child,
         Err(e) => {
+            info!("failed to spawn command: {}", e);
             bail!("failed to spawn command: {}", e);
         }
     };
