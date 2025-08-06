@@ -73,7 +73,8 @@ impl From<(ServiceLatest, ServiceStatus)> for ServiceTableRow {
     fn from((service, status): (ServiceLatest, ServiceStatus)) -> Self {
         let host = match &service.bind {
             ServiceBind::External { host, .. } => Some(host.clone()),
-            ServiceBind::Internal { .. } => status.service_ip.clone(),
+            ServiceBind::Internal { .. } => status.internal_dns_hostname.clone()
+                .or(status.service_ip.clone()),
         };
 
         let target_namespace = service
@@ -122,7 +123,8 @@ impl From<(ServiceLatest, ServiceStatus)> for ServiceSummary {
     fn from((service, status): (ServiceLatest, ServiceStatus)) -> Self {
         let host = match &service.bind {
             ServiceBind::External { host, .. } => Some(host.clone()),
-            ServiceBind::Internal { .. } => status.service_ip.clone(),
+            ServiceBind::Internal { .. } => status.internal_dns_hostname.clone()
+                .or(status.service_ip.clone()),
         };
 
         let target_namespace = service

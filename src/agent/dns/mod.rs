@@ -42,6 +42,10 @@ impl DnsAgent {
         }))
     }
 
+    pub fn get_internal_dns_for_svc(&self, name: &str, namespace: &str) -> String {
+        format!("{}.{}.svc.{}", name, namespace, self.config.zone_suffix)
+    }
+
     pub async fn start(&self) -> Result<()> {
         let mut server_task = self.server_task.lock().await;
         if server_task.is_some() {
