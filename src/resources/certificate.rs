@@ -4,15 +4,20 @@ mod certificate {
     struct V1 {
         domains: Vec<String>,
         issuer: CertificateIssuer,
-        renewal: CertificateRenewalConfig,
     }
 
     #[schema]
     enum CertificateIssuer {
         #[serde(rename = "auto")]
         Auto {
-            provider: AutoProvider,
-            email: String,
+            /// References a provider name from ignition.toml [[cert-provider]] config
+            provider: String,
+            /// Optional email override. If specified, takes precedence over provider's default-email.
+            /// If not specified, falls back to provider's default-email from config.
+            /// Validation should error if neither this nor provider config has an email.
+            email: Option<String>,
+            /// Optional renewal configuration. Uses sensible defaults if not specified.
+            renewal: Option<CertificateRenewalConfig>,
         },
         #[serde(rename = "manual")]
         Manual {
@@ -23,27 +28,13 @@ mod certificate {
     }
 
     #[schema]
-    enum AutoProvider {
-        #[serde(rename = "letsencrypt")]
-        LetsEncrypt { environment: LetsEncryptEnvironment },
-        #[serde(rename = "zerossl")]
-        ZeroSSL { api_key: String },
-    }
-
-    #[schema]
-    enum LetsEncryptEnvironment {
-        #[serde(rename = "production")]
-        Production,
-        #[serde(rename = "staging")]
-        Staging,
-    }
-
-    #[schema]
     struct CertificateRenewalConfig {
+        /// Days before expiry to start renewal attempts. Default: 30 days.
         #[serde(rename = "days-before-expiry")]
         days_before_expiry: Option<u32>,
-        #[serde(rename = "retry-interval")]
-        retry_interval: Option<u32>,
+        /// Hours between renewal retry attempts on failure. Default: 12 hours.
+        #[serde(rename = "retry-interval-hours")]
+        retry_interval_hours: Option<u32>,
     }
 
     #[status]
@@ -63,11 +54,11 @@ mod certificate {
         #[serde(rename = "pending-order")]
         PendingOrder, // ACME order created, waiting for authorizations
 
-        #[serde(rename = "pending-dns-validation")]
-        PendingDnsValidation, // DNS-01 challenge, waiting for DNS propagation
+        #[serde(rename = "pending-dns-challenge")]
+        PendingDnsChallenge, // DNS-01 challenge, waiting for DNS propagation
 
-        #[serde(rename = "pending-http-validation")]
-        PendingHttpValidation, // HTTP-01 challenge, waiting for validation
+        #[serde(rename = "pending-http-challenge")]
+        PendingHttpChallenge, // HTTP-01 challenge, waiting for validation
 
         #[serde(rename = "validating")]
         Validating, // ACME server is validating the challenge
