@@ -85,6 +85,8 @@ pub enum AdmissionRule {
     DissalowPatchUpdate,
     /// Custom admission status check
     StatusCheck,
+    /// Custom before delete check
+    BeforeDelete,
 }
 
 #[derive(Debug, Clone)]

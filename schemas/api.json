@@ -673,6 +673,15 @@
             }
           ]
         },
+        "volumes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/MachineVolumeBinding"
+          }
+        },
         "env": {
           "type": [
             "object",
@@ -687,6 +696,27 @@
         "name",
         "image",
         "resources"
+      ]
+    },
+    "MachineVolumeBinding": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path"
       ]
     },
     "Me": {

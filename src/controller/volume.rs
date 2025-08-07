@@ -1,13 +1,21 @@
-use anyhow::Result;
+use std::sync::Arc;
+
+use anyhow::{Result, bail};
 use async_trait::async_trait;
 use tracing::{error, info};
 
 use crate::{
     controller::{
-        Controller, ReconcileNext,
+        BeforeDelete, Controller, ReconcileNext,
         context::{ControllerContext, ControllerEvent, ControllerKey},
     },
+    repository::Repository,
     resource_index::ResourceKind,
+    resources::{
+        Convert,
+        metadata::{Metadata, Namespace},
+        volume::Volume,
+    },
 };
 
 pub struct VolumeController;
@@ -119,5 +127,56 @@ impl Controller for VolumeController {
         );
 
         ReconcileNext::done()
+    }
+}
+
+#[async_trait]
+impl BeforeDelete for Volume {
+    async fn before_delete(
+        &self,
+        tenant: String,
+        repo: Arc<Repository>,
+        metadata: Metadata,
+    ) -> Result<()> {
+        let Some(volume) = repo.volume(tenant.clone()).get(
+            Namespace::from_value_or_default(metadata.namespace.clone()),
+            metadata.name.clone(),
+        )?
+        else {
+            bail!("volume not found");
+        };
+        let volume = volume.latest();
+
+        let machines = repo.machine(tenant.clone()).list(Namespace::Unspecified)?;
+
+        let mut usage_count = 0;
+        for machine in machines {
+            let machine = machine.latest();
+            let Some(volumes) = machine.volumes else {
+                continue;
+            };
+
+            volumes.iter().for_each(|volume_bind| {
+                if volume_bind.name == volume.name {
+                    let namespace = Namespace::from_value_or_default(
+                        volume_bind
+                            .namespace
+                            .clone()
+                            .or_else(|| machine.namespace.clone()),
+                    )
+                    .as_value();
+
+                    if namespace == metadata.namespace {
+                        usage_count += 1;
+                    }
+                }
+            });
+        }
+
+        if usage_count > 0 {
+            bail!("volume is still in use by {} machines", usage_count);
+        }
+
+        Ok(())
     }
 }

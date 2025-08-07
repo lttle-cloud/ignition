@@ -5,13 +5,15 @@ use clap::Args;
 use ignition::{
     api_client::ApiClient,
     resource_index::Resources,
-    resources::{ProvideMetadata, machine::Machine, metadata::Namespace, service::Service},
+    resources::{
+        ProvideMetadata, machine::Machine, metadata::Namespace, service::Service, volume::Volume,
+    },
 };
 use tokio::fs::read_to_string;
 
 use crate::{
     client::get_api_client,
-    cmd::{machine::MachineSummary, service::ServiceSummary},
+    cmd::{machine::MachineSummary, service::ServiceSummary, volume::VolumeSummary},
     config::Config,
     ui::message::message_info,
 };
@@ -37,6 +39,11 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
 
         if let Ok(service) = resource.clone().try_into() {
             deploy_service(config, &api_client, service).await?;
+            continue;
+        }
+
+        if let Ok(volume) = resource.clone().try_into() {
+            deploy_volume(config, &api_client, volume).await?;
             continue;
         }
 
@@ -99,6 +106,29 @@ async fn deploy_service(_config: &Config, api_client: &ApiClient, service: Servi
     ));
 
     let summary = ServiceSummary::from((service, status));
+    summary.print();
+
+    Ok(())
+}
+
+async fn deploy_volume(_config: &Config, api_client: &ApiClient, volume: Volume) -> Result<()> {
+    let metadata = volume.metadata();
+    api_client.volume().apply(volume).await?;
+
+    let (volume, status) = api_client
+        .volume()
+        .get(
+            Namespace::from_value_or_default(metadata.namespace),
+            metadata.name,
+        )
+        .await?;
+
+    message_info(format!(
+        "Successfully deployed volume: {}",
+        volume.metadata().to_string()
+    ));
+
+    let summary = VolumeSummary::from((volume, status));
     summary.print();
 
     Ok(())

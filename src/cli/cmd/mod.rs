@@ -3,6 +3,7 @@ pub mod login;
 pub mod machine;
 pub mod namespace;
 pub mod service;
+pub mod volume;
 
 use std::fs::File;
 
@@ -41,6 +42,10 @@ pub enum Command {
     /// Machine management
     #[command(subcommand)]
     Machine(MachineCommand),
+
+    /// Volume management
+    #[command(subcommand)]
+    Volume(VolumeCommand),
 
     /// Service management (short: svc)
     #[command(subcommand, alias = "svc")]
@@ -82,6 +87,20 @@ pub enum ServiceCommand {
 }
 
 #[derive(Subcommand)]
+pub enum VolumeCommand {
+    /// List volumes (short: ls)
+    #[command(alias = "ls")]
+    List(ListNamespacedArgs),
+
+    /// Get a volume
+    Get(GetNamespacedArgs),
+
+    /// Delete a volume (short: rm)
+    #[command(alias = "rm")]
+    Delete(DeleteNamespacedArgs),
+}
+
+#[derive(Subcommand)]
 pub enum NamespaceCommand {
     /// List namespaces (short: ls)
     #[command(alias = "ls")]
@@ -106,6 +125,11 @@ pub async fn run_cli(config: &Config) -> Result<()> {
             ServiceCommand::List(args) => service::run_service_list(config, args).await,
             ServiceCommand::Get(args) => service::run_service_get(config, args).await,
             ServiceCommand::Delete(args) => service::run_service_delete(config, args).await,
+        },
+        Command::Volume(cmd) => match cmd {
+            VolumeCommand::List(args) => volume::run_volume_list(config, args).await,
+            VolumeCommand::Get(args) => volume::run_volume_get(config, args).await,
+            VolumeCommand::Delete(args) => volume::run_volume_delete(config, args).await,
         },
         Command::Completions { shell } => {
             let mut cmd = Cli::command();

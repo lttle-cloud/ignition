@@ -15,7 +15,9 @@ pub async fn main() {
             cfg.add_admission_rule(AdmissionRule::StatusCheck)
         })
         .resource::<resources::service::Service>()
-        .resource::<resources::volume::Volume>()
+        .resource_with_config::<resources::volume::Volume>(|cfg| {
+            cfg.add_admission_rule(AdmissionRule::BeforeDelete)
+        })
         .build()
         .await
         .expect("failed to build resources repository");

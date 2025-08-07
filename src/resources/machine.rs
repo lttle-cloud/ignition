@@ -12,6 +12,7 @@ mod machine {
         image: String,
         resources: MachineResources,
         mode: Option<MachineMode>,
+        volumes: Option<Vec<MachineVolumeBinding>>,
         env: Option<BTreeMap<String, String>>,
     }
 
@@ -44,6 +45,13 @@ mod machine {
         WaitForUserSpaceReady,
         #[serde(rename = "manual")]
         Manual,
+    }
+
+    #[schema]
+    struct MachineVolumeBinding {
+        name: String,
+        namespace: Option<String>,
+        path: String,
     }
 
     #[status]

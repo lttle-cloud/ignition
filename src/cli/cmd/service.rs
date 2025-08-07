@@ -73,7 +73,9 @@ impl From<(ServiceLatest, ServiceStatus)> for ServiceTableRow {
     fn from((service, status): (ServiceLatest, ServiceStatus)) -> Self {
         let host = match &service.bind {
             ServiceBind::External { host, .. } => Some(host.clone()),
-            ServiceBind::Internal { .. } => status.internal_dns_hostname.clone()
+            ServiceBind::Internal { .. } => status
+                .internal_dns_hostname
+                .clone()
                 .or(status.service_ip.clone()),
         };
 
@@ -123,7 +125,9 @@ impl From<(ServiceLatest, ServiceStatus)> for ServiceSummary {
     fn from((service, status): (ServiceLatest, ServiceStatus)) -> Self {
         let host = match &service.bind {
             ServiceBind::External { host, .. } => Some(host.clone()),
-            ServiceBind::Internal { .. } => status.internal_dns_hostname.clone()
+            ServiceBind::Internal { .. } => status
+                .internal_dns_hostname
+                .clone()
                 .or(status.service_ip.clone()),
         };
 
@@ -234,6 +238,7 @@ pub async fn run_service_delete(config: &Config, args: DeleteNamespacedArgs) -> 
             "You are about to delete the service '{}'. This action cannot be undone. To confirm, run the command with --yes (or -y).",
             args.name
         ));
+        return Ok(());
     }
 
     api_client

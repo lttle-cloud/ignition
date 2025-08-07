@@ -257,12 +257,42 @@
             "array",
             "null"
           ]
+        },
+        "volumes": {
+          "items": {
+            "$ref": "#/$defs/MachineVolumeBinding"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         }
       },
       "required": [
         "name",
         "image",
         "resources"
+      ],
+      "type": "object"
+    },
+    "MachineVolumeBinding": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path"
       ],
       "type": "object"
     },
