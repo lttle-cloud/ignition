@@ -660,6 +660,23 @@ impl Machine {
             );
             timeout_task.abort();
         }
+
+        // If this is the first active connection and the machine is suspended, wake it up
+        if *count > 0 {
+            let current_state = self.get_state().await;
+            if current_state == MachineState::Suspended {
+                info!(
+                    "Machine '{}' is suspended but has active connections, waking it up",
+                    self.config.name
+                );
+                if let Err(e) = self.start().await {
+                    warn!(
+                        "Failed to wake up suspended machine '{}': {}",
+                        self.config.name, e
+                    );
+                }
+            }
+        }
     }
 
     async fn decrement_active_connection_count(self: &Arc<Self>) {
