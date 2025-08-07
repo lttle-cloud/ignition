@@ -17,6 +17,7 @@ use ignition::{
         machine::MachineController,
         scheduler::{Scheduler, SchedulerConfig},
         service::ServiceController,
+        volume::VolumeController,
     },
     machinery::store::Store,
     repository::Repository,
@@ -115,7 +116,9 @@ async fn main() -> Result<()> {
                             dns_config: DnsAgentConfig {
                                 zone_suffix: scheduler_config.dns_config.zone_suffix,
                                 default_ttl: scheduler_config.dns_config.default_ttl,
-                                upstream_dns_servers: scheduler_config.dns_config.upstream_dns_servers,
+                                upstream_dns_servers: scheduler_config
+                                    .dns_config
+                                    .upstream_dns_servers,
                             },
                         },
                         agent_scheduler,
@@ -135,6 +138,7 @@ async fn main() -> Result<()> {
             vec![
                 MachineController::new_boxed(),
                 ServiceController::new_boxed(),
+                VolumeController::new_boxed(),
             ],
         );
 
@@ -157,7 +161,8 @@ async fn main() -> Result<()> {
     )
     .add_service::<CoreService>()
     .add_service::<services::MachineService>()
-    .add_service::<services::ServiceService>();
+    .add_service::<services::ServiceService>()
+    .add_service::<services::VolumeService>();
 
     scheduler.start_workers();
     scheduler.schedule_bringup().await?;

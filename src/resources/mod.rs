@@ -13,6 +13,7 @@ pub mod core;
 pub mod machine;
 pub mod metadata;
 pub mod service;
+pub mod volume;
 
 pub trait ConvertResource<T> {
     fn convert_up(this: Self) -> T;
@@ -84,6 +85,8 @@ pub enum AdmissionRule {
     DissalowPatchUpdate,
     /// Custom admission status check
     StatusCheck,
+    /// Custom before delete check
+    BeforeDelete,
 }
 
 #[derive(Debug, Clone)]

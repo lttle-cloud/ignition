@@ -1,3 +1,8 @@
+volume:
+  name: postgres-data
+  mode: writeable
+  size: 50M
+---
 machine:
   image: postgres:17
   name: postgres-test
@@ -8,11 +13,13 @@ machine:
     flash:
       strategy:
         listen-on-port: 5432
+  volumes:
+    - name: postgres-data
+      path: /var/lib/postgresql/data
   env:
     POSTGRES_PASSWORD: password
     POSTGRES_USER: postgres
     POSTGRES_DB: postgres
-    PGDATA: /tmp
 ---
 service:
   name: postgres-test

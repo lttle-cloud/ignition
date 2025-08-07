@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use ignition::{
-    constants::DEFAULT_SUSPEND_TIMEOUT_SECS,
+    constants::{DEFAULT_NAMESPACE, DEFAULT_SUSPEND_TIMEOUT_SECS},
     resources::machine::{MachineLatest, MachineMode, MachineSnapshotStrategy, MachineStatus},
 };
 use meta::{summary, table};
@@ -105,6 +105,20 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
             .map(|(k, v)| format!("{k} = {v}"))
             .collect();
 
+        let volumes: Vec<_> = machine
+            .volumes
+            .unwrap_or_default()
+            .into_iter()
+            .map(|v| {
+                let namespace = v
+                    .namespace
+                    .or_else(|| machine.namespace.clone())
+                    .unwrap_or(DEFAULT_NAMESPACE.to_string());
+
+                format!("{}/{} → {}", namespace, v.name, v.path)
+            })
+            .collect();
+
         let mode = match machine.mode {
             None | Some(MachineMode::Regular) => "regular".to_string(),
             _ => "flash".to_string(),
@@ -166,7 +180,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
             cpu: machine.resources.cpu.to_string(),
             memory: format!("{} MiB", machine.resources.memory),
             env,
-            volumes: vec![],
+            volumes,
             suspend_timeout: timeout,
             hypervisor_machine_id: status.machine_id.clone(),
             hypervisor_root_volume_id: status.machine_image_volume_id.clone(),

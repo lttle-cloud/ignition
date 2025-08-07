@@ -20,7 +20,12 @@ use crate::{
         context::{AsyncWork, ControllerContext, ControllerEvent, ControllerKey},
     },
     resource_index::ResourceKind,
-    resources::{self, Convert, machine::MachinePhase},
+    resources::{
+        self, Convert,
+        machine::MachinePhase,
+        metadata::{Metadata, Namespace},
+        volume::VolumeMode,
+    },
 };
 
 pub struct MachineController;
@@ -353,6 +358,54 @@ impl Controller for MachineController {
                     bail!("failed to get or create root volume for machine: {}", name);
                 };
 
+                let image_volume_id = root_volume.id.clone();
+                let mut machine_volume_mounts = vec![VolumeMountConfig {
+                    volume: root_volume,
+                    mount_at: "/".to_string(),
+                    read_only: false,
+                    root: true,
+                }];
+
+                let volume_bindings = machine.volumes.unwrap_or_default();
+                for volume_bind in volume_bindings {
+                    let volume_resource_namespace = Namespace::from_value_or_default(
+                        volume_bind.namespace.or_else(|| machine.namespace.clone()),
+                    );
+                    let volume_resource_metadata =
+                        Metadata::new(&volume_bind.name, volume_resource_namespace);
+
+                    let Ok(Some((volume_resource, volume_status))) = ctx
+                        .repository
+                        .volume(ctx.tenant.clone())
+                        .get_with_status(volume_resource_metadata)
+                    else {
+                        bail!(
+                            "volume resource {} not found for machine: {}",
+                            volume_bind.name,
+                            name
+                        );
+                    };
+                    let volume_resource = volume_resource.latest();
+
+                    let Some(Ok(Some(volume))) = volume_status
+                        .volume_id
+                        .map(|id| ctx.agent.volume().volume(&id))
+                    else {
+                        bail!(
+                            "volume resource {} not found for machine: {}",
+                            volume_bind.name,
+                            name
+                        );
+                    };
+
+                    machine_volume_mounts.push(VolumeMountConfig {
+                        volume,
+                        mount_at: volume_bind.path,
+                        read_only: volume_resource.mode == VolumeMode::ReadOnly,
+                        root: false,
+                    });
+                }
+
                 // alloc ip for machine
                 let ip = match status.machine_ip {
                     Some(ip) => ip.clone(),
@@ -436,7 +489,6 @@ impl Controller for MachineController {
                 let mac = compute_mac_for_ip(&ip)
                     .map_err(|_| anyhow!("failed to compute MAC address for IP: {}", ip))?;
 
-                let image_volume_id = root_volume.id.clone();
                 let tap_name = tap.name.clone();
                 let ip_addr = ip.clone();
                 let machine_id = name.clone();
@@ -465,12 +517,7 @@ impl Controller for MachineController {
                         state_retention_mode: MachineStateRetentionMode::OnDisk {
                             path: ctx.agent.machine().transient_dir(&name),
                         },
-                        volume_mounts: vec![VolumeMountConfig {
-                            volume: root_volume,
-                            mount_at: "/".to_string(),
-                            read_only: false,
-                            root: true,
-                        }],
+                        volume_mounts: machine_volume_mounts,
                         network: NetworkConfig {
                             tap_device: tap.name,
                             ip_address: ip,

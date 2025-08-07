@@ -41,6 +41,10 @@ impl ControllerKey {
                 self.name.clone(),
                 Namespace::from_value_or_default(self.namespace.clone()),
             ),
+            ResourceKind::Volume => Metadata::new(
+                self.name.clone(),
+                Namespace::from_value_or_default(self.namespace.clone()),
+            ),
         }
     }
 }

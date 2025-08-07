@@ -54,7 +54,14 @@ async fn takeoff() -> Result<()> {
     configure_dns(&cmdline).await?;
 
     for mount_point in args.mount_points.iter().skip(1) {
+        info!(
+            "mounting {} to {} (read-only: {})",
+            mount_point.source, mount_point.target, mount_point.read_only
+        );
         mount(&mount_point.source, &mount_point.target, Some("ext4")).await;
+        if !mount_point.read_only {
+            let _ = fs::remove_dir_all(format!("{}/lost+found", mount_point.target)).await;
+        }
     }
 
     let config = fs::read_to_string("/etc/lttle/oci-config.json")
