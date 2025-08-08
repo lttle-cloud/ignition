@@ -29,6 +29,9 @@ pub struct Config {
 
     #[serde(rename = "dns")]
     pub dns_config: DnsConfig,
+
+    #[serde(rename = "cert-provider", default)]
+    pub cert_providers: Vec<CertProvider>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -79,6 +82,19 @@ pub struct DnsConfig {
     pub default_ttl: u32,
     #[serde(rename = "upstream-dns-servers", default)]
     pub upstream_dns_servers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CertProvider {
+    pub name: String,
+    #[serde(rename = "acme-base-url")]
+    pub acme_base_url: String,
+    #[serde(rename = "default-email")]
+    pub default_email: Option<String>,
+    #[serde(rename = "api-key")]
+    pub api_key: Option<String>,
+    #[serde(rename = "environment")]
+    pub environment: Option<String>,
 }
 
 async fn resolve_config_path(path_override: Option<PathBuf>) -> Result<PathBuf> {
