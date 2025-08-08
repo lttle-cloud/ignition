@@ -19,6 +19,7 @@ pub const GUEST_MANAGER_MMIO_SIZE: u64 = MMIO_LEN;
 pub const GUEST_MANAGER_MMIO_END: u64 = GUEST_MANAGER_MMIO_START + GUEST_MANAGER_MMIO_SIZE;
 
 const TRIGGER_AFTER_OFFSET: u8 = 127;
+const CMD_OFFSET: u8 = 64;
 
 const TRIGGER_SYS_LISTEN: u8 = 1;
 const TRIGGER_SYS_BIND: u8 = 2;
@@ -27,6 +28,9 @@ const TRIGGER_MANUAL: u8 = 10;
 
 const TRIGGER_SYS_LISTEN_AFTER: u8 = TRIGGER_AFTER_OFFSET + TRIGGER_SYS_LISTEN;
 const TRIGGER_SYS_BIND_AFTER: u8 = TRIGGER_AFTER_OFFSET + TRIGGER_SYS_BIND;
+
+const CMD_FLASH_LOCK: u8 = CMD_OFFSET + 0;
+const CMD_FLASH_UNLOCK: u8 = CMD_OFFSET + 1;
 
 const READ_OFFSET_LAST_BOOT_TIME: u64 = 0;
 const READ_OFFSET_FIRST_BOOT_TIME: u64 = 8;
@@ -60,6 +64,10 @@ impl TriggerCode {
             Some(Ipv4Addr::from([bytes[3], bytes[2], bytes[1], bytes[0]]))
         }
 
+        if bytes.len() != 8 {
+            return None;
+        }
+
         // first byte is the trigger code
         match bytes[0] {
             TRIGGER_SYS_LISTEN => {
@@ -90,6 +98,26 @@ impl TriggerCode {
                 let data = bytes[1..].try_into().ok()?;
                 Some(TriggerCode::Manual { data })
             }
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum Cmd {
+    FlashLock,
+    FlashUnlock,
+}
+
+impl Cmd {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != 1 {
+            return None;
+        }
+
+        match bytes[0] {
+            CMD_FLASH_LOCK => Some(Cmd::FlashLock),
+            CMD_FLASH_UNLOCK => Some(Cmd::FlashUnlock),
             _ => None,
         }
     }
@@ -161,7 +189,17 @@ impl GuestManagerDevice {
         data.copy_from_slice(&result.to_le_bytes());
     }
 
-    pub fn mmio_write(&mut self, _offset: vm_device::bus::MmioAddressOffset, data: &[u8]) -> bool {
+    pub fn mmio_write(&mut self, offset: vm_device::bus::MmioAddressOffset, data: &[u8]) -> bool {
+        if offset == 0 {
+            return self.process_trigger(data);
+        } else if offset == 8 {
+            return self.process_cmd(data);
+        }
+
+        false
+    }
+
+    fn process_trigger(&mut self, data: &[u8]) -> bool {
         let Some(trigger_code) = TriggerCode::from_bytes(data) else {
             warn!("Failed to parse trigger data");
             return false;
@@ -205,6 +243,22 @@ impl GuestManagerDevice {
             }
             _ => {}
         };
+
+        return false;
+    }
+
+    fn process_cmd(&mut self, data: &[u8]) -> bool {
+        let Some(cmd) = Cmd::from_bytes(data) else {
+            warn!("Failed to parse cmd data");
+            return false;
+        };
+
+        let event = match cmd {
+            Cmd::FlashLock => DeviceEvent::FlashLock,
+            Cmd::FlashUnlock => DeviceEvent::FlashUnlock,
+        };
+
+        self.device_event_tx.try_broadcast(event).ok();
 
         return false;
     }
