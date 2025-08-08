@@ -139,7 +139,8 @@ impl ProxyAgent {
         let mut tls_server_config =
             tls_server_config_builder.with_cert_resolver(tls_cert_resolver.clone());
 
-        tls_server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        tls_server_config.alpn_protocols =
+            vec![b"postgresql".to_vec(), b"h2".to_vec(), b"http/1.1".to_vec()];
 
         let tls_acceptor = Arc::new(TlsAcceptor::from(Arc::new(tls_server_config)));
 

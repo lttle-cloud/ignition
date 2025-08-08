@@ -543,6 +543,20 @@ impl Machine {
                             watcher_machine.stop().await.ok();
                         }
                     }
+                    DeviceEvent::FlashLock => {
+                        info!(
+                            "Flash lock requested for machine '{}'",
+                            watcher_machine.config.name
+                        );
+                        watcher_machine.increment_active_connection_count().await;
+                    }
+                    DeviceEvent::FlashUnlock => {
+                        info!(
+                            "Flash unlock requested for machine '{}'",
+                            watcher_machine.config.name
+                        );
+                        watcher_machine.decrement_active_connection_count().await;
+                    }
                 }
             }
         });

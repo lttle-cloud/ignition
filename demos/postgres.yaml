@@ -4,15 +4,15 @@ volume:
   size: 50M
 ---
 machine:
-  image: postgres:17
+  image: ghcr.io/lttle-cloud/postgres:17-flash
   name: postgres-test
   resources:
     cpu: 1
     memory: 512
   mode:
     flash:
-      strategy:
-        listen-on-port: 5432
+      strategy: manual
+    # listen-on-port: 5432
   volumes:
     - name: postgres-data
       path: /var/lib/postgresql/data
@@ -27,6 +27,9 @@ service:
     name: postgres-test
     port: 5432
     protocol: tcp
+    connection-tracking:
+      traffic-aware:
+        inactivity-timeout: 5
   bind:
     external:
       host: pgtest.alpha1.ovh-rbx.lttle.host

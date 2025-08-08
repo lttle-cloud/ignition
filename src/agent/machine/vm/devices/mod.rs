@@ -47,6 +47,8 @@ pub struct VmDevices {
 pub enum DeviceEvent {
     UserSpaceReady,
     StopRequested,
+    FlashLock,
+    FlashUnlock,
 }
 
 pub async fn setup_devices(
