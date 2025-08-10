@@ -5,9 +5,21 @@ machine:
     flash:
       strategy:
         listen-on-port: 80
+      timeout: 1
   resources:
     cpu: 1
     memory: 128
   env:
     TEST_VAR: test-value
     TEST_VAR2: test-value2
+---
+service:
+  name: nginx-test-flash
+  target:
+    name: nginx-test-flash
+    port: 80
+    protocol: http
+  bind:
+    external:
+      host: nginx-flash.alpha1.ovh-rbx.lttle.host
+      protocol: https

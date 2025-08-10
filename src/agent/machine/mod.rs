@@ -1,4 +1,5 @@
 pub mod machine;
+pub mod state_machine;
 pub mod vm;
 
 use anyhow::{Result, bail};
