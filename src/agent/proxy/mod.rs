@@ -339,7 +339,7 @@ async fn handle_http_connection(
     bindings: Arc<HashMap<String, ProxyBinding>>,
     machine_agent: Arc<MachineAgent>,
 ) -> Result<()> {
-    let (target_host, head) = proto::extract_http_host(&mut stream).await?;
+    let (target_host, head, rest) = proto::extract_http_host(&mut stream).await?;
 
     let binding = find_http_binding(&bindings, &target_host)?;
     let machine = find_machine(&machine_agent, &binding.target_network_tag).await?;
@@ -352,6 +352,9 @@ async fn handle_http_connection(
     );
 
     machine_connection.upstream_socket.write_all(&head).await?;
+    if !rest.is_empty() {
+        machine_connection.upstream_socket.write_all(&rest).await?;
+    }
     machine_connection.proxy_from_client(stream).await?;
 
     Ok(())
