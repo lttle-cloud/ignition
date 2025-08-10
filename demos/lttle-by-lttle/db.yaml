@@ -1,0 +1,31 @@
+machine:
+  image: ghcr.io/lttle-cloud/postgres:17-flash
+  name: db
+  namespace: lbl
+  resources:
+    cpu: 1
+    memory: 256
+  mode:
+    flash:
+      strategy: manual
+      timeout: 3
+  volumes:
+    - name: db-data
+      path: /var/lib/postgresql/data
+  env:
+    POSTGRES_PASSWORD: lbl # change this to a more secure password
+    POSTGRES_USER: lbl
+    POSTGRES_DB: lbl
+---
+service:
+  name: db-internal
+  namespace: lbl
+  target:
+    name: db
+    port: 5432
+    protocol: tcp
+    connection-tracking:
+      traffic-aware:
+        inactivity-timeout: 3
+  bind:
+    internal: {}

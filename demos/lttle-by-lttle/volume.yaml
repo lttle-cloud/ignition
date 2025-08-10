@@ -1,0 +1,5 @@
+volume:
+  name: db-data
+  namespace: lbl
+  mode: writeable
+  size: 100M
