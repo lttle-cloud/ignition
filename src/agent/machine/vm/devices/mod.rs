@@ -37,6 +37,7 @@ use crate::agent::machine::{
     },
 };
 
+#[derive(Clone)]
 pub struct VmDevices {
     pub guest_manager: Arc<Mutex<GuestManagerDevice>>,
     pub net: Arc<Mutex<Net>>,
