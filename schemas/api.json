@@ -259,6 +259,111 @@
           }
         }
       ]
+    },
+    {
+      "name": "Volume",
+      "tag": "volume",
+      "crate_path": "resources::volume",
+      "namespaced": true,
+      "methods": [
+        {
+          "name": "get",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "volume"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": false,
+            "optional": false,
+            "names": [
+              "VolumeV1",
+              "VolumeStatus"
+            ]
+          }
+        },
+        {
+          "name": "list",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "volume"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": true,
+            "optional": false,
+            "names": [
+              "VolumeV1",
+              "VolumeStatus"
+            ]
+          }
+        },
+        {
+          "name": "delete",
+          "verb": "DELETE",
+          "path": [
+            {
+              "type": "static",
+              "value": "volume"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": null
+        },
+        {
+          "name": "apply",
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "volume"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "Volume"
+          },
+          "response": null
+        },
+        {
+          "name": "get_status",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "volume"
+            },
+            {
+              "type": "resource_name"
+            },
+            {
+              "type": "static",
+              "value": "status"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "VolumeStatus"
+          }
+        }
+      ]
     }
   ],
   "defs": {
@@ -568,6 +673,15 @@
             }
           ]
         },
+        "volumes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/MachineVolumeBinding"
+          }
+        },
         "env": {
           "type": [
             "object",
@@ -582,6 +696,27 @@
         "name",
         "image",
         "resources"
+      ]
+    },
+    "MachineVolumeBinding": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path"
       ]
     },
     "Me": {
@@ -868,6 +1003,101 @@
         "name",
         "target",
         "bind"
+      ]
+    },
+    "Volume": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "volume": {
+              "$ref": "#/$defs/VolumeV1"
+            }
+          },
+          "required": [
+            "volume"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "volume.v1": {
+              "$ref": "#/$defs/VolumeV1"
+            }
+          },
+          "required": [
+            "volume.v1"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "VolumeMode": {
+      "type": "string",
+      "enum": [
+        "read-only",
+        "writeable"
+      ]
+    },
+    "VolumeStatus": {
+      "type": "object",
+      "properties": {
+        "hash": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "volume_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "size_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "hash",
+        "size_bytes"
+      ]
+    },
+    "VolumeV1": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/VolumeMode"
+        },
+        "size": {
+          "type": "string",
+          "description": "The size of the volume in human readable format"
+        }
+      },
+      "required": [
+        "name",
+        "mode",
+        "size"
       ]
     }
   }

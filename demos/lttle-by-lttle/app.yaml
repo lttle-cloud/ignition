@@ -1,0 +1,39 @@
+machine:
+  image: ghcr.io/lttle-cloud/lttle-by-lttle-api:latest
+  name: api
+  namespace: lbl
+  resources:
+    cpu: 1
+    memory: 128
+  mode:
+    flash:
+      strategy:
+        listen-on-port: 4477
+      timeout: 2
+  env:
+    DATABASE_URL: "postgresql://lbl:lbl@db-internal.lbl.svc.lttle.local:5432/lbl" # change this to use a more secure password
+    API_KEY: "your_api_key" # change this to a more secure key
+---
+service:
+  name: api-http
+  namespace: lbl
+  target:
+    name: api
+    port: 4477
+    protocol: http
+  bind:
+    external:
+      host: lbl-api.alpha1.ovh-rbx.lttle.host
+      protocol: https
+---
+service:
+  name: api-device
+  namespace: lbl
+  target:
+    name: api
+    port: 4477
+    protocol: http
+  bind:
+    external:
+      host: lbl-api-device.alpha1.ovh-rbx.lttle.host
+      protocol: http

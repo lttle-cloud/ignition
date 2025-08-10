@@ -232,16 +232,47 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
         src.push_str("            ctx: ServiceRequestContext,\n");
         src.push_str("            Path(name): Path<String>,\n");
         src.push_str("        ) -> impl IntoResponse {\n");
+        src.push_str("            use crate::controller::BeforeDelete;\n");
+        src.push_str(&format!(
+            "            let repo = state.repository.{}(ctx.tenant.clone());\n",
+            collection_name
+        ));
+        if namespaced {
+            src.push_str("            let resource = repo.get(ctx.namespace.clone(), &name);\n");
+            src.push_str(
+                "            let metadata = Metadata::new(&name, ctx.namespace.clone());\n",
+            );
+        } else {
+            src.push_str("            let resource = repo.get(&name)?;\n");
+            src.push_str(
+                "            let metadata = Metadata::new(&name, Namespace::Unspecified);\n",
+            );
+        }
+
+        src.push_str("            let resource = match resource {\n");
+        src.push_str("                Ok(Some(resource)) => resource,\n");
+        src.push_str("                _ => return (StatusCode::NOT_FOUND, \"Resource not found\".to_string()).into_response(),\n");
+        src.push_str("            };\n\n");
+
+        if resource
+            .configuration
+            .admission_rules
+            .contains(&AdmissionRule::BeforeDelete)
+        {
+            src.push_str(&format!(
+            "            let result = resource.before_delete(ctx.tenant, state.repository.clone(), metadata).await;\n",
+        ));
+            src.push_str("            if let Err(e) = result {\n");
+            src.push_str("                return (StatusCode::BAD_REQUEST, e.to_string()).into_response();\n");
+            src.push_str("            };\n\n");
+        }
+
         if namespaced {
             src.push_str(&format!(
-                "            let result = state.repository.{}(ctx.tenant).delete(ctx.namespace, name).await;\n",
-                collection_name
+                "            let result = repo.delete(ctx.namespace, name).await;\n",
             ));
         } else {
-            src.push_str(&format!(
-                "            let result = state.repository.{}(ctx.tenant).delete(name).await;\n",
-                collection_name
-            ));
+            src.push_str("            let result = repo.delete(name).await;\n");
         }
         src.push_str("\n            match result {\n");
         src.push_str("                Ok(()) => StatusCode::OK.into_response(),\n");

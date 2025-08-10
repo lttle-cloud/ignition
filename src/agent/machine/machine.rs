@@ -7,7 +7,6 @@ use std::{
 
 use anyhow::{Result, anyhow, bail};
 use event_manager::{EventManager, MutEventSubscriber};
-use futures_util::future::join_all;
 use kvm_ioctls::VmFd;
 use takeoff_proto::proto::{MountPoint, TakeoffInitArgs};
 use tempfile::tempdir;
@@ -15,7 +14,7 @@ use tokio::{
     fs::create_dir_all,
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
-    sync::{Mutex, RwLock},
+    sync::{RwLock, broadcast, mpsc, oneshot},
     task::JoinHandle,
     time::sleep,
 };
@@ -29,6 +28,7 @@ use crate::{
         image::Image,
         machine::{
             MachineAgentConfig,
+            state_machine::{MachineStateMachine, StateCommand},
             vm::{
                 constants::SERIAL_IRQ,
                 devices::{
@@ -38,15 +38,12 @@ use crate::{
                 kernel::{create_cmdline, load_kernel},
                 kvm::create_and_verify_kvm,
                 memory::{create_memory, create_mmio_allocator},
-                vcpu::{RunningVcpuHandle, Vcpu, VcpuEvent, VcpuEventType, VcpuRunResult},
+                vcpu::{Vcpu, VcpuEvent, VcpuEventType},
             },
         },
         volume::Volume,
     },
-    controller::{
-        context::{AsyncWork, ControllerEvent, ControllerKey},
-        scheduler::Scheduler,
-    },
+    controller::{context::ControllerKey, scheduler::Scheduler},
 };
 
 const CONNECTION_CHECK_INTERVAL: Duration = Duration::from_secs(3);
@@ -168,8 +165,8 @@ impl TrafficAwareConnection {
         let machine_ip = machine.config.network.ip_address.clone();
         let upstream_socket = TcpStream::connect(format!("{machine_ip}:{}", target_port)).await?;
 
-        machine.increment_connection_count().await;
-        machine.increment_active_connection_count().await;
+        // Connection starts as active, send FlashLock
+        machine.send_flash_lock().await?;
 
         Ok(Self {
             machine,
@@ -198,7 +195,8 @@ impl TrafficAwareConnection {
 
         if *state == ConnectionState::Inactive {
             *state = ConnectionState::Active;
-            self.machine.increment_active_connection_count().await;
+            // Send FlashLock to indicate this connection is now active
+            let _ = self.machine.send_flash_lock().await;
             info!(
                 "Connection to machine '{}' became active",
                 self.machine.config.name
@@ -217,7 +215,8 @@ impl TrafficAwareConnection {
                 let mut state = self.state.write().await;
                 if *state == ConnectionState::Active {
                     *state = ConnectionState::Inactive;
-                    self.machine.decrement_active_connection_count().await;
+                    // Send FlashUnlock to indicate this connection is no longer active
+                    let _ = self.machine.send_flash_unlock().await;
                     info!(
                         "Connection to machine '{}' became inactive (timeout: {}s)",
                         self.machine.config.name,
@@ -306,9 +305,9 @@ impl Drop for TrafficAwareConnection {
         tokio::spawn(async move {
             let current_state = state.read().await;
             if *current_state == ConnectionState::Active {
-                machine.decrement_active_connection_count().await;
+                // Connection is being dropped while active, send FlashUnlock
+                let _ = machine.send_flash_unlock().await;
             }
-            machine.decrement_connection_count().await;
         });
     }
 }
@@ -316,36 +315,32 @@ impl Drop for TrafficAwareConnection {
 #[allow(unused)]
 pub struct Machine {
     pub config: MachineConfig,
-    state: Arc<RwLock<MachineState>>,
-    state_change_rx: async_broadcast::Receiver<MachineState>,
-    state_change_tx: async_broadcast::Sender<MachineState>,
-    scheduler: Weak<Scheduler>,
-    first_boot_duration: Arc<RwLock<Option<Duration>>>,
-    last_start_time: Arc<RwLock<Option<Instant>>>,
-    last_ready_time: Arc<RwLock<Option<Instant>>>,
 
+    // State machine communication
+    command_tx: mpsc::Sender<StateCommand>,
+    state_rx: broadcast::Receiver<MachineState>,
+
+    // VM resources (immutable after creation)
     guest_memory: GuestMemoryMmap,
     mmio_allocator: AddressAllocator,
     kernel_start_address: GuestAddress,
-
     vm_fd: Arc<VmFd>,
-    vcpu_event_rx: async_broadcast::Receiver<VcpuEvent>,
-    vcpu_event_tx: async_broadcast::Sender<VcpuEvent>,
-    vcpu_watcher_task: Mutex<Option<JoinHandle<()>>>,
-
-    vcpu_start_barrier: Arc<Barrier>,
-    idle_vcpus: Mutex<Vec<Vcpu>>,
-    running_vcpus: Mutex<Vec<RunningVcpuHandle>>,
-
-    device_event_rx: async_broadcast::Receiver<DeviceEvent>,
-    device_event_tx: async_broadcast::Sender<DeviceEvent>,
-    device_watcher_task: Mutex<Option<JoinHandle<()>>>,
     devices: VmDevices,
     event_manager_task: std::thread::JoinHandle<()>,
-    startup_lock: Mutex<()>,
-    connection_count: Mutex<u32>,
-    active_connection_count: Mutex<u32>,
-    suspend_timeout_task: Mutex<Option<JoinHandle<()>>>,
+
+    // State machine task handle
+    state_machine_task: JoinHandle<()>,
+    // Current state (shared with state machine)
+    current_state: Arc<tokio::sync::RwLock<MachineState>>,
+    // Timing tracking (shared with state machine)
+    first_boot_duration: Arc<tokio::sync::RwLock<Option<Duration>>>,
+    last_start_time: Arc<tokio::sync::RwLock<Option<Instant>>>,
+    last_ready_time: Arc<tokio::sync::RwLock<Option<Instant>>>,
+
+    // Legacy fields for compatibility (will be removed later)
+    vcpu_event_tx: async_broadcast::Sender<VcpuEvent>,
+    device_event_tx: async_broadcast::Sender<DeviceEvent>,
+    vcpu_start_barrier: Arc<Barrier>,
 }
 
 pub type MachineRef = Arc<Machine>;
@@ -391,7 +386,7 @@ impl Machine {
 
         let vm_fd = Arc::new(vm_fd);
 
-        let (device_event_tx, device_event_rx) = async_broadcast::broadcast::<DeviceEvent>(128);
+        let (device_event_tx, _device_event_rx) = async_broadcast::broadcast::<DeviceEvent>(128);
 
         let log_dir = match &config.state_retention_mode {
             MachineStateRetentionMode::InMemory => tempdir()
@@ -449,7 +444,7 @@ impl Machine {
         // add vcpus
         let io_manager = Arc::new(io_manager);
         let barrier = Arc::new(Barrier::new(config.resources.cpu as usize));
-        let (vcpu_event_tx, vcpu_event_rx) = async_broadcast::broadcast::<VcpuEvent>(128);
+        let (vcpu_event_tx, _vcpu_event_rx) = async_broadcast::broadcast::<VcpuEvent>(128);
 
         let mut vcpus = vec![];
         for i in 0..config.resources.cpu {
@@ -469,86 +464,119 @@ impl Machine {
             vcpus.push(vcpu);
         }
 
-        let (state_change_tx, state_change_rx) = async_broadcast::broadcast::<MachineState>(128);
+        // Create state machine communication channels
+        let (command_tx, command_rx) = mpsc::channel(32);
+        let (state_tx, state_rx) = broadcast::channel(32);
+
+        // Create timing tracking
+        let first_boot_duration = Arc::new(tokio::sync::RwLock::new(None));
+        let last_start_time = Arc::new(tokio::sync::RwLock::new(None));
+        let last_ready_time = Arc::new(tokio::sync::RwLock::new(None));
+
+        // Create shared state for querying current state
+        let current_state = Arc::new(tokio::sync::RwLock::new(MachineState::Idle));
 
         let machine = Arc::new(Self {
-            config,
-            state: Arc::new(RwLock::new(MachineState::Idle)),
-            state_change_rx,
-            state_change_tx,
-            scheduler,
-
-            last_start_time: Arc::new(RwLock::new(None)),
-            last_ready_time: Arc::new(RwLock::new(None)),
-            first_boot_duration: Arc::new(RwLock::new(None)),
-
+            config: config.clone(),
+            command_tx: command_tx.clone(),
+            state_rx,
             guest_memory,
             mmio_allocator,
             kernel_start_address,
-
             vm_fd,
-            vcpu_event_rx,
-            vcpu_event_tx,
-            vcpu_watcher_task: Mutex::new(None),
-
-            vcpu_start_barrier: barrier,
-            idle_vcpus: Mutex::new(vcpus),
-            running_vcpus: Mutex::new(vec![]),
-
-            devices,
+            devices: devices.clone(),
             event_manager_task,
-            device_event_rx,
+            state_machine_task: tokio::spawn(async {}), // Placeholder, will be updated
+            current_state: current_state.clone(),
+            first_boot_duration: first_boot_duration.clone(),
+            last_start_time: last_start_time.clone(),
+            last_ready_time: last_ready_time.clone(),
+            vcpu_event_tx,
             device_event_tx,
-            device_watcher_task: Mutex::new(None),
-            startup_lock: Mutex::new(()),
-            connection_count: Mutex::new(0),
-            active_connection_count: Mutex::new(0),
-            suspend_timeout_task: Mutex::new(None),
+            vcpu_start_barrier: barrier,
         });
 
-        let watcher_machine = machine.clone();
-        let vcpu_watcher_task = tokio::spawn(async move {
-            let mut rx = watcher_machine.vcpu_event_rx.clone();
-            while let Ok(event) = rx.recv().await {
-                match event.event_type {
-                    VcpuEventType::Errored => {
-                        watcher_machine.stop().await.ok();
-                    }
-                    VcpuEventType::Stopped => {
-                        watcher_machine.stop().await.ok();
-                    }
-                    VcpuEventType::Suspended => {
-                        watcher_machine.suspend().await.ok();
-                    }
-                    VcpuEventType::Restarted => {
-                        watcher_machine.set_state(MachineState::Ready).await.ok();
-                    }
-                }
-            }
-        });
-        *machine.vcpu_watcher_task.lock().await = Some(vcpu_watcher_task);
+        // Create state machine after machine struct is created
+        let state_machine = MachineStateMachine::new(
+            command_rx,
+            command_tx,
+            state_tx.clone(),
+            current_state,
+            config,
+            vcpus,
+            devices,
+            scheduler,
+            first_boot_duration,
+            last_start_time,
+            last_ready_time,
+        );
 
-        let watcher_machine = machine.clone();
-        let device_watcher_task = tokio::spawn(async move {
-            let mut rx = watcher_machine.device_event_rx.clone();
-            while let Ok(event) = rx.recv().await {
-                match event {
-                    DeviceEvent::UserSpaceReady => {
-                        watcher_machine.set_state(MachineState::Ready).await.ok();
-                    }
-                    DeviceEvent::StopRequested => {
-                        if matches!(watcher_machine.config.mode, MachineMode::Flash { .. }) {
-                            watcher_machine.suspend().await.ok();
-                        } else {
-                            watcher_machine.stop().await.ok();
-                        }
-                    }
-                }
-            }
-        });
-        *machine.device_watcher_task.lock().await = Some(device_watcher_task);
+        let _state_machine_task = tokio::spawn(state_machine.run());
+
+        // Update the machine's state_machine_task (this is a hack, ideally we'd restructure differently)
+        // For now, we'll leave the placeholder and just rely on the task running
+
+        // Start event watchers that send commands to state machine
+        Self::start_event_watchers(&machine);
 
         Ok(machine)
+    }
+
+    fn start_event_watchers(machine: &MachineRef) {
+        let command_tx = machine.command_tx.clone();
+
+        // VCPU watcher - sends commands instead of direct state changes
+        let vcpu_command_tx = command_tx.clone();
+        let vcpu_event_rx = machine.vcpu_event_tx.new_receiver();
+        let _vcpu_watcher = tokio::spawn(async move {
+            let mut rx = vcpu_event_rx;
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        let command = match event.event_type {
+                            VcpuEventType::Errored => StateCommand::SystemVcpuError {
+                                message: format!("VCPU {} error", event.vcpu_index),
+                            },
+                            VcpuEventType::Stopped => StateCommand::SystemVcpuStopped,
+                            VcpuEventType::Suspended => StateCommand::SystemVcpuSuspended,
+                            VcpuEventType::Restarted => StateCommand::SystemVcpuRestarted,
+                        };
+                        let _ = vcpu_command_tx.send(command).await;
+                    }
+                    Err(async_broadcast::RecvError::Closed) => {
+                        break;
+                    }
+                    Err(async_broadcast::RecvError::Overflowed(_)) => {
+                        // Continue receiving - the channel is still usable after overflow
+                        continue;
+                    }
+                }
+            }
+        });
+
+        // Device watcher - sends commands instead of direct state changes
+        let device_command_tx = command_tx.clone();
+        let device_event_rx = machine.device_event_tx.new_receiver();
+        let _device_watcher = tokio::spawn(async move {
+            let mut rx = device_event_rx;
+            while let Ok(event) = rx.recv().await {
+                let command = match event {
+                    DeviceEvent::UserSpaceReady => StateCommand::SystemDeviceReady,
+                    DeviceEvent::StopRequested => StateCommand::SystemStopRequested,
+                    DeviceEvent::FlashLock => StateCommand::SystemFlashLock,
+                    DeviceEvent::FlashUnlock => StateCommand::SystemFlashUnlock,
+                };
+                let _ = device_command_tx.send(command).await;
+            }
+        });
+    }
+
+    // Helper method to send commands to state machine
+    async fn send_command(&self, command: StateCommand) -> Result<()> {
+        self.command_tx
+            .send(command)
+            .await
+            .map_err(|_| anyhow!("State machine died"))
     }
 
     pub async fn get_connection(
@@ -581,7 +609,7 @@ impl Machine {
             bail!("Machine can't be started from state: {:?}", current_state);
         }
 
-        let _guard = self.startup_lock.lock().await;
+        // Startup synchronization is now handled by the state machine
 
         let state_after_lock = self.get_state().await;
         if state_after_lock == MachineState::Ready {
@@ -598,219 +626,30 @@ impl Machine {
         TrafficAwareConnection::new(self.clone(), target_port, inactivity_mode).await
     }
 
-    async fn increment_connection_count(&self) {
-        let mut count = self.connection_count.lock().await;
-        *count += 1;
-        info!(
-            "Connection created for machine '{}', connection count: {}",
-            self.config.name, *count
-        );
-
-        if let Some(timeout_task) = self.suspend_timeout_task.lock().await.take() {
-            info!(
-                "Cancelling suspend timeout for machine '{}'",
-                self.config.name
-            );
-            timeout_task.abort();
-        }
+    // Connection management is now handled by state machine
+    // Flash lock/unlock methods for connection tracking
+    async fn send_flash_lock(&self) -> Result<()> {
+        self.send_command(StateCommand::SystemFlashLock).await
     }
 
-    async fn decrement_connection_count(self: &Arc<Self>) {
-        let mut count = self.connection_count.lock().await;
-        if *count == 0 {
-            warn!(
-                "Attempted to decrement connection count below 0 for machine: {}",
-                self.config.name
-            );
-            return;
-        }
-
-        *count -= 1;
-        info!(
-            "Connection destroyed for machine '{}', connection count: {}",
-            self.config.name, *count
-        );
-
-        let MachineMode::Flash { .. } = self.config.mode else {
-            return;
-        };
-
-        if *count == 0 {
-            info!(
-                "Last connection dropped for machine '{}', starting suspend timeout",
-                self.config.name
-            );
-            self.start_suspend_timeout().await;
-        }
-    }
-
-    async fn increment_active_connection_count(&self) {
-        let mut count = self.active_connection_count.lock().await;
-        *count += 1;
-        info!(
-            "Active connection count for machine '{}': {}",
-            self.config.name, *count
-        );
-
-        // Cancel any pending suspend timeout
-        if let Some(timeout_task) = self.suspend_timeout_task.lock().await.take() {
-            info!(
-                "Cancelling suspend timeout for machine '{}'",
-                self.config.name
-            );
-            timeout_task.abort();
-        }
-    }
-
-    async fn decrement_active_connection_count(self: &Arc<Self>) {
-        let mut count = self.active_connection_count.lock().await;
-        if *count == 0 {
-            warn!(
-                "Attempted to decrement active connection count below 0 for machine: {}",
-                self.config.name
-            );
-            return;
-        }
-
-        *count -= 1;
-        info!(
-            "Active connection count for machine '{}': {}",
-            self.config.name, *count
-        );
-
-        let MachineMode::Flash { .. } = self.config.mode else {
-            return;
-        };
-
-        if *count == 0 {
-            info!(
-                "Last active connection dropped for machine '{}', starting suspend timeout",
-                self.config.name
-            );
-            self.start_suspend_timeout().await;
-        }
-    }
-
-    async fn start_suspend_timeout(self: &Arc<Self>) {
-        let machine = Arc::clone(self);
-        let timeout_task = tokio::spawn(async move {
-            let MachineMode::Flash {
-                suspend_timeout, ..
-            } = machine.config.mode.clone()
-            else {
-                return;
-            };
-
-            info!(
-                "Setting suspend timeout for machine '{}'",
-                machine.config.name
-            );
-
-            sleep(suspend_timeout).await;
-
-            let count = machine.active_connection_count.lock().await;
-            if *count == 0 {
-                info!(
-                    "Suspend timeout expired for machine '{}', active connection count: {}",
-                    machine.config.name, *count
-                );
-
-                if let Err(e) = machine.suspend().await {
-                    warn!(
-                        "Failed to suspend machine {} after timeout: {}",
-                        machine.config.name, e
-                    );
-                }
-            } else {
-                info!(
-                    "Suspend timeout expired for machine '{}' but active connection count is {} > 0, not suspending",
-                    machine.config.name, *count
-                );
-            }
-        });
-
-        *self.suspend_timeout_task.lock().await = Some(timeout_task);
-    }
-
-    async fn set_state(&self, state: MachineState) -> Result<()> {
-        let mut current_state = self.state.write().await;
-        if *current_state == state {
-            return Ok(());
-        }
-
-        'time_update_block: {
-            if state == MachineState::Booting {
-                *self.last_start_time.write().await = Some(Instant::now());
-            } else if state == MachineState::Ready {
-                let ready_time = Instant::now();
-                *self.last_ready_time.write().await = Some(ready_time);
-
-                let last_start_time = { self.last_start_time.read().await.clone() };
-                let first_boot_duration = { self.first_boot_duration.read().await.clone() };
-
-                let Some(last_start_time) = last_start_time else {
-                    break 'time_update_block;
-                };
-
-                self.devices
-                    .guest_manager
-                    .lock()
-                    .expect("Failed to lock guest manager")
-                    .set_boot_duration(ready_time.duration_since(last_start_time));
-
-                if first_boot_duration.is_some() {
-                    break 'time_update_block;
-                }
-
-                let mut first_boot_duration = self.first_boot_duration.write().await;
-                *first_boot_duration = Some(ready_time.duration_since(last_start_time));
-            }
-        }
-
-        *current_state = state.clone();
-        self.state_change_tx.broadcast(state.clone()).await.ok();
-        if let Some(scheduler) = self.scheduler.upgrade() {
-            let (first_boot_duration, last_boot_duration) = {
-                let first_boot_duration = self.first_boot_duration.read().await.clone();
-                let last_boot_duration = self.get_last_boot_duration().await;
-                (first_boot_duration, last_boot_duration)
-            };
-
-            scheduler
-                .push(
-                    self.config.controller_key.tenant.clone(),
-                    ControllerEvent::AsyncWorkChange(
-                        self.config.controller_key.clone(),
-                        AsyncWork::MachineStateChange {
-                            machine_id: self.config.name.clone(),
-                            state: state.clone(),
-                            first_boot_duration,
-                            last_boot_duration,
-                        },
-                    ),
-                )
-                .await
-                .ok();
-        }
-        Ok(())
+    async fn send_flash_unlock(&self) -> Result<()> {
+        self.send_command(StateCommand::SystemFlashUnlock).await
     }
 
     pub async fn get_state(&self) -> MachineState {
-        let state = self.state.read().await.clone();
-        state
+        // Get current state from shared state (always accurate)
+        self.current_state.read().await.clone()
     }
 
     pub async fn get_last_boot_duration(&self) -> Option<Duration> {
         let last_start_time = self.last_start_time.read().await;
         let last_ready_time = self.last_ready_time.read().await;
-        let Some(last_start_time) = *last_start_time else {
-            return None;
-        };
-        let Some(last_ready_time) = *last_ready_time else {
-            return None;
-        };
 
-        last_ready_time.duration_since(last_start_time).into()
+        if let (Some(start), Some(ready)) = (*last_start_time, *last_ready_time) {
+            Some(ready.duration_since(start))
+        } else {
+            None
+        }
     }
 
     pub async fn get_first_boot_duration(&self) -> Option<Duration> {
@@ -819,114 +658,36 @@ impl Machine {
     }
 
     pub async fn start(&self) -> Result<()> {
-        let current_state = self.get_state().await;
-        let is_first_start = current_state == MachineState::Idle;
-
-        if matches!(current_state, MachineState::Booting | MachineState::Ready) {
-            return Ok(());
-        }
-
-        if !matches!(
-            current_state,
-            MachineState::Idle | MachineState::Stopped | MachineState::Suspended
-        ) {
-            bail!("Machine can't be started from state: {:?}", current_state);
-        }
-
-        if !is_first_start {
-            let mut guest_manager = self
-                .devices
-                .guest_manager
-                .lock()
-                .expect("Failed to lock guest manager");
-
-            guest_manager.set_snapshot_strategy(None);
-        }
-
-        let mut idle_vcpus = self.idle_vcpus.lock().await;
-        let mut running_vcpus = self.running_vcpus.lock().await;
-        running_vcpus.clear();
-
-        self.set_state(MachineState::Booting).await?;
-
-        for vcpu in idle_vcpus.drain(..) {
-            let handle = vcpu.start().await?;
-            running_vcpus.push(handle);
-        }
-
-        Ok(())
+        let (tx, rx) = oneshot::channel();
+        self.send_command(StateCommand::UserStart { reply: tx })
+            .await?;
+        rx.await.map_err(|_| anyhow!("State machine died"))?
     }
 
     pub async fn stop(&self) -> Result<()> {
-        self.stop_with_reason(MachineStopReason::Stop).await
+        let (tx, rx) = oneshot::channel();
+        self.send_command(StateCommand::UserStop { reply: tx })
+            .await?;
+        rx.await.map_err(|_| anyhow!("State machine died"))?
     }
 
     pub async fn suspend(&self) -> Result<()> {
-        self.stop_with_reason(MachineStopReason::Suspend).await
+        let (tx, rx) = oneshot::channel();
+        self.send_command(StateCommand::UserSuspend { reply: tx })
+            .await?;
+        rx.await.map_err(|_| anyhow!("State machine died"))?
     }
 
+    // Legacy method - now just delegates to appropriate new method
     pub async fn stop_with_reason(&self, reason: MachineStopReason) -> Result<()> {
-        let current_state = self.get_state().await;
-        if matches!(
-            current_state,
-            MachineState::Stopped | MachineState::Suspended
-        ) {
-            return Ok(());
+        match reason {
+            MachineStopReason::Stop => self.stop().await,
+            MachineStopReason::Suspend => self.suspend().await,
         }
-
-        if !matches!(current_state, MachineState::Ready | MachineState::Booting) {
-            bail!("Machine can't be stopped from state: {:?}", current_state);
-        }
-
-        let next_state = match reason {
-            MachineStopReason::Stop => MachineState::Stopping,
-            MachineStopReason::Suspend => MachineState::Suspending,
-        };
-        self.set_state(next_state).await?;
-
-        let mut running_vcpus = self.running_vcpus.lock().await;
-        let mut idle_vcpus = self.idle_vcpus.lock().await;
-
-        let handles = running_vcpus
-            .drain(..)
-            .map(|handle| handle.signal_stop_and_join());
-
-        let results = join_all(handles).await;
-
-        let mut failed_vcpu_index = vec![];
-        for result in results {
-            match result {
-                VcpuRunResult::Ok(vcpu) => idle_vcpus.push(vcpu),
-                VcpuRunResult::Error(e, vcpu) => {
-                    failed_vcpu_index.push((vcpu.index, e));
-                }
-            }
-        }
-
-        if !failed_vcpu_index.is_empty() {
-            let mut fail_message = String::from("Failed to stop vcpus: ");
-            for (index, e) in failed_vcpu_index {
-                fail_message.push_str(&format!("Vcpu {} failed to stop: {}", index, e));
-                fail_message.push_str("\n");
-            }
-
-            self.set_state(MachineState::Error(fail_message.clone()))
-                .await?;
-
-            bail!("{}", fail_message);
-        }
-
-        let next_state = match reason {
-            MachineStopReason::Stop => MachineState::Stopped,
-            MachineStopReason::Suspend => MachineState::Suspended,
-        };
-        self.set_state(next_state).await?;
-
-        Ok(())
     }
 
-    pub async fn watch_state(&self) -> Result<async_broadcast::Receiver<MachineState>> {
-        Ok(self.state_change_rx.clone())
+    pub async fn watch_state(&self) -> Result<broadcast::Receiver<MachineState>> {
+        Ok(self.state_rx.resubscribe())
     }
 
     pub async fn wait_for_state(&self, state: MachineState) -> Result<()> {
@@ -935,7 +696,7 @@ impl Machine {
             return Ok(());
         }
 
-        let mut rx = self.state_change_rx.clone();
+        let mut rx = self.state_rx.resubscribe();
         while let Ok(new_state) = rx.recv().await {
             if new_state == state {
                 return Ok(());

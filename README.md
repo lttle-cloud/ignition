@@ -8,7 +8,7 @@
 
 With modern FaaS and serverless workloads, startup times can cause latencies that degrade user experience.
 
-Ignition is a microVM manager built on KVM and designed to handle FaaS-like workloads with near-instant startup times. Inspired by [Unikraft Cloud](https://unikraft.cloud), Ignition aims to provide a cloud-agnostic platform for running networked applications with minimal overhead.
+Ignition is an all-in-one solution for this problem: an orchestrator, a microVM manager built on KVM, and a TCP/TLS proxy designed to handle FaaS-like workloads with near-instant startup times. It aims to provide a cloud-agnostic platform for running networked applications with minimal overhead.
 
 Key goals:
 
@@ -37,4 +37,8 @@ The modified Linux kernel detects these triggers automatically, so you don’t h
 
 ## State of the project
 
-Ignition is in its early stages of development. We’re actively working on the core functionality and tuning performance to achieve our primary goals. That said, we already have a working prototype that showcases the snapshot-based approach and near-instant startup times. You can [try it out here](https://hello.lttle.cloud/).
+Ignition is under active development. We don't recommend using it in production yet. However, you can build and self-host it to get a feel for how it works. There are no docs on how to do this yet; you're on your own (feel free to [reach out to us on discord](https://discord.gg/xhNGGrZQja) if you need help).
+
+## Acknowledgements
+
+Some ideas were initially inspired by [Unikraft Cloud](https://unikraft.cloud).

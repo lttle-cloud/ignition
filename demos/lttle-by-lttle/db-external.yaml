@@ -1,0 +1,13 @@
+# deploy this service only if you want to connect to the database from outside the cluster
+
+service:
+  name: db-external
+  namespace: lbl
+  target:
+    name: db
+    port: 5432
+    protocol: tcp
+  bind:
+    external:
+      host: lbl-db.alpha1.ovh-rbx.lttle.host
+      protocol: tls

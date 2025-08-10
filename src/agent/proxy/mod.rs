@@ -139,7 +139,8 @@ impl ProxyAgent {
         let mut tls_server_config =
             tls_server_config_builder.with_cert_resolver(tls_cert_resolver.clone());
 
-        tls_server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        tls_server_config.alpn_protocols =
+            vec![b"postgresql".to_vec(), b"h2".to_vec(), b"http/1.1".to_vec()];
 
         let tls_acceptor = Arc::new(TlsAcceptor::from(Arc::new(tls_server_config)));
 
@@ -334,24 +335,86 @@ async fn handle_external_connection(
 }
 
 async fn handle_http_connection(
-    mut stream: TcpStream,
+    stream: TcpStream,
     bindings: Arc<HashMap<String, ProxyBinding>>,
     machine_agent: Arc<MachineAgent>,
 ) -> Result<()> {
-    let (target_host, head) = proto::extract_http_host(&mut stream).await?;
+    let io = TokioIo::new(stream);
 
-    let binding = find_http_binding(&bindings, &target_host)?;
-    let machine = find_machine(&machine_agent, &binding.target_network_tag).await?;
-    let mut machine_connection =
-        get_machine_connection(&machine, binding.target_port, binding.inactivity_timeout).await?;
+    let svc = service_fn(move |mut req: Request<hyper::body::Incoming>| {
+        let machine_agent = machine_agent.clone();
+        let bindings = bindings.clone();
 
-    info!(
-        "Proxying HTTP connection from {} to machine on port {}",
-        target_host, binding.target_port
-    );
+        let mut base = HttpConnector::new();
+        base.enforce_http(true);
 
-    machine_connection.upstream_socket.write_all(&head).await?;
-    machine_connection.proxy_from_client(stream).await?;
+        let client = Client::builder(TokioExecutor::new()).build(base);
+
+        async move {
+            // Extract host from request headers
+            let target_host = req
+                .headers()
+                .get("host")
+                .and_then(|h| h.to_str().ok())
+                .unwrap_or_default()
+                .to_string();
+
+            let Ok(binding) = find_http_binding(&bindings, &target_host) else {
+                return Err("failed to find binding for HTTP host");
+            };
+
+            let Ok(machine) = find_machine(&machine_agent, &binding.target_network_tag).await
+            else {
+                return Err("failed to find machine");
+            };
+
+            let Ok(machine_connection) =
+                get_machine_connection(&machine, binding.target_port, binding.inactivity_timeout)
+                    .await
+            else {
+                return Err("failed to get machine connection");
+            };
+
+            let upstream_uri = format!(
+                "http://{}:{}",
+                machine_connection.ip_address(),
+                binding.target_port
+            );
+            info!(
+                "Proxying HTTP connection from {} to {}",
+                target_host, upstream_uri
+            );
+
+            let client = client.clone();
+            let upstream_uri = upstream_uri.clone();
+
+            let original_uri = req.uri();
+            let path_and_query = original_uri
+                .path_and_query()
+                .map(|pq| pq.as_str())
+                .unwrap_or("/");
+
+            let new_uri = format!("{}{}", upstream_uri, path_and_query);
+            *req.uri_mut() = Uri::from_str(&new_uri).expect("failed to parse uri");
+            *req.version_mut() = Version::HTTP_11;
+
+            info!("Modified request URI: {:?}", req.uri());
+
+            let Ok(response) = client.request(req).await else {
+                return Err("failed to get response from origin");
+            };
+
+            Ok(response)
+        }
+    });
+
+    if let Err(e) = Builder::new(TokioExecutor::new())
+        .serve_connection(io, svc)
+        .await
+    {
+        warn!("Error proxying HTTP connection: {e}");
+        bail!("Error proxying HTTP connection: {e}");
+    }
 
     Ok(())
 }

@@ -3,12 +3,17 @@ pub mod scheduler;
 
 pub mod machine;
 pub mod service;
+pub mod volume;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use crate::controller::context::{ControllerContext, ControllerEvent, ControllerKey};
+use crate::{
+    controller::context::{ControllerContext, ControllerEvent, ControllerKey},
+    repository::Repository,
+    resources::metadata::Metadata,
+};
 
 pub enum ReconcileNext {
     Done,
@@ -48,4 +53,14 @@ pub trait Controller: Send + Sync {
         key: ControllerKey,
         error: anyhow::Error,
     ) -> ReconcileNext;
+}
+
+#[async_trait]
+pub trait BeforeDelete {
+    async fn before_delete(
+        &self,
+        tenant: String,
+        repo: Arc<Repository>,
+        metadata: Metadata,
+    ) -> Result<()>;
 }

@@ -17,23 +17,6 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'ignition'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=ignition"
-                ],
-                "filter": {
-                    "name": "ignition",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
         }
     ]
 }

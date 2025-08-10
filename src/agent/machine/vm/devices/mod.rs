@@ -37,6 +37,7 @@ use crate::agent::machine::{
     },
 };
 
+#[derive(Clone)]
 pub struct VmDevices {
     pub guest_manager: Arc<Mutex<GuestManagerDevice>>,
     pub net: Arc<Mutex<Net>>,
@@ -47,6 +48,8 @@ pub struct VmDevices {
 pub enum DeviceEvent {
     UserSpaceReady,
     StopRequested,
+    FlashLock,
+    FlashUnlock,
 }
 
 pub async fn setup_devices(
