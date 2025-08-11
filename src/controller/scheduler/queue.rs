@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use async_channel::{Receiver, Sender};
-use papaya::HashMap;
+use papaya::{Compute, HashMap, Operation};
 use tracing::warn;
 
 use crate::controller::context::ControllerKey;
@@ -34,19 +34,27 @@ impl WorkQueue {
     pub async fn push(&self, key: &ControllerKey) {
         let keys = self.keys.pin_owned();
 
-        match keys.get(key) {
-            Some(KeyStatus::InFlight) => {
-                keys.insert(key.clone(), KeyStatus::Pending);
+        let result = keys.compute(key.clone(), |entry| {
+            match entry {
+                Some((_key, KeyStatus::InFlight)) => Operation::Insert(KeyStatus::Pending),
+                Some((_key, KeyStatus::Pending)) => Operation::Abort(false), // false = already pending
+                None => Operation::Insert(KeyStatus::InFlight),
             }
-            Some(KeyStatus::Pending) => {
-                warn!("key {} is already pending", key.to_string());
-            }
-            None => {
-                keys.insert(key.clone(), KeyStatus::InFlight);
+        });
+
+        match result {
+            Compute::Inserted(_key, KeyStatus::InFlight) => {
                 self.tx
                     .send(key.clone())
                     .await
                     .expect("failed to send key to queue");
+            }
+            Compute::Inserted(_key, KeyStatus::Pending) => {}
+            Compute::Aborted(false) => {
+                warn!("key {} is already pending", key.to_string());
+            }
+            _ => {
+                warn!("key {} is already in the queue", key.to_string());
             }
         }
     }
@@ -64,7 +72,13 @@ impl WorkQueue {
     pub async fn done(&self, key: &ControllerKey) {
         let keys = self.keys.pin_owned();
 
-        if let Some(KeyStatus::Pending) = keys.remove(key) {
+        let result = keys.compute(key.clone(), |entry| match entry {
+            Some((_key, KeyStatus::Pending)) => Operation::Remove,
+            Some((_, KeyStatus::InFlight)) => Operation::Remove,
+            None => Operation::Abort(()),
+        });
+
+        if let Compute::Removed(_key, KeyStatus::Pending) = result {
             self.push(key).await;
         }
     }
