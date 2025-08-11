@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Result, bail};
+use ignition::agent::certificate::config::CertProvider;
 use serde::{Deserialize, Serialize};
 use tokio::fs::read_to_string;
 use tracing::warn;
@@ -82,19 +83,6 @@ pub struct DnsConfig {
     pub default_ttl: u32,
     #[serde(rename = "upstream-dns-servers", default)]
     pub upstream_dns_servers: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct CertProvider {
-    pub name: String,
-    #[serde(rename = "acme-base-url")]
-    pub acme_base_url: String,
-    #[serde(rename = "default-email")]
-    pub default_email: Option<String>,
-    #[serde(rename = "api-key")]
-    pub api_key: Option<String>,
-    #[serde(rename = "environment")]
-    pub environment: Option<String>,
 }
 
 async fn resolve_config_path(path_override: Option<PathBuf>) -> Result<PathBuf> {

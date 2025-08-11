@@ -7,9 +7,9 @@ use anyhow::Result;
 use clap::Parser;
 use ignition::{
     agent::{
-        Agent, AgentConfig, dns::config::DnsAgentConfig, image::ImageAgentConfig,
-        machine::MachineAgentConfig, net::NetAgentConfig, proxy::ProxyAgentConfig,
-        volume::VolumeAgentConfig,
+        Agent, AgentConfig, certificate::config::CertificateAgentConfig,
+        dns::config::DnsAgentConfig, image::ImageAgentConfig, machine::MachineAgentConfig,
+        net::NetAgentConfig, proxy::ProxyAgentConfig, volume::VolumeAgentConfig,
     },
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
     constants::DEFAULT_KERNEL_CMD_LINE_INIT,
@@ -119,6 +119,9 @@ async fn main() -> Result<()> {
                                 upstream_dns_servers: scheduler_config
                                     .dns_config
                                     .upstream_dns_servers,
+                            },
+                            cert_config: CertificateAgentConfig {
+                                providers: scheduler_config.cert_providers,
                             },
                         },
                         agent_scheduler,

@@ -1,3 +1,4 @@
+pub mod certificate;
 pub mod data;
 pub mod dns;
 pub mod image;
@@ -13,6 +14,7 @@ use anyhow::Result;
 
 use crate::{
     agent::{
+        certificate::{CertificateAgent, config::CertificateAgentConfig},
         dns::{DnsAgent, config::DnsAgentConfig},
         image::{ImageAgent, ImageAgentConfig},
         job::JobAgent,
@@ -35,6 +37,7 @@ pub struct AgentConfig {
     pub machine_config: MachineAgentConfig,
     pub proxy_config: ProxyAgentConfig,
     pub dns_config: DnsAgentConfig,
+    pub cert_config: CertificateAgentConfig,
 }
 
 pub struct Agent {
@@ -45,6 +48,7 @@ pub struct Agent {
     machine: Arc<MachineAgent>,
     proxy: Arc<ProxyAgent>,
     dns: Arc<DnsAgent>,
+    certificate: Arc<CertificateAgent>,
 }
 
 impl Agent {
@@ -71,6 +75,8 @@ impl Agent {
         // Start the DNS server
         dns.start().await?;
 
+        let certificate = CertificateAgent::new(store.clone(), config.cert_config.clone()).await?;
+
         Ok(Self {
             job: Arc::new(JobAgent::new(scheduler)),
             net,
@@ -79,6 +85,7 @@ impl Agent {
             machine,
             proxy,
             dns,
+            certificate,
         })
     }
 
