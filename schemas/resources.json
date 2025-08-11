@@ -93,11 +93,18 @@
                   "$ref": "#/$defs/MachineSnapshotStrategy"
                 },
                 "timeout": {
-                  "format": "uint64",
-                  "minimum": 0,
-                  "type": [
-                    "integer",
-                    "null"
+                  "anyOf": [
+                    {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/expr"
+                    }
                   ]
                 }
               },
@@ -155,15 +162,29 @@
     "MachineResources": {
       "properties": {
         "cpu": {
-          "format": "uint8",
-          "maximum": 255,
-          "minimum": 0,
-          "type": "integer"
+          "anyOf": [
+            {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/expr"
+            }
+          ]
         },
         "memory": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
+          "anyOf": [
+            {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/expr"
+            }
+          ]
         }
       },
       "required": [
@@ -186,9 +207,16 @@
           "additionalProperties": false,
           "properties": {
             "nth-listen": {
-              "format": "uint32",
-              "minimum": 0,
-              "type": "integer"
+              "anyOf": [
+                {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "$ref": "#/$defs/expr"
+                }
+              ]
             }
           },
           "required": [
@@ -200,10 +228,17 @@
           "additionalProperties": false,
           "properties": {
             "listen-on-port": {
-              "format": "uint16",
-              "maximum": 65535,
-              "minimum": 0,
-              "type": "integer"
+              "anyOf": [
+                {
+                  "format": "uint16",
+                  "maximum": 65535,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "$ref": "#/$defs/expr"
+                }
+              ]
             }
           },
           "required": [
@@ -304,13 +339,20 @@
             "internal": {
               "properties": {
                 "port": {
-                  "description": "If not provided, the port will be inferred from target port.",
-                  "format": "uint16",
-                  "maximum": 65535,
-                  "minimum": 0,
-                  "type": [
-                    "integer",
-                    "null"
+                  "anyOf": [
+                    {
+                      "description": "If not provided, the port will be inferred from target port.",
+                      "format": "uint16",
+                      "maximum": 65535,
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/expr"
+                    }
                   ]
                 }
               },
@@ -342,13 +384,20 @@
                   "type": "string"
                 },
                 "port": {
-                  "description": "If not provided, the port will be inferred from protocol or target port.",
-                  "format": "uint16",
-                  "maximum": 65535,
-                  "minimum": 0,
-                  "type": [
-                    "integer",
-                    "null"
+                  "anyOf": [
+                    {
+                      "description": "If not provided, the port will be inferred from protocol or target port.",
+                      "format": "uint16",
+                      "maximum": 65535,
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/expr"
+                    }
                   ]
                 },
                 "protocol": {
@@ -416,10 +465,17 @@
           ]
         },
         "port": {
-          "format": "uint16",
-          "maximum": 65535,
-          "minimum": 0,
-          "type": "integer"
+          "anyOf": [
+            {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/expr"
+            }
+          ]
         },
         "protocol": {
           "$ref": "#/$defs/ServiceTargetProtocol"
@@ -446,11 +502,18 @@
             "traffic-aware": {
               "properties": {
                 "inactivity-timeout": {
-                  "format": "uint64",
-                  "minimum": 0,
-                  "type": [
-                    "integer",
-                    "null"
+                  "anyOf": [
+                    {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/expr"
+                    }
                   ]
                 }
               },
@@ -546,6 +609,11 @@
         "size"
       ],
       "type": "object"
+    },
+    "expr": {
+      "description": "Expression evaluated at build/deploy time.",
+      "pattern": "^\\s*\\$\\{\\{[\\s\\S]*\\}\\}\\s*$",
+      "type": "string"
     }
   }
 }
