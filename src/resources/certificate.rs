@@ -1,3 +1,8 @@
+use anyhow::Result;
+use meta::resource;
+
+use crate::resources::FromResource;
+
 #[resource(name = "Certificate", tag = "certificate")]
 mod certificate {
     #[version(stored + served + latest)]
@@ -80,5 +85,17 @@ mod certificate {
 
         #[serde(rename = "revoked")]
         Revoked, // Certificate was revoked
+    }
+}
+
+impl FromResource<Certificate> for CertificateStatus {
+    fn from_resource(_resource: Certificate) -> Result<Self> {
+        Ok(CertificateStatus {
+            state: CertificateState::Pending,
+            not_before: None,
+            not_after: None,
+            last_failure_reason: None,
+            renewal_time: None,
+        })
     }
 }

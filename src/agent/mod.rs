@@ -116,4 +116,8 @@ impl Agent {
     pub fn dns(&self) -> Arc<DnsAgent> {
         self.dns.clone()
     }
+
+    pub fn certificate(&self) -> Arc<CertificateAgent> {
+        self.certificate.clone()
+    }
 }

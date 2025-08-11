@@ -14,6 +14,7 @@ use ignition::{
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
     constants::DEFAULT_KERNEL_CMD_LINE_INIT,
     controller::{
+        certificate::CertificateController,
         machine::MachineController,
         scheduler::{Scheduler, SchedulerConfig},
         service::ServiceController,
@@ -139,6 +140,7 @@ async fn main() -> Result<()> {
             agent,
             SchedulerConfig { worker_count: 1 },
             vec![
+                CertificateController::new_boxed(),
                 MachineController::new_boxed(),
                 ServiceController::new_boxed(),
                 VolumeController::new_boxed(),
@@ -163,6 +165,7 @@ async fn main() -> Result<()> {
         },
     )
     .add_service::<CoreService>()
+    .add_service::<services::CertificateService>()
     .add_service::<services::MachineService>()
     .add_service::<services::ServiceService>()
     .add_service::<services::VolumeService>();

@@ -6,7 +6,8 @@ use ignition::{
     api_client::ApiClient,
     resource_index::Resources,
     resources::{
-        ProvideMetadata, machine::Machine, metadata::Namespace, service::Service, volume::Volume,
+        ProvideMetadata, certificate::Certificate, machine::Machine, metadata::Namespace, 
+        service::Service, volume::Volume,
     },
 };
 use tokio::fs::read_to_string;
@@ -32,6 +33,11 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
     let resources = parse_all_resources(&contents).await?;
 
     for resource in resources {
+        if let Ok(certificate) = resource.clone().try_into() {
+            deploy_certificate(config, &api_client, certificate).await?;
+            continue;
+        }
+
         if let Ok(machine) = resource.clone().try_into() {
             deploy_machine(config, &api_client, machine).await?;
             continue;
@@ -84,6 +90,29 @@ async fn deploy_machine(_config: &Config, api_client: &ApiClient, machine: Machi
 
     let summary = MachineSummary::from((machine, status));
     summary.print();
+
+    Ok(())
+}
+
+async fn deploy_certificate(_config: &Config, api_client: &ApiClient, certificate: Certificate) -> Result<()> {
+    let metadata = certificate.metadata();
+    api_client.certificate().apply(certificate).await?;
+
+    let (certificate, status) = api_client
+        .certificate()
+        .get(
+            Namespace::from_value_or_default(metadata.namespace),
+            metadata.name,
+        )
+        .await?;
+
+    message_info(format!(
+        "Successfully deployed certificate: {}",
+        certificate.metadata().to_string()
+    ));
+
+    // For now, just print basic status info since we don't have a CertificateSummary yet
+    println!("Status: {:?}", status);
 
     Ok(())
 }

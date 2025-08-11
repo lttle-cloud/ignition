@@ -51,6 +51,111 @@
       ]
     },
     {
+      "name": "Certificate",
+      "tag": "certificate",
+      "crate_path": "resources::certificate",
+      "namespaced": true,
+      "methods": [
+        {
+          "name": "get",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": false,
+            "optional": false,
+            "names": [
+              "CertificateV1",
+              "CertificateStatus"
+            ]
+          }
+        },
+        {
+          "name": "list",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": true,
+            "optional": false,
+            "names": [
+              "CertificateV1",
+              "CertificateStatus"
+            ]
+          }
+        },
+        {
+          "name": "delete",
+          "verb": "DELETE",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": null
+        },
+        {
+          "name": "apply",
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "Certificate"
+          },
+          "response": null
+        },
+        {
+          "name": "get_status",
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            },
+            {
+              "type": "resource_name"
+            },
+            {
+              "type": "static",
+              "value": "status"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "CertificateStatus"
+          }
+        }
+      ]
+    },
+    {
       "name": "Machine",
       "tag": "machine",
       "crate_path": "resources::machine",
@@ -367,6 +472,218 @@
     }
   ],
   "defs": {
+    "Certificate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "certificate": {
+              "$ref": "#/$defs/CertificateV1"
+            }
+          },
+          "required": [
+            "certificate"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "certificate.v1": {
+              "$ref": "#/$defs/CertificateV1"
+            }
+          },
+          "required": [
+            "certificate.v1"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CertificateIssuer": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "auto": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "description": "References a provider name from ignition.toml [[cert-provider]] config",
+                  "type": "string"
+                },
+                "email": {
+                  "description": "Optional email override. If specified, takes precedence over provider's default-email.\nIf not specified, falls back to provider's default-email from config.\nValidation should error if neither this nor provider config has an email.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "renewal": {
+                  "description": "Optional renewal configuration. Uses sensible defaults if not specified.",
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/CertificateRenewalConfig"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "provider"
+              ]
+            }
+          },
+          "required": [
+            "auto"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "manual": {
+              "type": "object",
+              "properties": {
+                "cert_path": {
+                  "type": "string"
+                },
+                "key_path": {
+                  "type": "string"
+                },
+                "ca_path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "cert_path",
+                "key_path"
+              ]
+            }
+          },
+          "required": [
+            "manual"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CertificateRenewalConfig": {
+      "type": "object",
+      "properties": {
+        "days-before-expiry": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0,
+          "description": "Days before expiry to start renewal attempts. Default: 30 days."
+        },
+        "retry-interval-hours": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0,
+          "description": "Hours between renewal retry attempts on failure. Default: 12 hours."
+        }
+      }
+    },
+    "CertificateState": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "pending-order",
+        "pending-dns-challenge",
+        "pending-http-challenge",
+        "validating",
+        "issuing",
+        "ready",
+        "renewing",
+        "failed",
+        "expired",
+        "revoked"
+      ]
+    },
+    "CertificateStatus": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/CertificateState"
+        },
+        "not_before": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "not_after": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_failure_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "renewal_time": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "state"
+      ]
+    },
+    "CertificateV1": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "issuer": {
+          "$ref": "#/$defs/CertificateIssuer"
+        }
+      },
+      "required": [
+        "name",
+        "domains",
+        "issuer"
+      ]
+    },
     "ListNamespaces": {
       "type": "object",
       "properties": {
