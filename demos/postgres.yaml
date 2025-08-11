@@ -12,6 +12,7 @@ machine:
   mode:
     flash:
       strategy: manual
+      timeout: 2
     # listen-on-port: 5432
   volumes:
     - name: postgres-data
@@ -29,7 +30,7 @@ service:
     protocol: tcp
     connection-tracking:
       traffic-aware:
-        inactivity-timeout: 5
+        inactivity-timeout: 3
   bind:
     external:
       host: pgtest.alpha1.ovh-rbx.lttle.host

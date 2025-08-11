@@ -134,7 +134,7 @@ async fn main() -> Result<()> {
             store.clone(),
             repository.clone(),
             agent,
-            SchedulerConfig { worker_count: 1 },
+            SchedulerConfig { worker_count: 4 },
             vec![
                 MachineController::new_boxed(),
                 ServiceController::new_boxed(),
