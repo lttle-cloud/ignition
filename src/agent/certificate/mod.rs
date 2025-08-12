@@ -1,6 +1,10 @@
 pub mod config;
 
-use crate::machinery::store::{Key, Store};
+use crate::{
+    agent::data::Collections,
+    constants::DEFAULT_AGENT_TENANT,
+    machinery::store::{Key, Store},
+};
 use anyhow::{Result, anyhow};
 use config::CertificateAgentConfig;
 use instant_acme::{Account, NewAccount};
@@ -32,9 +36,12 @@ impl CertificateAgent {
         Ok(Arc::new(Self { store, config }))
     }
 
+    pub fn acme_account_key(provider_name: &str, email: &str) -> String {
+        format!("{}-{}", provider_name, email)
+    }
+
     pub async fn create_acme_account(
         &self,
-        tenant_id: &str,
         provider_name: &str,
         contact_email: Option<String>,
     ) -> Result<StoredAcmeAccount> {
@@ -70,14 +77,15 @@ impl CertificateAgent {
         let stored_account = StoredAcmeAccount {
             credentials_json,
             account_id,
-            contact_email: email,
+            contact_email: email.clone(),
             created_at: chrono::Utc::now(),
         };
 
+        let email_str = email.as_deref().unwrap_or("");
         let key = Key::<StoredAcmeAccount>::not_namespaced()
-            .tenant(tenant_id)
-            .collection("acme_account")
-            .key(provider_name);
+            .tenant(DEFAULT_AGENT_TENANT)
+            .collection(Collections::AcmeAccount)
+            .key(Self::acme_account_key(provider_name, email_str));
         self.store.put(&key, &stored_account)?;
 
         Ok(stored_account)
@@ -85,13 +93,13 @@ impl CertificateAgent {
 
     pub async fn get_acme_account(
         &self,
-        tenant_id: &str,
         provider_name: &str,
+        email: &str,
     ) -> Result<Option<Account>> {
         let key = Key::<StoredAcmeAccount>::not_namespaced()
-            .tenant(tenant_id)
-            .collection("acme_account")
-            .key(provider_name);
+            .tenant(DEFAULT_AGENT_TENANT)
+            .collection(Collections::AcmeAccount)
+            .key(Self::acme_account_key(provider_name, email));
 
         if let Some(stored) = self.store.get(&key)? {
             let _provider = self

@@ -1,15 +1,18 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use std::time::Duration;
 use tracing::{error, info};
 
 use crate::{
     controller::{
-        context::{ControllerContext, ControllerEvent, ControllerKey},
         Controller, ReconcileNext,
+        context::{ControllerContext, ControllerEvent, ControllerKey},
     },
     resource_index::ResourceKind,
-    resources::{certificate::{Certificate, CertificateIssuer, CertificateState, CertificateStatus}, metadata::Namespace},
+    resources::{
+        certificate::{Certificate, CertificateIssuer, CertificateState, CertificateStatus},
+        metadata::Namespace,
+    },
 };
 
 pub struct CertificateController;
@@ -52,7 +55,7 @@ impl Controller for CertificateController {
         if key.kind != ResourceKind::Certificate {
             return Ok(ReconcileNext::done());
         }
-        
+
         let metadata = key.metadata();
 
         let tenant = ctx.tenant.clone();
@@ -60,27 +63,33 @@ impl Controller for CertificateController {
 
         // Get the certificate resource
         let cert = cert_repo
-            .get(Namespace::from_value_or_default(metadata.namespace.clone()), metadata.name.clone())?
+            .get(
+                Namespace::from_value_or_default(metadata.namespace.clone()),
+                metadata.name.clone(),
+            )?
             .ok_or_else(|| anyhow!("Certificate not found"))?;
-        
+
         let cert = match cert {
             Certificate::V1(v1) => v1,
         };
 
         // Get current status
-        let mut status = cert_repo
-            .get_status(metadata.clone())?
-            .unwrap_or_else(|| CertificateStatus {
-                state: CertificateState::Pending,
-                not_before: None,
-                not_after: None,
-                last_failure_reason: None,
-                renewal_time: None,
-            });
+        let mut status =
+            cert_repo
+                .get_status(metadata.clone())?
+                .unwrap_or_else(|| CertificateStatus {
+                    state: CertificateState::Pending,
+                    not_before: None,
+                    not_after: None,
+                    last_failure_reason: None,
+                    renewal_time: None,
+                });
 
         // Handle certificate based on issuer type
         match &cert.issuer {
-            CertificateIssuer::Auto { provider, email, .. } => {
+            CertificateIssuer::Auto {
+                provider, email, ..
+            } => {
                 info!(
                     "Processing auto certificate for domains: {:?} with provider: {}",
                     cert.domains, provider
@@ -88,26 +97,39 @@ impl Controller for CertificateController {
 
                 // Check if ACME account exists or needs to be created
                 let cert_agent = ctx.agent.certificate();
-                
-                match cert_agent.get_acme_account(&tenant, provider.as_str()).await {
+
+                let email_str = email.as_deref().unwrap_or("");
+                match cert_agent
+                    .get_acme_account(provider.as_str(), email_str)
+                    .await
+                {
                     Ok(Some(_account)) => {
                         info!("ACME account already exists for provider: {}", provider);
                         status.state = CertificateState::Pending;
-                        status.last_failure_reason = Some("Account exists, certificate issuance not yet implemented".to_string());
+                        status.last_failure_reason = Some(
+                            "Account exists, certificate issuance not yet implemented".to_string(),
+                        );
                     }
                     Ok(None) => {
                         info!("Creating ACME account for provider: {}", provider);
-                        
-                        match cert_agent.create_acme_account(&tenant, provider.as_str(), email.clone()).await {
+
+                        match cert_agent
+                            .create_acme_account(provider.as_str(), email.clone())
+                            .await
+                        {
                             Ok(account) => {
                                 info!("Successfully created ACME account: {}", account.account_id);
                                 status.state = CertificateState::Pending;
-                                status.last_failure_reason = Some("Account created, certificate issuance not yet implemented".to_string());
+                                status.last_failure_reason = Some(
+                                    "Account created, certificate issuance not yet implemented"
+                                        .to_string(),
+                                );
                             }
                             Err(e) => {
                                 error!("Failed to create ACME account: {}", e);
                                 status.state = CertificateState::Failed;
-                                status.last_failure_reason = Some(format!("Account creation failed: {}", e));
+                                status.last_failure_reason =
+                                    Some(format!("Account creation failed: {}", e));
                             }
                         }
                     }
@@ -118,7 +140,11 @@ impl Controller for CertificateController {
                     }
                 }
             }
-            CertificateIssuer::Manual { cert_path, key_path, .. } => {
+            CertificateIssuer::Manual {
+                cert_path,
+                key_path,
+                ..
+            } => {
                 info!(
                     "Manual certificate configured with cert: {} and key: {}",
                     cert_path, key_path
@@ -144,7 +170,7 @@ impl Controller for CertificateController {
         if key.kind != ResourceKind::Certificate {
             return ReconcileNext::done();
         }
-        
+
         let metadata = key.metadata();
 
         error!("Certificate controller error for {:?}: {}", metadata, error);
@@ -157,7 +183,7 @@ impl Controller for CertificateController {
         {
             status.state = CertificateState::Failed;
             status.last_failure_reason = Some(error.to_string());
-            
+
             let _ = ctx
                 .repository
                 .certificate(ctx.tenant)
