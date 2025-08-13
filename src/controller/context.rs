@@ -33,6 +33,10 @@ impl ControllerKey {
 
     pub fn metadata(&self) -> Metadata {
         match self.kind {
+            ResourceKind::Certificate => Metadata::new(
+                self.name.clone(),
+                Namespace::from_value_or_default(self.namespace.clone()),
+            ),
             ResourceKind::Machine => Metadata::new(
                 self.name.clone(),
                 Namespace::from_value_or_default(self.namespace.clone()),

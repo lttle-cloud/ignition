@@ -93,6 +93,8 @@ hyper-util = "0.1.16"
 hickory-server = "0.24"
 hickory-resolver = "0.24"
 hickory-proto = "0.24"
+chrono = { version = "0.4.41", features = ["serde"] }
+instant-acme = "0.8.2"
 
 [build-dependencies]
 meta = { path = "meta" }

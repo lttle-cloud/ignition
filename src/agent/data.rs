@@ -4,6 +4,7 @@ pub enum Collections {
     Volume,
     Image,
     ImageLayer,
+    AcmeAccount,
 }
 
 impl AsRef<str> for Collections {
@@ -14,6 +15,7 @@ impl AsRef<str> for Collections {
             Collections::Volume => "volumes",
             Collections::Image => "images",
             Collections::ImageLayer => "image_layers",
+            Collections::AcmeAccount => "acme_accounts",
         }
     }
 }

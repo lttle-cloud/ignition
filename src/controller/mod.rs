@@ -1,6 +1,7 @@
 pub mod context;
 pub mod scheduler;
 
+pub mod certificate;
 pub mod machine;
 pub mod service;
 pub mod volume;

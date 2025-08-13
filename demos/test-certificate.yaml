@@ -1,0 +1,9 @@
+certificate:
+  name: test-cert
+  namespace: default
+  domains:
+    - test.example.com
+    - www.test.example.com
+  issuer:
+    auto:
+      provider: letsencrypt-staging
