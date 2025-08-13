@@ -56,6 +56,9 @@ mod certificate {
         #[serde(rename = "pending")]
         Pending, // Initial state, no action taken yet
 
+        #[serde(rename = "pending-acme-account")]
+        PendingAcmeAccount, // Creating or verifying ACME account
+
         #[serde(rename = "pending-order")]
         PendingOrder, // ACME order created, waiting for authorizations
 

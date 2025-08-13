@@ -9,9 +9,7 @@ use anyhow::{Result, anyhow};
 use config::CertificateAgentConfig;
 use instant_acme::{Account, NewAccount, NewOrder, Order};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StoredAcmeAccount {

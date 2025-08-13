@@ -40,20 +40,29 @@ impl CertificateController {
         // State machine for auto certificate lifecycle
         match status.state {
             CertificateState::Pending => {
-                // Initial state - ensure ACME account exists, then create order
+                // Initial state - transition to checking ACME account
+                info!("Certificate in Pending state, transitioning to PendingAcmeAccount");
+                status.state = CertificateState::PendingAcmeAccount;
+                status.last_failure_reason = None;
+                Ok(ReconcileNext::Immediate)
+            }
+
+            CertificateState::PendingAcmeAccount => {
+                // Ensure ACME account exists
                 info!(
-                    "Certificate in Pending state, checking ACME account for provider: {}",
+                    "Certificate in PendingAcmeAccount state, checking account for provider: {}",
                     provider
                 );
 
-                // First ensure account exists
-                let account_exists = match cert_agent
+                match cert_agent
                     .get_acme_account(provider, Some(&resolved_email))
                     .await
                 {
                     Ok(Some(_account)) => {
-                        info!("ACME account exists");
-                        true
+                        info!("ACME account exists, transitioning to PendingOrder");
+                        status.state = CertificateState::PendingOrder;
+                        status.last_failure_reason = None;
+                        Ok(ReconcileNext::Immediate)
                     }
                     Ok(None) => {
                         info!(
@@ -66,14 +75,16 @@ impl CertificateController {
                         {
                             Ok(account) => {
                                 info!("Successfully created ACME account: {}", account.account_id);
-                                true
+                                status.state = CertificateState::PendingOrder;
+                                status.last_failure_reason = None;
+                                Ok(ReconcileNext::Immediate)
                             }
                             Err(e) => {
                                 error!("Failed to create ACME account: {}", e);
                                 status.state = CertificateState::Failed;
                                 status.last_failure_reason =
                                     Some(format!("Account creation failed: {}", e));
-                                return Ok(ReconcileNext::After(Duration::from_secs(60)));
+                                Ok(ReconcileNext::After(Duration::from_secs(60)))
                             }
                         }
                     }
@@ -81,33 +92,8 @@ impl CertificateController {
                         error!("Failed to check ACME account: {}", e);
                         status.state = CertificateState::Failed;
                         status.last_failure_reason = Some(format!("Account check failed: {}", e));
-                        return Ok(ReconcileNext::After(Duration::from_secs(60)));
+                        Ok(ReconcileNext::After(Duration::from_secs(60)))
                     }
-                };
-
-                // If account exists, create order
-                if account_exists {
-                    info!("Creating ACME order for domains: {:?}", domains);
-                    match cert_agent
-                        .create_order(provider, Some(&resolved_email), domains.to_vec())
-                        .await
-                    {
-                        Ok(_order) => {
-                            info!("Successfully created ACME order");
-                            status.state = CertificateState::PendingOrder;
-                            status.last_failure_reason = None;
-                            Ok(ReconcileNext::Immediate)
-                        }
-                        Err(e) => {
-                            error!("Failed to create ACME order: {}", e);
-                            status.state = CertificateState::Failed;
-                            status.last_failure_reason =
-                                Some(format!("Order creation failed: {}", e));
-                            Ok(ReconcileNext::After(Duration::from_secs(60)))
-                        }
-                    }
-                } else {
-                    Ok(ReconcileNext::After(Duration::from_secs(30)))
                 }
             }
 

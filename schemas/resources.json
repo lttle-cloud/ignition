@@ -199,6 +199,7 @@
     "CertificateState": {
       "enum": [
         "pending",
+        "pending-acme-account",
         "pending-order",
         "pending-dns-challenge",
         "pending-http-challenge",
