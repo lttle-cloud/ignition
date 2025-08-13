@@ -60,19 +60,19 @@ mod certificate {
         PendingAcmeAccount, // Creating or verifying ACME account
 
         #[serde(rename = "pending-order")]
-        PendingOrder, // ACME order created, waiting for authorizations
+        PendingOrder(Option<String>), // ACME order URL (None on initial state, Some after order created)
 
         #[serde(rename = "pending-dns-challenge")]
-        PendingDnsChallenge, // DNS-01 challenge, waiting for DNS propagation
+        PendingDnsChallenge(String), // DNS-01 challenge
 
         #[serde(rename = "pending-http-challenge")]
-        PendingHttpChallenge, // HTTP-01 challenge, waiting for validation
+        PendingHttpChallenge(String), // HTTP-01 challenge
 
         #[serde(rename = "validating")]
-        Validating, // ACME server is validating the challenge
+        Validating(String), // ACME server is validating
 
         #[serde(rename = "issuing")]
-        Issuing, // Challenge passed, certificate being issued
+        Issuing(String), // Challenge passed, certificate being issued
 
         #[serde(rename = "ready")]
         Ready, // Certificate active and deployed

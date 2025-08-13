@@ -597,20 +597,82 @@
       }
     },
     "CertificateState": {
-      "type": "string",
-      "enum": [
-        "pending",
-        "pending-acme-account",
-        "pending-order",
-        "pending-dns-challenge",
-        "pending-http-challenge",
-        "validating",
-        "issuing",
-        "ready",
-        "renewing",
-        "failed",
-        "expired",
-        "revoked"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "pending",
+            "pending-acme-account",
+            "ready",
+            "renewing",
+            "failed",
+            "expired",
+            "revoked"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "pending-order": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "pending-order"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "pending-dns-challenge": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "pending-dns-challenge"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "pending-http-challenge": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "pending-http-challenge"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "validating": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "validating"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "issuing": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "issuing"
+          ],
+          "additionalProperties": false
+        }
       ]
     },
     "CertificateStatus": {
