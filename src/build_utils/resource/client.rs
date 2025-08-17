@@ -15,7 +15,17 @@ pub async fn build_rust_api_client(api_schema: &ApiSchema) -> Result<()> {
     src.push_str("#[allow(dead_code, unused)]\n");
     src.push_str("pub mod api_client {\n");
     src.push_str("    use anyhow::Result;\n");
-    src.push_str("    use serde::{Deserialize, Serialize};\n\n");
+    src.push_str("    use serde::{Deserialize, Serialize};\n");
+    src.push_str("    use futures_util::{SinkExt, StreamExt};\n");
+    src.push_str(
+        "    use tokio_tungstenite::{WebSocketStream, tungstenite::Message, MaybeTlsStream};\n",
+    );
+    src.push_str("    use tokio::net::TcpStream;\n");
+    src.push_str("    use std::marker::PhantomData;\n");
+    src.push_str("    use serde_urlencoded;\n");
+    src.push_str("    use url::Url;\n");
+    src.push_str("    use tokio_tungstenite::tungstenite::client::IntoClientRequest;\n");
+    src.push_str("    use tungstenite::http::HeaderValue;\n\n");
     src.push_str("    use crate::resources::metadata::Namespace;\n\n");
 
     // Generate config struct
@@ -23,6 +33,38 @@ pub async fn build_rust_api_client(api_schema: &ApiSchema) -> Result<()> {
     src.push_str("    pub struct ApiClientConfig {\n");
     src.push_str("        pub base_url: String,\n");
     src.push_str("        pub token: String,\n");
+    src.push_str("    }\n\n");
+
+    src.push_str("    pub struct IgnitionWsStream<T> {\n");
+    src.push_str("        stream: WebSocketStream<MaybeTlsStream<TcpStream>>,\n");
+    src.push_str("        _phantom: PhantomData<T>,\n");
+    src.push_str("    }\n\n");
+
+    src.push_str("    impl<T> IgnitionWsStream<T> {\n");
+    src.push_str(
+        "        pub fn new(stream: WebSocketStream<MaybeTlsStream<TcpStream>>) -> Self {\n",
+    );
+    src.push_str("            Self { \n");
+    src.push_str("                stream,\n");
+    src.push_str("                _phantom: PhantomData,\n");
+    src.push_str("            }\n");
+    src.push_str("        }\n\n");
+
+    src.push_str("        pub async fn next(&mut self) -> Option<T>\n");
+    src.push_str("        where\n");
+    src.push_str("            T: for<'de> serde::Deserialize<'de>,\n");
+    src.push_str("        {\n");
+    src.push_str("            let message = self.stream.next().await;\n");
+    src.push_str("            match message {\n");
+    src.push_str("                Some(Ok(Message::Text(text))) => {\n");
+    src.push_str("                    match serde_json::from_str(&text) {\n");
+    src.push_str("                        Ok(message) => Some(message),\n");
+    src.push_str("                        Err(_) => None,\n");
+    src.push_str("                    }\n");
+    src.push_str("                },\n");
+    src.push_str("                _ => None,\n");
+    src.push_str("            }\n");
+    src.push_str("        }\n\n");
     src.push_str("    }\n\n");
 
     // Generate main ApiClient struct
@@ -63,6 +105,11 @@ pub async fn build_rust_api_client(api_schema: &ApiSchema) -> Result<()> {
 
         // Generate methods for each service
         for method in &service.methods {
+            if method.verb == ApiVerb::WebSocket {
+                generate_websocket_method(&mut src, service, method);
+                continue;
+            }
+
             generate_method(&mut src, service, method);
         }
 
@@ -136,13 +183,16 @@ fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
         ApiVerb::Get => "get",
         ApiVerb::Put => "put",
         ApiVerb::Delete => "delete",
+        ApiVerb::WebSocket => unreachable!(),
     };
 
     // Build URL path
     let url_construction = generate_url_format_impl(method);
 
+    let namespaced = service.namespaced || method.namespaced;
+
     let generate_namespace_header =
-        service.namespaced && (method.verb == ApiVerb::Get || method.verb == ApiVerb::Delete);
+        namespaced && (method.verb == ApiVerb::Get || method.verb == ApiVerb::Delete);
 
     // Method signature
     let mut params = Vec::new();
@@ -276,5 +326,79 @@ fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
         src.push_str("            Ok(())\n");
     }
 
+    src.push_str("        }\n\n");
+}
+
+fn generate_websocket_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
+    let method_name = &method.name;
+
+    if method.verb != ApiVerb::WebSocket {
+        unreachable!();
+    }
+
+    let mut params = Vec::new();
+    if service.namespaced || method.namespaced {
+        params.push("namespace: Namespace".to_string());
+    }
+    if let Some(request) = &method.request {
+        match request {
+            ApiRequest::SchemaDefinition { name } => {
+                params.push(format!("opts: crate::{}::{}", service.crate_path, name));
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    src.push_str(&format!(
+        "        pub async fn {}(&self, {}) -> Result<IgnitionWsStream<{}>> {{\n",
+        method_name,
+        params.join(", "),
+        generate_response_inner_type(service, &method.response)
+    ));
+
+    // Build URL with query parameters
+    src.push_str(&format!(
+        "            let mut url = format!(\"{{}}/{}\", self.config.base_url);\n",
+        method
+            .path
+            .iter()
+            .map(|s| match s {
+                ApiPathSegment::Static { value } => value.to_string(),
+                ApiPathSegment::ResourceName => "{}".to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join("/")
+    ));
+
+    // Add query parameters if opts is present
+    if let Some(_) = &method.request {
+        src.push_str("            let query_params = serde_urlencoded::to_string(&opts)?;\n");
+        src.push_str("            if !query_params.is_empty() {\n");
+        src.push_str("                url.push('?');\n");
+        src.push_str("                url.push_str(&query_params);\n");
+        src.push_str("            }\n");
+    }
+
+    // Convert HTTP URL to WebSocket URL
+    src.push_str("            let ws_url = url.replace(\"http://\", \"ws://\").replace(\"https://\", \"wss://\");\n");
+
+    // Build request with headers
+    src.push_str("            let mut request = ws_url.into_client_request()?;\n");
+    src.push_str("            let headers = request.headers_mut();\n");
+    src.push_str("            headers.insert(\"x-ignition-token\", HeaderValue::from_str(&self.config.token)?);\n");
+
+    // Add namespace header if namespaced
+    let namespaced = service.namespaced || method.namespaced;
+    if namespaced {
+        src.push_str("            if let Some(namespace) = namespace.as_value() {\n");
+        src.push_str("                headers.insert(\"x-ignition-namespace\", HeaderValue::from_str(&namespace)?);\n");
+        src.push_str("            }\n");
+    }
+
+    src.push_str(
+        "            let (ws_stream, _) = tokio_tungstenite::connect_async(request).await?;\n",
+    );
+
+    src.push_str("            Ok(IgnitionWsStream::new(ws_stream))\n");
     src.push_str("        }\n\n");
 }

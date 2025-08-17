@@ -3,6 +3,7 @@ use std::{str::FromStr, time::Duration};
 use anyhow::{Result, anyhow, bail};
 use async_trait::async_trait;
 use oci_client::Reference;
+use takeoff_proto::proto::LogsTelemetryConfig;
 use tokio::{runtime, task::spawn_blocking};
 use tracing::{error, info, warn};
 
@@ -14,7 +15,7 @@ use crate::{
         },
         net::{IpReservationKind, compute_mac_for_ip},
     },
-    constants::DEFAULT_SUSPEND_TIMEOUT_SECS,
+    constants::{DEFAULT_NAMESPACE, DEFAULT_SUSPEND_TIMEOUT_SECS},
     controller::{
         Controller, ReconcileNext,
         context::{AsyncWork, ControllerContext, ControllerEvent, ControllerKey},
@@ -525,6 +526,16 @@ impl Controller for MachineController {
                             gateway: ctx.agent.net().vm_gateway().to_string(),
                             netmask: ctx.agent.net().vm_netmask().to_string(),
                             dns_servers: vec![ctx.agent.net().service_gateway().to_string()],
+                        },
+                        logs_telemetry_config: LogsTelemetryConfig {
+                            endpoint: ctx.agent.logs().get_otel_ingest_endpoint().clone(),
+                            service_name: machine.name.clone(),
+                            tenant_id: ctx.tenant.clone().to_string(),
+                            service_namespace: machine
+                                .namespace
+                                .clone()
+                                .unwrap_or(DEFAULT_NAMESPACE.to_string()),
+                            service_group: machine.name.clone(),
                         },
                     })
                     .await

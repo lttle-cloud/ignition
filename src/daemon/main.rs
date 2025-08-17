@@ -8,8 +8,8 @@ use clap::Parser;
 use ignition::{
     agent::{
         Agent, AgentConfig, dns::config::DnsAgentConfig, image::ImageAgentConfig,
-        machine::MachineAgentConfig, net::NetAgentConfig, proxy::ProxyAgentConfig,
-        volume::VolumeAgentConfig,
+        logs::LogsAgentConfig, machine::MachineAgentConfig, net::NetAgentConfig,
+        proxy::ProxyAgentConfig, volume::VolumeAgentConfig,
     },
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
     constants::DEFAULT_KERNEL_CMD_LINE_INIT,
@@ -119,6 +119,12 @@ async fn main() -> Result<()> {
                                 upstream_dns_servers: scheduler_config
                                     .dns_config
                                     .upstream_dns_servers,
+                            },
+                            logs_config: LogsAgentConfig {
+                                store: scheduler_config.logs_config.store,
+                                otel_ingest_endpoint: scheduler_config
+                                    .logs_config
+                                    .otel_ingest_endpoint,
                             },
                         },
                         agent_scheduler,

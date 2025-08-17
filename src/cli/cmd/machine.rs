@@ -1,9 +1,15 @@
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
+use chrono;
+use clap::Args;
 use ignition::{
     constants::{DEFAULT_NAMESPACE, DEFAULT_SUSPEND_TIMEOUT_SECS},
-    resources::machine::{MachineLatest, MachineMode, MachineSnapshotStrategy, MachineStatus},
+    resources::{
+        core::{LogStreamParams, LogStreamTarget},
+        machine::{MachineLatest, MachineMode, MachineSnapshotStrategy, MachineStatus},
+        metadata::Namespace,
+    },
 };
 use meta::{summary, table};
 use ordinal::Ordinal;
@@ -12,8 +18,33 @@ use crate::{
     client::get_api_client,
     cmd::{DeleteNamespacedArgs, GetNamespacedArgs, ListNamespacedArgs},
     config::Config,
-    ui::message::{message_info, message_warn},
+    ui::message::{message_info, message_log_stderr, message_log_stdout, message_warn},
 };
+
+#[derive(Clone, Debug, Args)]
+pub struct MachineLogsArgs {
+    /// Namespace of the machine (short: --ns)
+    #[arg(long = "namespace", alias = "ns")]
+    namespace: Option<String>,
+
+    /// Since when to fetch logs [default: 1d] (eg. 1d, 1h, 1m, 10s)
+    #[arg(long = "since", short = 's')]
+    since: Option<String>,
+
+    /// Show timestamps (always in UTC)
+    #[arg(long = "timestamps", short = 't')]
+    show_timestamps: bool,
+
+    #[arg(long = "elapsed", short = 'e')]
+    show_elapsed: bool,
+
+    /// Follow the logs
+    #[arg(long = "follow", short = 'f')]
+    follow: bool,
+
+    /// Name of the machine to fetch logs for
+    name: String,
+}
 
 #[table]
 pub struct MachineTable {
@@ -247,6 +278,77 @@ pub async fn run_machine_get(config: &Config, args: GetNamespacedArgs) -> Result
 
     let summary = MachineSummary::from((machine, status));
     summary.print();
+
+    Ok(())
+}
+
+pub async fn run_machine_get_logs(config: &Config, args: MachineLogsArgs) -> Result<()> {
+    let api_client = get_api_client(config).await?;
+
+    let namespace = Namespace::from_value_or_default(args.namespace);
+
+    if args.follow && args.since.is_some() {
+        message_warn("Cannot use --follow and --since together");
+        return Ok(());
+    }
+
+    if args.follow && args.show_elapsed {
+        message_warn("Cannot use --follow and --elapsed together");
+        return Ok(());
+    }
+
+    let now_ns = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+
+    let since = args.since.unwrap_or("1d".to_string());
+    let since = humantime::parse_duration(&since)?;
+    let since_ns = since.as_nanos();
+
+    let start_ts = if args.follow {
+        None
+    } else {
+        Some((now_ns - since_ns).to_string())
+    };
+
+    let end_ts = if args.follow {
+        None
+    } else {
+        Some(now_ns.to_string())
+    };
+
+    let mut stream = api_client
+        .core()
+        .stream_logs(
+            namespace,
+            LogStreamParams::Machine {
+                machine_name: args.name,
+                start_ts_ns: start_ts,
+                end_ts_ns: end_ts,
+            },
+        )
+        .await?;
+
+    while let Some(result) = stream.next().await {
+        let timestamp = if args.show_timestamps {
+            let secs = result.timestamp / 1_000_000_000;
+            let nanos = result.timestamp % 1_000_000_000;
+
+            let dt =
+                chrono::DateTime::from_timestamp(secs as i64, nanos as u32).unwrap_or_default();
+
+            Some(dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
+        } else if args.show_elapsed {
+            let duration = Duration::from_secs((now_ns - result.timestamp) as u64 / 1_000_000_000);
+            let duration = humantime::format_duration(duration);
+            Some(format!("{} ago", duration))
+        } else {
+            None
+        };
+
+        match result.target_stream {
+            LogStreamTarget::Stdout => message_log_stdout(&result.message, timestamp),
+            LogStreamTarget::Stderr => message_log_stderr(&result.message, timestamp),
+        }
+    }
 
     Ok(())
 }

@@ -9,6 +9,8 @@ pub struct TakeoffInitArgs {
     pub envs: HashMap<String, String>,
     #[serde(rename = "m")]
     pub mount_points: Vec<MountPoint>,
+    #[serde(rename = "l")]
+    pub logs_telemetry_config: LogsTelemetryConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -19,6 +21,20 @@ pub struct MountPoint {
     pub target: String,
     #[serde(rename = "r")]
     pub read_only: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct LogsTelemetryConfig {
+    #[serde(rename = "e")]
+    pub endpoint: String,
+    #[serde(rename = "s")]
+    pub service_name: String,
+    #[serde(rename = "t")]
+    pub tenant_id: String,
+    #[serde(rename = "n")]
+    pub service_namespace: String,
+    #[serde(rename = "g")]
+    pub service_group: String,
 }
 
 impl TakeoffInitArgs {
@@ -62,6 +78,13 @@ mod tests {
                 target: "/mnt/data".to_string(),
                 read_only: true,
             }],
+            logs_telemetry_config: LogsTelemetryConfig {
+                endpoint: "http://localhost:3100/otlp/v1/logs".to_string(),
+                service_name: "test".to_string(),
+                tenant_id: "test".to_string(),
+                service_namespace: "test".to_string(),
+                service_group: "test".to_string(),
+            },
         };
         let encoded = args.encode().unwrap();
         let decoded = TakeoffInitArgs::decode(&encoded).unwrap();
