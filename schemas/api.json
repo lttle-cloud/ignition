@@ -8,6 +8,7 @@
       "methods": [
         {
           "name": "me",
+          "namespaced": false,
           "verb": "GET",
           "path": [
             {
@@ -29,6 +30,7 @@
         },
         {
           "name": "list_namespaces",
+          "namespaced": false,
           "verb": "GET",
           "path": [
             {
@@ -47,6 +49,31 @@
             "optional": false,
             "name": "ListNamespaces"
           }
+        },
+        {
+          "name": "stream_logs",
+          "namespaced": true,
+          "verb": "WS",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "logs"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "LogStreamParams"
+          },
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "LogStreamItem"
+          }
         }
       ]
     },
@@ -58,6 +85,7 @@
       "methods": [
         {
           "name": "get",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -81,6 +109,7 @@
         },
         {
           "name": "list",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -101,6 +130,7 @@
         },
         {
           "name": "delete",
+          "namespaced": true,
           "verb": "DELETE",
           "path": [
             {
@@ -116,6 +146,7 @@
         },
         {
           "name": "apply",
+          "namespaced": true,
           "verb": "PUT",
           "path": [
             {
@@ -131,6 +162,7 @@
         },
         {
           "name": "get_status",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -163,6 +195,7 @@
       "methods": [
         {
           "name": "get",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -186,6 +219,7 @@
         },
         {
           "name": "list",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -206,6 +240,7 @@
         },
         {
           "name": "delete",
+          "namespaced": true,
           "verb": "DELETE",
           "path": [
             {
@@ -221,6 +256,7 @@
         },
         {
           "name": "apply",
+          "namespaced": true,
           "verb": "PUT",
           "path": [
             {
@@ -236,6 +272,7 @@
         },
         {
           "name": "get_status",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -268,6 +305,7 @@
       "methods": [
         {
           "name": "get",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -291,6 +329,7 @@
         },
         {
           "name": "list",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -311,6 +350,7 @@
         },
         {
           "name": "delete",
+          "namespaced": true,
           "verb": "DELETE",
           "path": [
             {
@@ -326,6 +366,7 @@
         },
         {
           "name": "apply",
+          "namespaced": true,
           "verb": "PUT",
           "path": [
             {
@@ -341,6 +382,7 @@
         },
         {
           "name": "get_status",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -401,6 +443,90 @@
           ]
         }
       }
+    },
+    "LogStreamItem": {
+      "type": "object",
+      "properties": {
+        "timestamp": {
+          "type": "integer",
+          "format": "uint128",
+          "minimum": 0
+        },
+        "message": {
+          "type": "string"
+        },
+        "target_stream": {
+          "$ref": "#/$defs/LogStreamTarget"
+        }
+      },
+      "required": [
+        "timestamp",
+        "message",
+        "target_stream"
+      ],
+      "title": "LogStreamItem",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "LogStreamTarget": {
+          "type": "string",
+          "enum": [
+            "stdout",
+            "stderr"
+          ]
+        }
+      }
+    },
+    "LogStreamParams": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "machine_name": {
+              "type": "string"
+            },
+            "start_ts_ns": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "end_ts_ns": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "machine_name"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "group_name": {
+              "type": "string"
+            },
+            "start_ts_ns": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "end_ts_ns": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "group_name"
+          ]
+        }
+      ],
+      "title": "LogStreamParams",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
     },
     "Machine": {
       "oneOf": [

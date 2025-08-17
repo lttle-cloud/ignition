@@ -22,10 +22,15 @@ use super::DnsHandler;
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum DnsSubdomain {
     Service { name: String, namespace: String },
+    Host,
 }
 
 impl DnsHandler {
     fn parse_subdomain(&self, address: &str) -> Option<DnsSubdomain> {
+        if address == format!("host.{}.", self.zone_suffix) {
+            return Some(DnsSubdomain::Host);
+        }
+
         let expected_suffix = format!(".svc.{}.", self.zone_suffix);
         if !address.ends_with(&expected_suffix) {
             return None;
@@ -161,6 +166,13 @@ impl DnsHandler {
                                 )];
                             }
                         }
+                    }
+                    DnsSubdomain::Host => {
+                        return vec![Record::from_rdata(
+                            name.clone().into(),
+                            self.default_ttl,
+                            RData::A(A(self.net_agent.service_gateway())),
+                        )];
                     }
                 }
             }
