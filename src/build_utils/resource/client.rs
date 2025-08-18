@@ -173,6 +173,7 @@ fn generate_response_inner_type(service: &ApiService, response: &Option<ApiRespo
                 format!("({})", full_names.join(", "))
             }
         }
+        Some(ApiResponse::RawSocket) => "WebSocketStream<MaybeTlsStream<TcpStream>>".to_string(),
         None => "()".to_string(),
     }
 }
@@ -349,11 +350,18 @@ fn generate_websocket_method(src: &mut String, service: &ApiService, method: &Ap
         }
     }
 
+    let response_inner_type = generate_response_inner_type(service, &method.response);
+    let response_type = if let Some(ApiResponse::RawSocket) = &method.response {
+        "WebSocketStream<MaybeTlsStream<TcpStream>>".to_string()
+    } else {
+        format!("IgnitionWsStream<{}>", response_inner_type)
+    };
+
     src.push_str(&format!(
-        "        pub async fn {}(&self, {}) -> Result<IgnitionWsStream<{}>> {{\n",
+        "        pub async fn {}(&self, {}) -> Result<{}> {{\n",
         method_name,
         params.join(", "),
-        generate_response_inner_type(service, &method.response)
+        response_type
     ));
 
     // Build URL with query parameters
@@ -399,6 +407,11 @@ fn generate_websocket_method(src: &mut String, service: &ApiService, method: &Ap
         "            let (ws_stream, _) = tokio_tungstenite::connect_async(request).await?;\n",
     );
 
-    src.push_str("            Ok(IgnitionWsStream::new(ws_stream))\n");
+    if let Some(ApiResponse::RawSocket) = &method.response {
+        src.push_str("            Ok(ws_stream)\n");
+    } else {
+        src.push_str("            Ok(IgnitionWsStream::new(ws_stream))\n");
+    }
+
     src.push_str("        }\n\n");
 }

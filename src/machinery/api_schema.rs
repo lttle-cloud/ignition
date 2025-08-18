@@ -48,6 +48,7 @@ pub enum ApiResponse {
         optional: bool,
         names: Vec<String>,
     },
+    RawSocket,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -3,7 +3,10 @@ mod mount;
 mod oci_config;
 mod serial;
 
-use std::{collections::HashMap, process::Stdio, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap, os::unix::process::ExitStatusExt, process::Stdio, sync::Arc,
+    time::Duration,
+};
 
 use anyhow::{Result, bail};
 use guest::GuestManager;
@@ -18,11 +21,14 @@ use takeoff_proto::proto::{LogsTelemetryConfig, TakeoffInitArgs};
 
 use tokio::{
     fs,
-    io::AsyncWriteExt,
-    io::{AsyncBufReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    net::{TcpListener, TcpStream},
     process::Command,
+    task::JoinHandle,
     time::sleep,
 };
+
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 use tracing::{error, info};
 
@@ -57,6 +63,9 @@ async fn takeoff() -> Result<()> {
     mount("devtmpfs", "/dev", Some("devtmpfs")).await;
     mount("tmpfs", "/tmp", Some("tmpfs")).await;
     mount("tmpfs", "/run", Some("tmpfs")).await;
+
+    // Set up PTY support for terminal functionality
+    setup_pty_devices().await?;
 
     configure_dns(&cmdline).await?;
 
@@ -128,10 +137,12 @@ async fn takeoff() -> Result<()> {
     let cmd_logger =
         otel_provider.logger(format!("{}/cmd", args.logs_telemetry_config.service_name));
 
+    let working_dir = config.working_dir.clone().unwrap_or("/".to_string());
+
     let mut child = Command::new(cmd[0].clone())
         .args(&cmd[1..])
-        .envs(envs)
-        .current_dir(config.working_dir.clone().unwrap_or("/".to_string()))
+        .envs(envs.clone())
+        .current_dir(working_dir.clone())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -140,6 +151,8 @@ async fn takeoff() -> Result<()> {
             info!("failed to spawn command: {}", e);
             e
         })?;
+
+    tokio::spawn(run_exec_server(envs, working_dir));
 
     guest_manager.mark_user_space_ready();
 
@@ -273,6 +286,59 @@ async fn configure_dns(cmdline: &str) -> Result<()> {
     Ok(())
 }
 
+async fn setup_pty_devices() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    info!("Setting up PTY devices for terminal support");
+
+    // Create /dev/pts directory if it doesn't exist
+    if let Err(e) = fs::create_dir_all("/dev/pts").await {
+        info!("Warning: Could not create /dev/pts: {}", e);
+    }
+
+    // Mount devpts filesystem for PTY support with proper options
+    // Use mount syscall directly for better control over mount options
+    let result = unsafe {
+        libc::mount(
+            b"devpts\0".as_ptr() as *const libc::c_char,
+            b"/dev/pts\0".as_ptr() as *const libc::c_char,
+            b"devpts\0".as_ptr() as *const libc::c_char,
+            0,
+            b"newinstance,ptmxmode=0666,mode=0620,gid=5\0".as_ptr() as *const libc::c_void,
+        )
+    };
+
+    if result == 0 {
+        info!("Mounted devpts filesystem at /dev/pts with PTY support");
+    } else {
+        // Fallback to simple mount
+        mount("devpts", "/dev/pts", Some("devpts")).await;
+        info!("Mounted devpts filesystem at /dev/pts (fallback)");
+    }
+
+    // Create /dev/ptmx if it doesn't exist (some systems need this)
+    if !std::path::Path::new("/dev/ptmx").exists() {
+        // Try to create a symlink to /dev/pts/ptmx first (modern approach)
+        if let Err(_) = fs::symlink("/dev/pts/ptmx", "/dev/ptmx").await {
+            info!("Could not create /dev/ptmx symlink, PTY support may be limited");
+        } else {
+            info!("Created /dev/ptmx symlink to /dev/pts/ptmx");
+        }
+    }
+
+    // Ensure proper permissions on /dev/pts
+    if let Ok(metadata) = fs::metadata("/dev/pts").await {
+        let mut perms = metadata.permissions();
+        perms.set_mode(0o755);
+        if let Err(e) = fs::set_permissions("/dev/pts", perms).await {
+            info!("Warning: Could not set /dev/pts permissions: {}", e);
+        }
+    }
+
+    info!("PTY device setup completed");
+    Ok(())
+}
+
 async fn init_otel_logger(cfg: LogsTelemetryConfig) -> Result<SdkLoggerProvider> {
     let exporter = opentelemetry_otlp::LogExporter::builder()
         .with_http()
@@ -316,6 +382,396 @@ async fn init_otel_logger(cfg: LogsTelemetryConfig) -> Result<SdkLoggerProvider>
         .build();
 
     Ok(provider)
+}
+
+async fn handle_exec_request(
+    stream: TcpStream,
+    envs: HashMap<String, String>,
+    working_dir: String,
+) -> Result<()> {
+    info!("Starting exec request handler");
+    let (mut read_half, write_half) = stream.into_split();
+
+    // Read exec request: [cmd_len: u32][cmd: string][stdin_flag: u8][tty_flag: u8]
+    // Note: Terminal size is not sent by current client, so we use defaults
+    let mut buf = [0; 4];
+    read_half.read_exact(&mut buf).await?;
+    let cmd_len = u32::from_le_bytes(buf) as usize;
+    let mut cmd = vec![0; cmd_len];
+    read_half.read_exact(&mut cmd).await?;
+    let cmd = String::from_utf8(cmd)?;
+
+    let mut flags = [0; 2];
+    read_half.read_exact(&mut flags).await?;
+    let stdin_enabled = flags[0] != 0;
+    let tty_enabled = flags[1] != 0;
+
+    info!(
+        "Raw flags received: stdin_flag={}, tty_flag={}",
+        flags[0], flags[1]
+    );
+    info!(
+        "Parsed flags: stdin_enabled={}, tty_enabled={}",
+        stdin_enabled, tty_enabled
+    );
+
+    // Use default terminal size since client doesn't send it yet
+    let pty_size = PtySize {
+        rows: 24,
+        cols: 80,
+        pixel_width: 0,
+        pixel_height: 0,
+    };
+
+    info!(
+        "exec request: {} (stdin: {}, tty: {}, size: {}x{})",
+        cmd, stdin_enabled, tty_enabled, pty_size.rows, pty_size.cols
+    );
+
+    if tty_enabled {
+        info!(
+            "Using PTY mode with size {}x{}",
+            pty_size.rows, pty_size.cols
+        );
+    } else {
+        info!("Using pipe mode (no TTY)");
+    }
+
+    // Use command as-is - users should add -i flag if they want interactive shells
+    let cmd_parts = vec!["/bin/sh".to_string(), "-c".to_string(), cmd];
+
+    // Environment setup for terminal sessions
+    let mut additional_envs = HashMap::new();
+    if tty_enabled {
+        // PTY sessions get full terminal support
+        additional_envs.insert("TERM".to_string(), "xterm-256color".to_string());
+        additional_envs.insert("COLORTERM".to_string(), "truecolor".to_string());
+        additional_envs.insert("COLUMNS".to_string(), pty_size.cols.to_string());
+        additional_envs.insert("LINES".to_string(), pty_size.rows.to_string());
+    } else {
+        // Non-PTY sessions get basic terminal support
+        additional_envs.insert("TERM".to_string(), "dumb".to_string());
+    }
+
+    // Merge additional environment variables
+    additional_envs.extend(envs);
+
+    // Execute with PTY if tty_enabled, otherwise use pipes
+    if tty_enabled {
+        // Use PTY for true terminal-like behavior
+        info!("Creating PTY system");
+        let pty_system = native_pty_system();
+
+        info!("Opening PTY with size {}x{}", pty_size.rows, pty_size.cols);
+        let pty_pair = match pty_system.openpty(pty_size) {
+            Ok(pair) => pair,
+            Err(e) => {
+                error!("Failed to create PTY: {}. Falling back to pipe mode.", e);
+                info!("Falling back to pipe execution due to PTY unavailability");
+
+                // Fallback to pipe mode
+                let child = Command::new(&cmd_parts[0])
+                    .args(&cmd_parts[1..])
+                    .envs(additional_envs)
+                    .current_dir(working_dir)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()?;
+
+                let result =
+                    handle_pipe_execution(child, read_half, write_half, stdin_enabled).await;
+                info!("Pipe execution (fallback) completed: {:?}", result);
+                return result;
+            }
+        };
+
+        info!("Building command: {:?}", cmd_parts);
+        let mut cmd = CommandBuilder::new(&cmd_parts[0]);
+        cmd.args(&cmd_parts[1..]);
+        for (key, value) in &additional_envs {
+            info!("Setting env: {}={}", key, value);
+            cmd.env(key, value);
+        }
+        cmd.cwd(&working_dir);
+
+        info!("Spawning command in PTY: {:?}", cmd_parts);
+        let child = pty_pair.slave.spawn_command(cmd)?;
+        drop(pty_pair.slave);
+
+        info!("PTY child process spawned, starting I/O handling");
+
+        let result =
+            handle_pty_execution(child, pty_pair.master, read_half, write_half, stdin_enabled)
+                .await;
+        info!("PTY execution completed: {:?}", result);
+        result
+    } else {
+        // Use regular pipes for non-TTY execution
+        let child = Command::new(&cmd_parts[0])
+            .args(&cmd_parts[1..])
+            .envs(additional_envs)
+            .current_dir(working_dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        let result = handle_pipe_execution(child, read_half, write_half, stdin_enabled).await;
+        info!("Pipe execution completed: {:?}", result);
+        result
+    }
+}
+
+/// Handle PTY execution with full I/O forwarding
+///
+/// Features:
+/// - Bidirectional I/O between TCP socket and PTY master
+/// - Signals (Ctrl+C, Ctrl+Z) are naturally handled by the PTY
+/// - Job control works automatically due to PTY acting as controlling terminal
+/// - Process groups are properly managed
+/// - Uses blocking I/O in separate threads to avoid blocking the async runtime
+async fn handle_pty_execution(
+    mut pty: Box<dyn portable_pty::Child + Send + Sync>,
+    pty_master: Box<dyn portable_pty::MasterPty + Send>,
+    mut read_half: tokio::net::tcp::OwnedReadHalf,
+    write_half: tokio::net::tcp::OwnedWriteHalf,
+    stdin_enabled: bool,
+) -> Result<()> {
+    use std::io::Write;
+
+    let write_half_clone = Arc::new(tokio::sync::Mutex::new(write_half));
+
+    // Get reader and writer from PTY master
+    let pty_reader = pty_master.try_clone_reader()?;
+    let pty_writer = pty_master.take_writer()?;
+
+    // Handle stdin: TCP -> PTY
+    let stdin_task: JoinHandle<Result<()>> = if stdin_enabled {
+        let pty_writer = Arc::new(std::sync::Mutex::new(pty_writer));
+        tokio::spawn(async move {
+            let mut buf = [0; 1024];
+            while let Ok(n) = read_half.read(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+                // Write data to PTY using spawn_blocking for the blocking write
+                let data = buf[..n].to_vec();
+                let pty_writer = pty_writer.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    let mut writer = pty_writer.lock().unwrap();
+                    let write_result = writer.write_all(&data);
+                    writer.flush().unwrap_or_default();
+                    write_result
+                })
+                .await;
+
+                if result.is_err() || result.unwrap().is_err() {
+                    break;
+                }
+            }
+
+            Ok(())
+        })
+    } else {
+        tokio::spawn(async move { Ok(()) })
+    };
+
+    // Handle stdout: PTY -> TCP
+    let output_task: JoinHandle<Result<()>> = {
+        let write_half = write_half_clone.clone();
+        let pty_reader = Arc::new(std::sync::Mutex::new(pty_reader));
+        tokio::spawn(async move {
+            use std::io::Read;
+
+            // Handle PTY output: PTY -> TCP client
+            loop {
+                let pty_reader = pty_reader.clone();
+                let read_result = tokio::task::spawn_blocking(move || {
+                    let mut reader = pty_reader.lock().unwrap();
+                    let mut buf = [0; 1024];
+                    reader.read(&mut buf).map(|n| buf[..n].to_vec())
+                })
+                .await;
+
+                match read_result {
+                    Ok(Ok(data)) if !data.is_empty() => {
+                        // Send PTY output to TCP client
+                        if write_half.lock().await.write_all(&data).await.is_err() {
+                            break;
+                        }
+                        if write_half.lock().await.flush().await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(Ok(_)) => {
+                        // PTY EOF
+                        break;
+                    }
+                    Ok(Err(_)) | Err(_) => {
+                        // PTY read error or task error
+                        break;
+                    }
+                }
+
+                // Small delay to prevent busy loop
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+
+            Ok(())
+        })
+    };
+
+    // Monitor PTY process and handle completion
+
+    // Wait for either PTY completion or I/O tasks to finish
+    tokio::select! {
+        _ = stdin_task => {},
+        _ = output_task => {},
+        _ = async {
+            loop {
+                if let Ok(Some(_)) = pty.try_wait() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        } => {},
+    }
+
+    // Kill the pty process if it's still running
+    let _ = pty.kill();
+
+    // Flush the write half to ensure all data is sent
+    let _ = write_half_clone.lock().await.flush().await;
+
+    let status = pty
+        .wait()
+        .unwrap_or_else(|_| portable_pty::ExitStatus::with_exit_code(1));
+
+    if !status.success() {
+        bail!("command failed: {}", status);
+    }
+    info!("command exited with code {:?}", status.exit_code());
+    Ok(())
+}
+
+async fn handle_pipe_execution(
+    mut child: tokio::process::Child,
+    mut read_half: tokio::net::tcp::OwnedReadHalf,
+    write_half: tokio::net::tcp::OwnedWriteHalf,
+    stdin_enabled: bool,
+) -> Result<()> {
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let mut stderr = child.stderr.take().expect("piped stderr");
+
+    let stdin_task: JoinHandle<Result<()>> = if stdin_enabled {
+        tokio::spawn(async move {
+            let mut buf = [0; 1024];
+            while let Ok(n) = read_half.read(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+                if stdin.write_all(&buf[..n]).await.is_err() {
+                    break;
+                }
+            }
+            Ok(())
+        })
+    } else {
+        tokio::spawn(async move { Ok(()) })
+    };
+
+    let write_half_clone = Arc::new(tokio::sync::Mutex::new(write_half));
+
+    let stdout_task: JoinHandle<Result<()>> = {
+        let write_half = write_half_clone.clone();
+        tokio::spawn(async move {
+            let mut buf = [0; 1024];
+            while let Ok(n) = stdout.read(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+                if write_half.lock().await.write_all(&buf[..n]).await.is_err() {
+                    break;
+                }
+            }
+            Ok(())
+        })
+    };
+
+    let stderr_task: JoinHandle<Result<()>> = {
+        let write_half = write_half_clone.clone();
+        tokio::spawn(async move {
+            let mut buf = [0; 1024];
+            while let Ok(n) = stderr.read(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+                if write_half.lock().await.write_all(&buf[..n]).await.is_err() {
+                    break;
+                }
+            }
+            Ok(())
+        })
+    };
+
+    // Use select to stop all tasks when any one completes/fails
+    let child_exit = tokio::select! {
+        _ = stdin_task => {
+            info!("Stdin task completed first");
+            None
+        },
+        _ = stdout_task => {
+            info!("Stdout task completed first");
+            None
+        },
+        _ = stderr_task => {
+            info!("Stderr task completed first");
+            None
+        },
+        result = child.wait() => {
+            info!("Child process completed first");
+            Some(result)
+        },
+    };
+
+    // Only kill the child if it hasn't already exited
+    let status = if let Some(result) = child_exit {
+        result.unwrap_or_else(|_| std::process::ExitStatus::from_raw(1))
+    } else {
+        info!("Waiting for child process to complete gracefully");
+        child
+            .wait()
+            .await
+            .unwrap_or_else(|_| std::process::ExitStatus::from_raw(1))
+    };
+
+    // Flush the write half to ensure all data is sent
+    let _ = write_half_clone.lock().await.flush().await;
+
+    if !status.success() {
+        bail!("command failed: {}", status);
+    }
+    info!("command exited with code {:?}", status);
+    Ok(())
+}
+
+async fn run_exec_server(envs: HashMap<String, String>, working_dir: String) -> Result<()> {
+    let listener = TcpListener::bind("0.0.0.0:50051").await?;
+    while let Ok((stream, _)) = listener.accept().await {
+        let envs = envs.clone();
+        let working_dir = working_dir.clone();
+        tokio::spawn(async move {
+            let result = handle_exec_request(stream, envs, working_dir).await;
+            if let Err(e) = result {
+                error!("Exec request failed: {}", e);
+            } else {
+                info!("Exec request completed successfully");
+            }
+        });
+    }
+    Ok(())
 }
 
 fn main() -> Result<()> {

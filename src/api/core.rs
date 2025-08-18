@@ -8,6 +8,7 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use reqwest::StatusCode;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::{
     agent::logs::LogStreamOrigin,
@@ -16,7 +17,9 @@ use crate::{
         context::ServiceRequestContext,
         resource_service::{ResourceService, ResourceServiceRouter},
     },
-    resources::core::{ListNamespaces, LogStreamParams, Me, Namespace},
+    controller::{context::ControllerKey, machine::machine_name_from_key},
+    resource_index::ResourceKind,
+    resources::core::{ExecParams, ListNamespaces, LogStreamParams, Me, Namespace},
 };
 
 pub struct CoreService {}
@@ -147,10 +150,139 @@ impl ResourceService for CoreService {
             })
         }
 
+        // websocket endpoint for machine exec
+        async fn exec(
+            state: State<Arc<ApiState>>,
+            ctx: ServiceRequestContext,
+            Query(params): Query<ExecParams>,
+            ws: WebSocketUpgrade,
+        ) -> impl IntoResponse {
+            ws.on_upgrade(move |socket| async move {
+                let (mut ws_write, mut ws_read) = socket.split();
+
+                let machine_name = machine_name_from_key(&ControllerKey::new(
+                    ctx.tenant.clone(),
+                    ResourceKind::Machine,
+                    ctx.namespace.as_value(),
+                    params.machine_name,
+                ));
+
+                // Find the machine
+                let Some(machine) = state.scheduler.agent.machine().get_machine(&machine_name)
+                else {
+                    let _ = ws_write
+                        .send(Message::Text("Machine not found".into()))
+                        .await;
+                    return;
+                };
+
+                // Get connection to the machine's exec server (port 50051)
+                let Ok(mut connection) = machine.get_connection(50051, None).await else {
+                    let _ = ws_write
+                        .send(Message::Text("Failed to connect to machine".into()))
+                        .await;
+                    return;
+                };
+
+                let tcp_stream = connection.upstream_socket();
+
+                // Send the exec request to the exec server
+                // Protocol: [cmd_len: u32][cmd: string][stdin_flag: u8][tty_flag: u8]
+                let cmd_bytes = params.command.as_bytes();
+                let cmd_len = cmd_bytes.len() as u32;
+                let stdin_flag = if params.stdin.unwrap_or(false) {
+                    1u8
+                } else {
+                    0u8
+                };
+                let tty_flag = if params.tty.unwrap_or(false) {
+                    1u8
+                } else {
+                    0u8
+                };
+
+                if tcp_stream.write_all(&cmd_len.to_le_bytes()).await.is_err() {
+                    return;
+                }
+                if tcp_stream.write_all(cmd_bytes).await.is_err() {
+                    return;
+                }
+                if tcp_stream.write_all(&[stdin_flag]).await.is_err() {
+                    return;
+                }
+                if tcp_stream.write_all(&[tty_flag]).await.is_err() {
+                    return;
+                }
+
+                let (tcp_read, tcp_write) = tcp_stream.split();
+                let tcp_read = Arc::new(tokio::sync::Mutex::new(tcp_read));
+                let tcp_write = Arc::new(tokio::sync::Mutex::new(tcp_write));
+
+                // Handle bidirectional data flow
+                let ws_to_tcp = async {
+                    while let Some(msg) = ws_read.next().await {
+                        match msg {
+                            Ok(Message::Binary(data)) => {
+                                if tcp_write.lock().await.write_all(&data).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Ok(Message::Text(text)) => {
+                                if tcp_write
+                                    .lock()
+                                    .await
+                                    .write_all(text.as_bytes())
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                            Ok(Message::Close(_)) => break,
+                            _ => {}
+                        }
+                    }
+                };
+
+                let tcp_to_ws = async {
+                    let mut buf = [0; 1024];
+                    loop {
+                        match tcp_read.lock().await.read(&mut buf).await {
+                            Ok(0) => {
+                                // TCP connection closed (command finished)
+                                break;
+                            }
+                            Ok(n) => {
+                                if ws_write
+                                    .send(Message::Binary(buf[..n].to_vec().into()))
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                            Err(_) => {
+                                // TCP error (machine suspended or connection dropped)
+                                break;
+                            }
+                        }
+                    }
+                    // Always send close message when TCP ends
+                    let _ = ws_write.send(Message::Close(None)).await;
+                };
+
+                tokio::select! {
+                    _ = ws_to_tcp => {},
+                    _ = tcp_to_ws => {},
+                }
+            })
+        }
+
         let mut router = Router::new();
         router = router.route("/me", get(me));
         router = router.route("/namespaces", get(list_namespaces));
         router = router.route("/logs", get(stream_logs));
+        router = router.route("/exec", get(exec));
 
         ResourceServiceRouter {
             name: "Core".to_string(),
