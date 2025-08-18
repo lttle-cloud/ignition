@@ -134,6 +134,9 @@ pub struct MachineSummary {
     #[field(name = "environment")]
     env: Vec<String>,
 
+    #[field(name = "command")]
+    cmd: Option<String>,
+
     #[field(name = "volumes")]
     volumes: Vec<String>,
 
@@ -156,7 +159,7 @@ pub struct MachineSummary {
 impl From<(MachineLatest, MachineStatus)> for MachineSummary {
     fn from((machine, status): (MachineLatest, MachineStatus)) -> Self {
         let env = machine
-            .env
+            .environment
             .unwrap_or_default()
             .into_iter()
             .map(|(k, v)| format!("{k} = {v}"))
@@ -237,6 +240,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
             cpu: machine.resources.cpu.to_string(),
             memory: format!("{} MiB", machine.resources.memory),
             env,
+            cmd: machine.command.clone().map(|c| c.join(" ")),
             volumes,
             suspend_timeout: timeout,
             hypervisor_machine_id: status.machine_id.clone(),

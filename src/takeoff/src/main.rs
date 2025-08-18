@@ -86,9 +86,12 @@ async fn takeoff() -> Result<()> {
     let config: OciConfig = serde_json::from_str(&config).unwrap();
     info!("oci_config: {:#?}", config);
 
-    let mut cmd = vec![];
-    cmd.extend(config.entrypoint.clone().unwrap_or_default());
-    cmd.extend(config.cmd.clone().unwrap_or_default());
+    let mut cmd = config.entrypoint.clone().unwrap_or_default();
+    if let Some(override_cmd) = args.cmd.clone() {
+        cmd.extend(override_cmd);
+    } else {
+        cmd.extend(config.cmd.clone().unwrap_or_default());
+    };
     info!("cmd: {:?}", cmd);
 
     let mut envs = HashMap::new();

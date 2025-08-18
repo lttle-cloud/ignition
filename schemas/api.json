@@ -859,7 +859,16 @@
             "$ref": "#/$defs/MachineVolumeBinding"
           }
         },
-        "env": {
+        "command": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
           "type": [
             "object",
             "null"

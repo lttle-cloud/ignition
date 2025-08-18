@@ -215,7 +215,16 @@
     },
     "MachineV1": {
       "properties": {
-        "env": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "environment": {
           "additionalProperties": {
             "type": "string"
           },

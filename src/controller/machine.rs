@@ -509,8 +509,9 @@ impl Controller for MachineController {
                             cpu: machine.resources.cpu,
                             memory: machine.resources.memory,
                         },
+                        cmd: machine.command.clone(),
                         envs: machine
-                            .env
+                            .environment
                             .unwrap_or_default()
                             .iter()
                             .map(|(k, v)| (k.clone(), v.clone()))

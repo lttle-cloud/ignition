@@ -9,7 +9,7 @@ machine:
   resources:
     cpu: 1
     memory: 128
-  env:
+  environment:
     TEST_VAR: test-value
     TEST_VAR2: test-value2
 ---

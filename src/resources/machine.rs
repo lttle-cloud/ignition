@@ -13,7 +13,8 @@ mod machine {
         resources: MachineResources,
         mode: Option<MachineMode>,
         volumes: Option<Vec<MachineVolumeBinding>>,
-        env: Option<BTreeMap<String, String>>,
+        command: Option<Vec<String>>,
+        environment: Option<BTreeMap<String, String>>,
     }
 
     #[schema]

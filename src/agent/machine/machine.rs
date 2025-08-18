@@ -100,6 +100,7 @@ pub struct MachineConfig {
     pub resources: MachineResources,
     pub image: Image,
     pub envs: HashMap<String, String>,
+    pub cmd: Option<Vec<String>>,
     pub volume_mounts: Vec<VolumeMountConfig>,
     pub network: NetworkConfig,
     pub logs_telemetry_config: LogsTelemetryConfig,
@@ -365,6 +366,7 @@ impl Machine {
 
         let takeoff_args: TakeoffInitArgs = TakeoffInitArgs {
             envs: config.envs.clone(),
+            cmd: config.cmd.clone(),
             mount_points: config
                 .volume_mounts
                 .iter()
