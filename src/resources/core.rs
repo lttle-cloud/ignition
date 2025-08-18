@@ -66,6 +66,14 @@ pub enum LogStreamParams {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ExecParams {
+    pub machine_name: String,
+    pub command: String,
+    pub stdin: Option<bool>,
+    pub tty: Option<bool>,
+}
+
 pub fn core_api_service() -> ApiService {
     ApiService {
         name: "Core".to_string(),
@@ -138,6 +146,23 @@ pub fn core_api_service() -> ApiService {
                     name: "LogStreamParams".to_string(),
                 }),
             },
+            ApiMethod {
+                name: "exec".to_string(),
+                path: vec![
+                    ApiPathSegment::Static {
+                        value: "core".to_string(),
+                    },
+                    ApiPathSegment::Static {
+                        value: "exec".to_string(),
+                    },
+                ],
+                namespaced: true,
+                verb: ApiVerb::WebSocket,
+                request: Some(crate::machinery::api_schema::ApiRequest::SchemaDefinition {
+                    name: "ExecParams".to_string(),
+                }),
+                response: Some(crate::machinery::api_schema::ApiResponse::RawSocket),
+            },
         ],
     }
 }
@@ -160,6 +185,7 @@ pub fn add_core_service_schema_defs(
         "LogStreamParams".to_string(),
         schema_for!(LogStreamParams).into(),
     );
+    defs.insert("ExecParams".to_string(), schema_for!(ExecParams).into());
 
     Ok(())
 }

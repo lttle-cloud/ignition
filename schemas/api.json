@@ -74,6 +74,28 @@
             "optional": false,
             "name": "LogStreamItem"
           }
+        },
+        {
+          "name": "exec",
+          "namespaced": true,
+          "verb": "WS",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "exec"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "ExecParams"
+          },
+          "response": {
+            "type": "RawSocket"
+          }
         }
       ]
     },
@@ -409,6 +431,35 @@
     }
   ],
   "defs": {
+    "ExecParams": {
+      "type": "object",
+      "properties": {
+        "machine_name": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "stdin": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "tty": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "machine_name",
+        "command"
+      ],
+      "title": "ExecParams",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
     "ListNamespaces": {
       "type": "object",
       "properties": {

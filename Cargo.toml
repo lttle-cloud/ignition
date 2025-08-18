@@ -99,6 +99,8 @@ hickory-proto = "0.24"
 serde_urlencoded = "0.7.1"
 tungstenite = "0.27.0"
 chrono = "0.4.41"
+crossterm = "0.29.0"
+scopeguard = "1.2.0"
 
 [build-dependencies]
 meta = { path = "meta" }
