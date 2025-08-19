@@ -21,7 +21,7 @@ pub struct StoredAcmeAccount {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StoredAcmeChallenge {
-    pub token: String,
+    pub domain: String,
     pub key_authorization: String,
     pub challenge_type: String,
 }
@@ -166,17 +166,17 @@ impl CertificateAgent {
 
     pub async fn store_challenge(
         &self,
-        token: String,
+        domain: String,
         key_authorization: String,
         challenge_type: String,
     ) -> Result<StoredAcmeChallenge> {
         let key = Key::<StoredAcmeChallenge>::not_namespaced()
             .tenant(DEFAULT_AGENT_TENANT)
             .collection(Collections::AcmeChallenge)
-            .key(Self::acme_challenge_key(&token));
+            .key(Self::acme_challenge_key(&domain));
 
         let stored_challenge = StoredAcmeChallenge {
-            token,
+            domain,
             key_authorization,
             challenge_type,
         };
