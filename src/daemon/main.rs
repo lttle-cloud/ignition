@@ -123,6 +123,10 @@ async fn main() -> Result<()> {
                             },
                             cert_config: CertificateAgentConfig {
                                 providers: scheduler_config.cert_providers,
+                                certs_base_dir: agent_dir
+                                    .join("certs")
+                                    .to_string_lossy()
+                                    .to_string(),
                             },
                         },
                         agent_scheduler,

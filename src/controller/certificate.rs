@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use instant_acme::{AuthorizationStatus, ChallengeType, OrderStatus};
+use instant_acme::{AuthorizationStatus, ChallengeType, OrderStatus, RetryPolicy};
 use std::time::Duration;
 use tracing::{error, info};
 
@@ -332,12 +332,16 @@ impl CertificateController {
                 info!("Certificate in Validating state, waiting for ACME validation");
                 info!("Order URL: {}", order_url);
 
-                // TODO: Check validation status from ACME server
-                // - Resume order from URL
-                // - Poll order status
-                // - If ready, transition to Issuing(order_url)
-                // - If still processing, stay in Validating
-                Ok(ReconcileNext::After(Duration::from_secs(10)))
+                let account = cert_agent.get_acme_account(provider, email).await?.unwrap();
+                let mut order = account.order(order_url.clone()).await?;
+                let order_status = order.poll_ready(&RetryPolicy::default()).await?;
+                if order_status != OrderStatus::Ready {
+                    status.state = CertificateState::Failed;
+                    status.last_failure_reason = Some("Order not ready".to_string());
+                    return Ok(ReconcileNext::After(Duration::from_secs(10)));
+                }
+                status.state = CertificateState::Issuing(order_url.clone());
+                Ok(ReconcileNext::Immediate)
             }
 
             CertificateState::Issuing(order_url) => {
@@ -345,12 +349,19 @@ impl CertificateController {
                 info!("Certificate in Issuing state, waiting for certificate issuance");
                 info!("Order URL: {}", order_url);
 
-                // TODO: Finalize order and download certificate
-                // - Resume order from URL
-                // - Generate CSR and finalize order
-                // - Poll for certificate
-                // - Store certificate and transition to Ready
-                Ok(ReconcileNext::After(Duration::from_secs(10)))
+                let account = cert_agent.get_acme_account(provider, email).await?.unwrap();
+                let mut order = account.order(order_url.clone()).await?;
+                let private_key_pem = order.finalize().await?;
+                let cert_chain_pem = order.poll_certificate(&RetryPolicy::default()).await?;
+                cert_agent
+                    .store_certificate(
+                        cert_chain_pem.clone(),
+                        private_key_pem.clone(),
+                        domains.to_vec(),
+                    )
+                    .await?;
+                status.state = CertificateState::Ready;
+                Ok(ReconcileNext::Immediate)
             }
 
             CertificateState::Ready => {

@@ -199,4 +199,29 @@ impl CertificateAgent {
         }
         Ok(None)
     }
+
+    pub async fn store_certificate(
+        &self,
+        cert_chain_pem: String,
+        private_key_pem: String,
+        domains: Vec<String>,
+    ) -> Result<()> {
+        use std::path::PathBuf;
+        use tokio::fs::{create_dir_all, write};
+
+        let base_dir = PathBuf::from(self.config.certs_base_dir.clone());
+        if !base_dir.exists() {
+            create_dir_all(&base_dir).await?;
+        }
+
+        for domain in domains.iter() {
+            let cert_path = base_dir.join(format!("{}.cert", domain));
+            let key_path = base_dir.join(format!("{}.key", domain));
+
+            write(&cert_path, cert_chain_pem.as_bytes()).await?;
+            write(&key_path, private_key_pem.as_bytes()).await?;
+        }
+
+        Ok(())
+    }
 }

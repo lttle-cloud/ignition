@@ -139,6 +139,7 @@ impl ProxyAgent {
             Arc::new(HashMap::new()),
             default_cert.clone(),
             tls_server_config_builder.crypto_provider().clone(),
+            std::path::PathBuf::from(certificate_agent.config().certs_base_dir.clone()),
         ));
 
         let mut tls_server_config =

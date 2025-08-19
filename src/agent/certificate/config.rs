@@ -14,4 +14,5 @@ pub struct CertProvider {
 #[derive(Debug, Clone)]
 pub struct CertificateAgentConfig {
     pub providers: Vec<CertProvider>,
+    pub certs_base_dir: String,
 }
