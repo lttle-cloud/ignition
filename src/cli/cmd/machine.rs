@@ -140,11 +140,17 @@ pub struct MachineSummary {
     #[field(name = "volumes")]
     volumes: Vec<String>,
 
+    #[field(name = "dependencies")]
+    depends_on: Vec<String>,
+
     #[field(name = "last boot time")]
     last_boot_time: Option<String>,
 
     #[field(name = "first boot time")]
     first_boot_time: Option<String>,
+
+    #[field(name = "last exit code")]
+    last_exit_code: Option<String>,
 
     #[field(name = "machine id (internal)")]
     hypervisor_machine_id: Option<String>,
@@ -229,6 +235,19 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
             duration.to_string()
         });
 
+        let depends_on = machine
+            .depends_on
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| {
+                let namespace = d
+                    .namespace
+                    .or_else(|| machine.namespace.clone())
+                    .unwrap_or(DEFAULT_NAMESPACE.to_string());
+                format!("{}/{}", namespace, d.name)
+            })
+            .collect();
+
         Self {
             name: machine.name,
             namespace: machine.namespace,
@@ -242,6 +261,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
             env,
             cmd: machine.command.clone().map(|c| c.join(" ")),
             volumes,
+            depends_on,
             suspend_timeout: timeout,
             hypervisor_machine_id: status.machine_id.clone(),
             hypervisor_root_volume_id: status.machine_image_volume_id.clone(),
@@ -256,6 +276,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
                 let duration = humantime::format_duration(duration);
                 duration.to_string()
             }),
+            last_exit_code: None,
         }
     }
 }

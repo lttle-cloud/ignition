@@ -15,6 +15,8 @@ mod machine {
         volumes: Option<Vec<MachineVolumeBinding>>,
         command: Option<Vec<String>>,
         environment: Option<BTreeMap<String, String>>,
+        #[serde(rename = "depends-on")]
+        depends_on: Option<Vec<MachineDependency>>,
     }
 
     #[schema]
@@ -55,6 +57,12 @@ mod machine {
         path: String,
     }
 
+    #[schema]
+    struct MachineDependency {
+        name: String,
+        namespace: Option<String>,
+    }
+
     #[status]
     struct Status {
         hash: u64,
@@ -75,6 +83,8 @@ mod machine {
         Idle,
         #[serde(rename = "pulling-image")]
         PullingImage,
+        #[serde(rename = "waiting")]
+        Waiting,
         #[serde(rename = "creating")]
         Creating,
         #[serde(rename = "booting")]
@@ -100,6 +110,7 @@ impl ToString for MachinePhase {
             MachinePhase::Idle => "idle".to_string(),
             MachinePhase::PullingImage => "pulling-image".to_string(),
             MachinePhase::Creating => "creating".to_string(),
+            MachinePhase::Waiting => "waiting".to_string(),
             MachinePhase::Booting => "booting".to_string(),
             MachinePhase::Ready => "ready".to_string(),
             MachinePhase::Suspending => "suspending".to_string(),

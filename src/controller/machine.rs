@@ -23,7 +23,7 @@ use crate::{
     resource_index::ResourceKind,
     resources::{
         self, Convert,
-        machine::MachinePhase,
+        machine::{MachinePhase, MachineStatus},
         metadata::{Metadata, Namespace},
         volume::VolumeMode,
     },
@@ -312,7 +312,7 @@ impl Controller for MachineController {
                             .patch_status(key.metadata(), |status| {
                                 status.image_id = Some(id.clone());
                                 status.image_resolved_reference = Some(reference.clone());
-                                status.phase = MachinePhase::Creating;
+                                status.phase = MachinePhase::Waiting;
                             })
                             .await?;
                         return Ok(ReconcileNext::Immediate);
@@ -330,6 +330,63 @@ impl Controller for MachineController {
                     _ => {}
                 }
                 // the job is done, so we can continue
+            }
+            MachinePhase::Waiting => {
+                // check if all volumes are ready
+                let volumes = machine.volumes.clone().unwrap_or_default();
+                for volume in volumes {
+                    let volume_namespace = Namespace::from_value_or_default(
+                        volume.namespace.or_else(|| machine.namespace.clone()),
+                    );
+                    let volume_metadata = Metadata::new(&volume.name, volume_namespace);
+
+                    let Ok(Some(_volume_status)) = ctx
+                        .repository
+                        .volume(ctx.tenant.clone())
+                        .get_status(volume_metadata)
+                    else {
+                        info!("waiting for volume {} to be ready", volume.name);
+                        return Ok(ReconcileNext::after(Duration::from_secs(2)));
+                    };
+                }
+
+                // check if all dependencies are ready
+                let dependencies = machine.depends_on.clone().unwrap_or_default();
+                for dependency in dependencies {
+                    let dependency_namespace = Namespace::from_value_or_default(
+                        dependency.namespace.or_else(|| machine.namespace.clone()),
+                    );
+                    let dependency_metadata = Metadata::new(&dependency.name, dependency_namespace);
+                    let dependency_status = ctx
+                        .repository
+                        .machine(ctx.tenant.clone())
+                        .get_status(dependency_metadata)?;
+
+                    match dependency_status {
+                        Some(MachineStatus {
+                            phase:
+                                MachinePhase::Ready | MachinePhase::Suspended | MachinePhase::Suspending,
+                            ..
+                        }) => {
+                            continue;
+                        }
+                        _ => {
+                            info!("waiting for dependency {} to be ready", dependency.name);
+                            return Ok(ReconcileNext::after(Duration::from_secs(2)));
+                        }
+                    }
+                }
+
+                ctx.repository
+                    .machine(ctx.tenant.clone())
+                    .patch_status(key.metadata(), |status| {
+                        status.phase = MachinePhase::Creating;
+                    })
+                    .await?;
+
+                info!("all dependencies are ready, creating machine");
+
+                return Ok(ReconcileNext::immediate());
             }
             MachinePhase::Creating => {
                 // alloc name

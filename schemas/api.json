@@ -607,6 +607,23 @@
         }
       ]
     },
+    "MachineDependency": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
     "MachineMode": {
       "oneOf": [
         {
@@ -652,6 +669,7 @@
           "enum": [
             "idle",
             "pulling-image",
+            "waiting",
             "creating",
             "booting",
             "ready",
@@ -875,6 +893,15 @@
           ],
           "additionalProperties": {
             "type": "string"
+          }
+        },
+        "depends-on": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/MachineDependency"
           }
         }
       },
