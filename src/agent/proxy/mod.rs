@@ -4,6 +4,8 @@ pub mod tls;
 use std::{collections::HashSet, convert::Infallible, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Result, bail};
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
 use hyper::{Request, Uri, Version, service::service_fn};
 use hyper_util::{
     client::legacy::{Client, connect::HttpConnector},
@@ -22,6 +24,7 @@ use tokio_rustls::TlsAcceptor;
 use tracing::{info, warn};
 
 use crate::agent::{
+    certificate::CertificateAgent,
     machine::{
         MachineAgent,
         machine::{Machine, TrafficAwareConnection},
@@ -47,6 +50,7 @@ pub struct ProxyAgent {
     tls_cert_resolver: Arc<ProxyTlsCertResolver>,
     tls_acceptor: Arc<TlsAcceptor>,
     servers: HashMap<(String, u16), ProxyServer>,
+    certificate_agent: Arc<CertificateAgent>,
 }
 
 #[allow(unused)]
@@ -115,6 +119,7 @@ impl ProxyAgent {
     pub async fn new(
         config: ProxyAgentConfig,
         machine_agent: Arc<MachineAgent>,
+        certificate_agent: Arc<CertificateAgent>,
     ) -> Result<Arc<Self>> {
         info!(
             "Creating new proxy agent with external bind address: {}",
@@ -153,6 +158,7 @@ impl ProxyAgent {
             default_cert,
             tls_cert_resolver,
             tls_acceptor,
+            certificate_agent,
         });
 
         info!("Proxy agent created successfully");
@@ -243,6 +249,7 @@ impl ProxyAgent {
                 let task_bindings = self.bindings.clone();
                 let task_tls_acceptor = self.tls_acceptor.clone();
                 let task_binding = binding.clone();
+                let task_certificate_agent = self.certificate_agent.clone();
 
                 let task = match proxy_mode {
                     ProxyServerMode::Internal => spawn(async move {
@@ -261,6 +268,7 @@ impl ProxyAgent {
                             task_machine_agent,
                             task_bindings,
                             task_tls_acceptor,
+                            task_certificate_agent,
                         )
                         .await?;
 
@@ -289,6 +297,7 @@ async fn external_listener(
     machine_agent: Arc<MachineAgent>,
     bindings: Arc<HashMap<String, ProxyBinding>>,
     tls_acceptor: Arc<TlsAcceptor>,
+    certificate_agent: Arc<CertificateAgent>,
 ) -> Result<Infallible> {
     info!("Starting external listener on {}", addr);
     let listener = TcpListener::bind(addr).await?;
@@ -298,9 +307,17 @@ async fn external_listener(
         let bindings = bindings.clone();
         let machine_agent = machine_agent.clone();
         let tls_acceptor = tls_acceptor.clone();
+        let certificate_agent = certificate_agent.clone();
 
         spawn(async move {
-            handle_external_connection(stream, bindings, machine_agent, tls_acceptor).await
+            handle_external_connection(
+                stream,
+                bindings,
+                machine_agent,
+                tls_acceptor,
+                certificate_agent,
+            )
+            .await
         });
     }
 }
@@ -310,6 +327,7 @@ async fn handle_external_connection(
     bindings: Arc<HashMap<String, ProxyBinding>>,
     machine_agent: Arc<MachineAgent>,
     tls_acceptor: Arc<TlsAcceptor>,
+    certificate_agent: Arc<CertificateAgent>,
 ) -> Result<()> {
     let protocol = proto::sniff_protocol(&mut stream).await?;
 
@@ -320,7 +338,7 @@ async fn handle_external_connection(
         }
         SniffedProtocol::Http => {
             info!("Handling HTTP connection");
-            handle_http_connection(stream, bindings, machine_agent).await
+            handle_http_connection(stream, bindings, machine_agent, certificate_agent).await
         }
         SniffedProtocol::PgSsl => {
             info!("Handling PostgreSQL SSL connection");
@@ -338,12 +356,14 @@ async fn handle_http_connection(
     stream: TcpStream,
     bindings: Arc<HashMap<String, ProxyBinding>>,
     machine_agent: Arc<MachineAgent>,
+    certificate_agent: Arc<CertificateAgent>,
 ) -> Result<()> {
     let io = TokioIo::new(stream);
 
     let svc = service_fn(move |mut req: Request<hyper::body::Incoming>| {
         let machine_agent = machine_agent.clone();
         let bindings = bindings.clone();
+        let certificate_agent = certificate_agent.clone();
 
         let mut base = HttpConnector::new();
         base.enforce_http(true);
@@ -358,6 +378,29 @@ async fn handle_http_connection(
                 .and_then(|h| h.to_str().ok())
                 .unwrap_or_default()
                 .to_string();
+
+            let path = req.uri().path();
+            if path.starts_with("/.well-known/acme-challenge/") {
+                let token = path
+                    .strip_prefix("/.well-known/acme-challenge/")
+                    .unwrap_or("");
+                match certificate_agent.get_challenge_response(token) {
+                    Ok(Some(key_auth)) => {
+                        info!("Serving ACME HTTP challenge for token: {}", token);
+                        let body = Full::new(Bytes::from(key_auth))
+                            .map_err(|never| match never {})
+                            .boxed();
+                        let response = hyper::Response::builder()
+                            .status(200)
+                            .header("Content-Type", "text/plain")
+                            .body(body)
+                            .map_err(|_| "Failed to build response")?;
+                        return Ok(response);
+                    }
+                    Ok(None) => return Err("Challenge not found"),
+                    Err(_) => return Err("Error retrieving challenge"),
+                }
+            }
 
             let Ok(binding) = find_http_binding(&bindings, &target_host) else {
                 return Err("failed to find binding for HTTP host");
@@ -403,6 +446,9 @@ async fn handle_http_connection(
             let Ok(response) = client.request(req).await else {
                 return Err("failed to get response from origin");
             };
+
+            // @laurci: is this dumb?
+            let response = response.map(|b| b.boxed());
 
             Ok(response)
         }

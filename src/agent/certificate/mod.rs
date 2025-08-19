@@ -19,6 +19,13 @@ pub struct StoredAcmeAccount {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StoredAcmeChallenge {
+    pub token: String,
+    pub key_authorization: String,
+    pub challenge_type: String,
+}
+
 pub struct CertificateAgent {
     store: Arc<Store>,
     config: CertificateAgentConfig,
@@ -35,6 +42,10 @@ impl CertificateAgent {
 
     pub fn acme_account_key(provider_name: &str, email: &str) -> String {
         format!("{}-{}", provider_name, email)
+    }
+
+    pub fn acme_challenge_key(token: &str) -> String {
+        token.to_string()
     }
 
     pub fn resolve_email(&self, provider_name: &str, email: Option<&str>) -> Result<String> {
@@ -151,5 +162,41 @@ impl CertificateAgent {
         let order = account.new_order(&new_order).await?;
 
         Ok(order)
+    }
+
+    pub async fn store_challenge(
+        &self,
+        token: String,
+        key_authorization: String,
+        challenge_type: String,
+    ) -> Result<StoredAcmeChallenge> {
+        let key = Key::<StoredAcmeChallenge>::not_namespaced()
+            .tenant(DEFAULT_AGENT_TENANT)
+            .collection(Collections::AcmeChallenge)
+            .key(Self::acme_challenge_key(&token));
+
+        let stored_challenge = StoredAcmeChallenge {
+            token,
+            key_authorization,
+            challenge_type,
+        };
+
+        self.store.put(&key, &stored_challenge)?;
+
+        Ok(stored_challenge)
+    }
+
+    pub fn get_challenge_response(&self, token: &str) -> Result<Option<String>> {
+        let key = Key::<StoredAcmeChallenge>::not_namespaced()
+            .tenant(DEFAULT_AGENT_TENANT)
+            .collection(Collections::AcmeChallenge)
+            .key(Self::acme_challenge_key(token));
+
+        if let Some(stored) = self.store.get(&key)? {
+            if stored.challenge_type == "http-01" {
+                return Ok(Some(stored.key_authorization));
+            }
+        }
+        Ok(None)
     }
 }

@@ -101,17 +101,18 @@ impl CertificateController {
             CertificateState::PendingOrder(existing_url) => {
                 info!(
                     "Certificate in PendingOrder state, {} order",
-                    if existing_url.is_some() { "resuming" } else { "creating" }
+                    if existing_url.is_some() {
+                        "resuming"
+                    } else {
+                        "creating"
+                    }
                 );
 
                 // Get or create the order
                 let mut order = if let Some(url) = existing_url.clone() {
                     // Resume existing order
                     info!("Resuming existing order from URL: {}", url);
-                    match cert_agent
-                        .get_acme_account(provider, email)
-                        .await
-                    {
+                    match cert_agent.get_acme_account(provider, email).await {
                         Ok(Some(account)) => {
                             match account.order(url.clone()).await {
                                 Ok(order) => order,
@@ -127,8 +128,11 @@ impl CertificateController {
                                         Err(e) => {
                                             error!("Failed to create new ACME order: {}", e);
                                             status.state = CertificateState::Failed;
-                                            status.last_failure_reason = Some(format!("Order creation failed: {}", e));
-                                            return Ok(ReconcileNext::After(Duration::from_secs(60)));
+                                            status.last_failure_reason =
+                                                Some(format!("Order creation failed: {}", e));
+                                            return Ok(ReconcileNext::After(Duration::from_secs(
+                                                60,
+                                            )));
                                         }
                                     }
                                 }
@@ -137,7 +141,8 @@ impl CertificateController {
                         _ => {
                             error!("Failed to get ACME account for order resume");
                             status.state = CertificateState::Failed;
-                            status.last_failure_reason = Some("Account not found for order resume".to_string());
+                            status.last_failure_reason =
+                                Some("Account not found for order resume".to_string());
                             return Ok(ReconcileNext::After(Duration::from_secs(60)));
                         }
                     }
@@ -152,7 +157,8 @@ impl CertificateController {
                         Err(e) => {
                             error!("Failed to create ACME order: {}", e);
                             status.state = CertificateState::Failed;
-                            status.last_failure_reason = Some(format!("Order creation failed: {}", e));
+                            status.last_failure_reason =
+                                Some(format!("Order creation failed: {}", e));
                             return Ok(ReconcileNext::After(Duration::from_secs(60)));
                         }
                     }
@@ -161,7 +167,7 @@ impl CertificateController {
                 // Check order status first
                 let state = order.state();
                 let order_status = state.status.clone();
-                
+
                 // Process authorizations to determine challenge type
                 let mut authorizations = order.authorizations();
                 let mut needs_dns_challenge = false;
@@ -174,10 +180,7 @@ impl CertificateController {
                             let identifier = authz.identifier().to_string();
                             match authz.status {
                                 AuthorizationStatus::Valid => {
-                                    info!(
-                                        "Authorization for {} is already valid",
-                                        identifier
-                                    );
+                                    info!("Authorization for {} is already valid", identifier);
                                     continue;
                                 }
                                 AuthorizationStatus::Pending => {
@@ -201,18 +204,13 @@ impl CertificateController {
                                         needs_dns_challenge = true;
                                         info!("Found DNS-01 challenge for {}", identifier);
                                     } else {
-                                        error!(
-                                            "No supported challenge type for {}",
-                                            identifier
-                                        );
+                                        error!("No supported challenge type for {}", identifier);
                                         status.state = CertificateState::Failed;
                                         status.last_failure_reason = Some(format!(
                                             "No supported challenge type for {}",
                                             identifier
                                         ));
-                                        return Ok(ReconcileNext::After(
-                                            Duration::from_secs(60),
-                                        ));
+                                        return Ok(ReconcileNext::After(Duration::from_secs(60)));
                                     }
                                 }
                                 _ => {
@@ -225,9 +223,7 @@ impl CertificateController {
                                         "Authorization in unexpected state: {:?}",
                                         authz.status
                                     ));
-                                    return Ok(ReconcileNext::After(Duration::from_secs(
-                                        60,
-                                    )));
+                                    return Ok(ReconcileNext::After(Duration::from_secs(60)));
                                 }
                             }
                         }
@@ -244,7 +240,7 @@ impl CertificateController {
                 // Extract order URL now that we're done with the order
                 let (order_url, _order_state) = order.into_parts();
                 info!("Order URL: {}", order_url);
-                
+
                 // Check if order is already ready
                 if order_status == instant_acme::OrderStatus::Ready {
                     info!("Order is already ready, transitioning to Issuing");
@@ -266,8 +262,7 @@ impl CertificateController {
                 } else {
                     error!("No valid authorization path found");
                     status.state = CertificateState::Failed;
-                    status.last_failure_reason =
-                        Some("No valid authorization path".to_string());
+                    status.last_failure_reason = Some("No valid authorization path".to_string());
                     return Ok(ReconcileNext::After(Duration::from_secs(60)));
                 }
 
@@ -293,12 +288,43 @@ impl CertificateController {
                 info!("Certificate in PendingHttpChallenge state, checking HTTP challenge");
                 info!("Order URL: {}", order_url);
 
-                // TODO: Implement HTTP challenge validation
-                // - Resume order from URL
-                // - Ensure HTTP challenge is accessible
-                // - Trigger ACME validation
-                // - Transition to Validating(order_url)
-                Ok(ReconcileNext::After(Duration::from_secs(10)))
+                let account = cert_agent.get_acme_account(provider, email).await?.unwrap();
+                let mut order = account.order(order_url.clone()).await?;
+                let mut authorizations = order.authorizations();
+                while let Some(result) = authorizations.next().await {
+                    let mut authz = result?;
+                    match authz.status {
+                        AuthorizationStatus::Pending => {}
+                        AuthorizationStatus::Valid => continue,
+                        _ => todo!(),
+                    }
+
+                    let mut challenge = authz
+                        .challenge(ChallengeType::Http01)
+                        .ok_or_else(|| anyhow::anyhow!("no http01 challenge found"))?;
+
+                    let identifier = challenge.identifier();
+
+                    let key_authorization = challenge.key_authorization();
+                    let key_authorization = key_authorization.as_str();
+
+                    info!(
+                        "HTTP challenge for {} is pending, key authorization: {}",
+                        identifier, key_authorization
+                    );
+
+                    cert_agent
+                        .store_challenge(
+                            identifier.to_string(),
+                            key_authorization.to_string(),
+                            "http-01".to_string(),
+                        )
+                        .await?;
+
+                    challenge.set_ready().await?;
+                }
+                status.state = CertificateState::Validating(order_url.clone());
+                Ok(ReconcileNext::Immediate)
             }
 
             CertificateState::Validating(order_url) => {

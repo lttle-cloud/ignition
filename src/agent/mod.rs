@@ -68,14 +68,19 @@ impl Agent {
         let machine =
             Arc::new(MachineAgent::new(config.machine_config.clone(), scheduler.clone()).await?);
 
-        let proxy = ProxyAgent::new(config.proxy_config.clone(), machine.clone()).await?;
+        let certificate = CertificateAgent::new(store.clone(), config.cert_config.clone()).await?;
+
+        let proxy = ProxyAgent::new(
+            config.proxy_config.clone(),
+            machine.clone(),
+            certificate.clone(),
+        )
+        .await?;
 
         let dns = DnsAgent::new(config.dns_config.clone(), net.clone(), repository).await?;
 
         // Start the DNS server
         dns.start().await?;
-
-        let certificate = CertificateAgent::new(store.clone(), config.cert_config.clone()).await?;
 
         Ok(Self {
             job: Arc::new(JobAgent::new(scheduler)),
