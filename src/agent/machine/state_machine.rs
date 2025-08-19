@@ -569,7 +569,6 @@ impl MachineStateMachine {
             let state_clone = state.clone();
 
             let notify_machine_id = machine_id.clone();
-            let notify_state = state_clone.clone();
             tokio::spawn(async move {
                 let result = scheduler
                     .push(

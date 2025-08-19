@@ -676,7 +676,8 @@
             "suspending",
             "suspended",
             "stopping",
-            "stopped"
+            "stopped",
+            "restarting"
           ]
         },
         {
@@ -719,6 +720,14 @@
       "required": [
         "cpu",
         "memory"
+      ]
+    },
+    "MachineRestartPolicy": {
+      "type": "string",
+      "enum": [
+        "never",
+        "always",
+        "on-failure"
       ]
     },
     "MachineSnapshotStrategy": {
@@ -824,6 +833,14 @@
           ],
           "format": "uint128",
           "minimum": 0
+        },
+        "last_restarting_time_us": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint128",
+          "minimum": 0
         }
       },
       "required": [
@@ -857,6 +874,16 @@
         },
         "resources": {
           "$ref": "#/$defs/MachineResources"
+        },
+        "restart-policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineRestartPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "mode": {
           "anyOf": [

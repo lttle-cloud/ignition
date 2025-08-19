@@ -11,12 +11,24 @@ mod machine {
     struct V1 {
         image: String,
         resources: MachineResources,
+        #[serde(rename = "restart-policy")]
+        restart_policy: Option<MachineRestartPolicy>,
         mode: Option<MachineMode>,
         volumes: Option<Vec<MachineVolumeBinding>>,
         command: Option<Vec<String>>,
         environment: Option<BTreeMap<String, String>>,
         #[serde(rename = "depends-on")]
         depends_on: Option<Vec<MachineDependency>>,
+    }
+
+    #[schema]
+    enum MachineRestartPolicy {
+        #[serde(rename = "never")]
+        Never,
+        #[serde(rename = "always")]
+        Always,
+        #[serde(rename = "on-failure")]
+        OnFailure,
     }
 
     #[schema]
@@ -75,6 +87,7 @@ mod machine {
         machine_image_volume_id: Option<String>,
         last_boot_time_us: Option<u128>,
         first_boot_time_us: Option<u128>,
+        last_restarting_time_us: Option<u128>,
     }
 
     #[schema]
@@ -99,6 +112,8 @@ mod machine {
         Stopping,
         #[serde(rename = "stopped")]
         Stopped,
+        #[serde(rename = "restarting")]
+        Restarting,
         #[serde(rename = "error")]
         Error { message: String },
     }
@@ -117,7 +132,18 @@ impl ToString for MachinePhase {
             MachinePhase::Suspended => "suspended".to_string(),
             MachinePhase::Stopping => "stopping".to_string(),
             MachinePhase::Stopped => "stopped".to_string(),
+            MachinePhase::Restarting => "restarting".to_string(),
             MachinePhase::Error { message } => format!("error ({})", message),
+        }
+    }
+}
+
+impl ToString for MachineRestartPolicy {
+    fn to_string(&self) -> String {
+        match self {
+            MachineRestartPolicy::Never => "never".to_string(),
+            MachineRestartPolicy::Always => "always".to_string(),
+            MachineRestartPolicy::OnFailure => "on-failure".to_string(),
         }
     }
 }
@@ -135,6 +161,7 @@ impl FromResource<Machine> for MachineStatus {
             machine_image_volume_id: None,
             last_boot_time_us: None,
             first_boot_time_us: None,
+            last_restarting_time_us: None,
         })
     }
 }

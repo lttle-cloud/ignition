@@ -144,7 +144,8 @@
             "suspending",
             "suspended",
             "stopping",
-            "stopped"
+            "stopped",
+            "restarting"
           ],
           "type": "string"
         },
@@ -189,6 +190,14 @@
         "memory"
       ],
       "type": "object"
+    },
+    "MachineRestartPolicy": {
+      "enum": [
+        "never",
+        "always",
+        "on-failure"
+      ],
+      "type": "string"
     },
     "MachineSnapshotStrategy": {
       "oneOf": [
@@ -284,6 +293,16 @@
         },
         "resources": {
           "$ref": "#/$defs/MachineResources"
+        },
+        "restart-policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineRestartPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "tags": {
           "items": {

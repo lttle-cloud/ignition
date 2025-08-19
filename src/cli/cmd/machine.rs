@@ -119,6 +119,9 @@ pub struct MachineSummary {
     #[field(name = "suspend timeout")]
     suspend_timeout: Option<String>,
 
+    #[field(name = "restart policy")]
+    restart_policy: Option<String>,
+
     #[field(name = "internal ip")]
     internal_ip: Option<String>,
 
@@ -148,6 +151,9 @@ pub struct MachineSummary {
 
     #[field(name = "first boot time")]
     first_boot_time: Option<String>,
+
+    #[field(name = "last restarting time")]
+    last_restarting_time: Option<String>,
 
     #[field(name = "last exit code")]
     last_exit_code: Option<String>,
@@ -248,11 +254,25 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
             })
             .collect();
 
+        let last_restarting_time = status.last_restarting_time_us.map(|t| {
+            let now_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
+
+            let duration = (now_ms - t) / 1_000;
+            let duration = Duration::from_secs(duration as u64);
+            let duration = humantime::format_duration(duration);
+
+            format!("{} ago", duration)
+        });
+
         Self {
             name: machine.name,
             namespace: machine.namespace,
             mode,
             snapshot_strategy,
+            restart_policy: machine.restart_policy.map(|r| r.to_string()),
             internal_ip: status.machine_ip.clone(),
             status: status.phase.to_string(),
             image: status.image_resolved_reference.unwrap_or(machine.image),
@@ -276,6 +296,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
                 let duration = humantime::format_duration(duration);
                 duration.to_string()
             }),
+            last_restarting_time,
             last_exit_code: None,
         }
     }
