@@ -383,7 +383,11 @@ async fn handle_http_connection(
             if req.uri().path().starts_with("/.well-known/acme-challenge/") {
                 match certificate_agent.get_challenge_response(target_host.as_str()) {
                     Ok(Some(key_auth)) => {
-                        return Ok(hyper::Response::new(Full::new(Bytes::from(key_auth))));
+                        return Ok(hyper::Response::new(
+                            Full::new(Bytes::from(key_auth))
+                                .map_err(|never| match never {})
+                                .boxed(),
+                        ));
                     }
                     Ok(None) => return Err("Challenge not found"),
                     Err(_) => return Err("Error retrieving challenge"),
@@ -435,25 +439,7 @@ async fn handle_http_connection(
                 return Err("failed to get response from origin");
             };
 
-            // Convert upstream Incoming body to Full<Bytes> so all branches return the same body type
-            // @laurci: had to align types but might be unnecessary
-            let status = response.status();
-            let headers = response.headers().clone();
-
-            let Ok(collected) = response.into_body().collect().await else {
-                return Err("failed to read response body");
-            };
-            let body_bytes = collected.to_bytes();
-
-            let mut builder = hyper::Response::builder().status(status);
-            for (key, value) in headers.iter() {
-                builder = builder.header(key, value);
-            }
-
-            let response = builder
-                .body(Full::new(body_bytes))
-                .expect("failed to build response");
-            Ok(response)
+            Ok(response.map(|b| b.boxed()))
         }
     });
 
@@ -538,24 +524,6 @@ async fn handle_https_connection(
                 return Err("failed to get response from origin");
             };
 
-            // Convert upstream Incoming body to Full<Bytes> for consistent type
-            // @laurci: had to align types but might be unnecessary
-            let status = response.status();
-            let headers = response.headers().clone();
-
-            let Ok(collected) = response.into_body().collect().await else {
-                return Err("failed to read response body");
-            };
-            let body_bytes = collected.to_bytes();
-
-            let mut builder = hyper::Response::builder().status(status);
-            for (key, value) in headers.iter() {
-                builder = builder.header(key, value);
-            }
-
-            let response = builder
-                .body(Full::new(body_bytes))
-                .expect("failed to build response");
             Ok(response)
         }
     });
