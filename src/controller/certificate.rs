@@ -128,21 +128,10 @@ impl CertificateController {
                                 status.last_failure_reason = None;
                                 Ok(ReconcileNext::Immediate)
                             }
-                            Err(e) => {
-                                error!("Failed to create ACME account: {}", e);
-                                status.state = CertificateState::Failed;
-                                status.last_failure_reason =
-                                    Some(format!("Account creation failed: {}", e));
-                                Ok(ReconcileNext::After(Duration::from_secs(60)))
-                            }
+                            Err(e) => Err(anyhow!("Failed to create ACME account: {}", e)),
                         }
                     }
-                    Err(e) => {
-                        error!("Failed to check ACME account: {}", e);
-                        status.state = CertificateState::Failed;
-                        status.last_failure_reason = Some(format!("Account check failed: {}", e));
-                        Ok(ReconcileNext::After(Duration::from_secs(60)))
-                    }
+                    Err(e) => Err(anyhow!("Failed to check ACME account: {}", e)),
                 }
             }
 
@@ -160,12 +149,7 @@ impl CertificateController {
                         status.last_failure_reason = None;
                         Ok(ReconcileNext::Immediate)
                     }
-                    Err(e) => {
-                        error!("DNS validation failed: {}", e);
-                        status.state = CertificateState::Failed;
-                        status.last_failure_reason = Some(format!("DNS validation failed: {}", e));
-                        Ok(ReconcileNext::After(Duration::from_secs(30)))
-                    }
+                    Err(e) => Err(anyhow!("DNS validation failed: {}", e)),
                 }
             }
 
@@ -188,7 +172,7 @@ impl CertificateController {
                             match account.order(url.clone()).await {
                                 Ok(order) => order,
                                 Err(e) => {
-                                    error!("Failed to resume order: {}", e);
+                                    warn!("Failed to resume order: {}", e);
                                     // Order might be invalid, create a new one
                                     info!("Creating new order after resume failure");
                                     match cert_agent
@@ -197,25 +181,16 @@ impl CertificateController {
                                     {
                                         Ok(order) => order,
                                         Err(e) => {
-                                            error!("Failed to create new ACME order: {}", e);
-                                            status.state = CertificateState::Failed;
-                                            status.last_failure_reason =
-                                                Some(format!("Order creation failed: {}", e));
-                                            return Ok(ReconcileNext::After(Duration::from_secs(
-                                                60,
-                                            )));
+                                            return Err(anyhow!(
+                                                "Failed to create new ACME order: {}",
+                                                e
+                                            ));
                                         }
                                     }
                                 }
                             }
                         }
-                        _ => {
-                            error!("Failed to get ACME account for order resume");
-                            status.state = CertificateState::Failed;
-                            status.last_failure_reason =
-                                Some("Account not found for order resume".to_string());
-                            return Ok(ReconcileNext::After(Duration::from_secs(60)));
-                        }
+                        _ => return Err(anyhow!("Failed to get ACME account for order resume")),
                     }
                 } else {
                     // Create a new ACME order for the domains
@@ -226,11 +201,7 @@ impl CertificateController {
                     {
                         Ok(order) => order,
                         Err(e) => {
-                            error!("Failed to create ACME order: {}", e);
-                            status.state = CertificateState::Failed;
-                            status.last_failure_reason =
-                                Some(format!("Order creation failed: {}", e));
-                            return Ok(ReconcileNext::After(Duration::from_secs(60)));
+                            return Err(anyhow!("Failed to create ACME order: {}", e));
                         }
                     }
                 };
@@ -261,35 +232,22 @@ impl CertificateController {
                                         needs_challenge = true;
                                         info!("Found HTTP-01 challenge for {}", identifier);
                                     } else {
-                                        error!("No supported challenge type for {}", identifier);
-                                        status.state = CertificateState::Failed;
-                                        status.last_failure_reason = Some(format!(
+                                        return Err(anyhow!(
                                             "No supported challenge type for {}",
                                             identifier
                                         ));
-                                        return Ok(ReconcileNext::After(Duration::from_secs(60)));
                                     }
                                 }
                                 _ => {
-                                    error!(
-                                        "Authorization for {} in unexpected state: {:?}",
-                                        identifier, authz.status
-                                    );
-                                    status.state = CertificateState::Failed;
-                                    status.last_failure_reason = Some(format!(
+                                    return Err(anyhow!(
                                         "Authorization in unexpected state: {:?}",
                                         authz.status
                                     ));
-                                    return Ok(ReconcileNext::After(Duration::from_secs(60)));
                                 }
                             }
                         }
                         Err(e) => {
-                            error!("Failed to get authorization: {}", e);
-                            status.state = CertificateState::Failed;
-                            status.last_failure_reason =
-                                Some(format!("Failed to get authorization: {}", e));
-                            return Ok(ReconcileNext::After(Duration::from_secs(60)));
+                            return Err(anyhow!("Failed to get authorization: {}", e));
                         }
                     }
                 }
@@ -311,10 +269,7 @@ impl CertificateController {
                     info!("Setting up HTTP-01 challenges");
                     status.state = CertificateState::PendingChallenge(order_url);
                 } else {
-                    error!("No valid authorization path found");
-                    status.state = CertificateState::Failed;
-                    status.last_failure_reason = Some("No valid authorization path".to_string());
-                    return Ok(ReconcileNext::After(Duration::from_secs(60)));
+                    return Err(anyhow!("No valid authorization path found"));
                 }
 
                 status.last_failure_reason = None;
