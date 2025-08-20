@@ -398,7 +398,18 @@ impl CertificateController {
                         domains.to_vec(),
                     )
                     .await?;
+
+                let (not_before, not_after) =
+                    cert_agent.parse_certificate_validity(&cert_chain_pem)?;
                 status.state = CertificateState::Ready;
+                status.not_before = Some(not_before.to_rfc3339());
+                status.not_after = Some(not_after.to_rfc3339());
+                status.last_failure_reason = None;
+
+                info!(
+                    "Certificate issued successfully. Valid from {} to {}",
+                    not_before, not_after
+                );
                 Ok(ReconcileNext::Immediate)
             }
 

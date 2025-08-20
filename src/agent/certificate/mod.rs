@@ -10,6 +10,7 @@ use config::CertificateAgentConfig;
 use instant_acme::{Account, NewAccount, NewOrder, Order};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use x509_parser::prelude::*;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StoredAcmeAccount {
@@ -198,6 +199,35 @@ impl CertificateAgent {
             }
         }
         Ok(None)
+    }
+
+    /// Parse certificate validity dates from PEM string
+    pub fn parse_certificate_validity(
+        &self,
+        cert_pem: &str,
+    ) -> Result<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> {
+        // Parse the X.509 certificate from PEM using x509-parser
+        let (_, pem) = parse_x509_pem(cert_pem.as_bytes())
+            .map_err(|e| anyhow!("Failed to parse PEM: {:?}", e))?;
+
+        // Parse the certificate from the PEM contents
+        let (_, cert) = X509Certificate::from_der(&pem.contents)
+            .map_err(|e| anyhow!("Failed to parse X.509 certificate: {:?}", e))?;
+
+        let validity = cert.validity();
+
+        let not_before_time = validity.not_before.to_datetime();
+        let not_after_time = validity.not_after.to_datetime();
+
+        let not_before =
+            chrono::DateTime::<chrono::Utc>::from_timestamp(not_before_time.unix_timestamp(), 0)
+                .ok_or_else(|| anyhow!("Failed to convert not_before to DateTime"))?;
+
+        let not_after =
+            chrono::DateTime::<chrono::Utc>::from_timestamp(not_after_time.unix_timestamp(), 0)
+                .ok_or_else(|| anyhow!("Failed to convert not_after to DateTime"))?;
+
+        Ok((not_before, not_after))
     }
 
     pub async fn store_certificate(

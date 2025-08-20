@@ -6,7 +6,7 @@ use ignition::{
     api_client::ApiClient,
     resource_index::Resources,
     resources::{
-        ProvideMetadata, certificate::Certificate, machine::Machine, metadata::Namespace, 
+        ProvideMetadata, certificate::Certificate, machine::Machine, metadata::Namespace,
         service::Service, volume::Volume,
     },
 };
@@ -14,7 +14,10 @@ use tokio::fs::read_to_string;
 
 use crate::{
     client::get_api_client,
-    cmd::{machine::MachineSummary, service::ServiceSummary, volume::VolumeSummary},
+    cmd::{
+        certificate::CertificateSummary, machine::MachineSummary, service::ServiceSummary,
+        volume::VolumeSummary,
+    },
     config::Config,
     ui::message::message_info,
 };
@@ -94,7 +97,11 @@ async fn deploy_machine(_config: &Config, api_client: &ApiClient, machine: Machi
     Ok(())
 }
 
-async fn deploy_certificate(_config: &Config, api_client: &ApiClient, certificate: Certificate) -> Result<()> {
+async fn deploy_certificate(
+    _config: &Config,
+    api_client: &ApiClient,
+    certificate: Certificate,
+) -> Result<()> {
     let metadata = certificate.metadata();
     api_client.certificate().apply(certificate).await?;
 
@@ -111,8 +118,8 @@ async fn deploy_certificate(_config: &Config, api_client: &ApiClient, certificat
         certificate.metadata().to_string()
     ));
 
-    // For now, just print basic status info since we don't have a CertificateSummary yet
-    println!("Status: {:?}", status);
+    let summary = CertificateSummary::from((certificate, status));
+    summary.print();
 
     Ok(())
 }

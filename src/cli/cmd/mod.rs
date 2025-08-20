@@ -1,3 +1,4 @@
+pub mod certificate;
 pub mod deploy;
 pub mod login;
 pub mod machine;
@@ -51,6 +52,10 @@ pub enum Command {
     /// Service management (short: svc)
     #[command(subcommand, alias = "svc")]
     Service(ServiceCommand),
+
+    /// Certificate management (short: cert)
+    #[command(subcommand, alias = "cert")]
+    Certificate(CertificateCommand),
 
     /// Install completions for your shell (run with root permissions)
     Completions {
@@ -108,6 +113,20 @@ pub enum VolumeCommand {
 }
 
 #[derive(Subcommand)]
+pub enum CertificateCommand {
+    /// List certificates (short: ls)
+    #[command(alias = "ls")]
+    List(ListNamespacedArgs),
+
+    /// Get a certificate
+    Get(GetNamespacedArgs),
+
+    /// Delete a certificate (short: rm)
+    #[command(alias = "rm")]
+    Delete(DeleteNamespacedArgs),
+}
+
+#[derive(Subcommand)]
 pub enum NamespaceCommand {
     /// List namespaces (short: ls)
     #[command(alias = "ls")]
@@ -139,6 +158,13 @@ pub async fn run_cli(config: &Config) -> Result<()> {
             VolumeCommand::List(args) => volume::run_volume_list(config, args).await,
             VolumeCommand::Get(args) => volume::run_volume_get(config, args).await,
             VolumeCommand::Delete(args) => volume::run_volume_delete(config, args).await,
+        },
+        Command::Certificate(cmd) => match cmd {
+            CertificateCommand::List(args) => certificate::run_certificate_list(config, args).await,
+            CertificateCommand::Get(args) => certificate::run_certificate_get(config, args).await,
+            CertificateCommand::Delete(args) => {
+                certificate::run_certificate_delete(config, args).await
+            }
         },
         Command::Completions { shell } => {
             let mut cmd = Cli::command();
