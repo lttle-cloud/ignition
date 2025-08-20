@@ -773,10 +773,17 @@
             "string",
             "null"
           ]
+        },
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
-        "state"
+        "state",
+        "domains"
       ]
     },
     "CertificateV1": {

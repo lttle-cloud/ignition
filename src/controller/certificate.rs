@@ -38,6 +38,21 @@ impl CertificateController {
         let cert_agent = ctx.agent.certificate();
 
         let resolved_email = cert_agent.resolve_email(provider, email)?;
+
+        // Check if any of the requested domains are different from what we have
+        if domains
+            .iter()
+            .any(|domain| !status.domains.contains(domain))
+        {
+            info!(
+                "New domains detected: {:?} (current certificate covers: {:?})",
+                domains, status.domains
+            );
+            status.state = CertificateState::Pending;
+            status.last_failure_reason = None;
+            return Ok(ReconcileNext::Immediate);
+        }
+
         // State machine for auto certificate lifecycle
         match &status.state {
             CertificateState::Pending => {
@@ -466,6 +481,7 @@ impl Controller for CertificateController {
                     not_after: None,
                     last_failure_reason: None,
                     renewal_time: None,
+                    domains: cert.domains.clone(),
                 });
 
         // Handle based on issuer type and current state

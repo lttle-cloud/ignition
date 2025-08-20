@@ -1,7 +1,7 @@
 use anyhow::Result;
 use meta::resource;
 
-use crate::resources::FromResource;
+use crate::resources::{Convert, FromResource};
 
 #[resource(name = "Certificate", tag = "certificate")]
 mod certificate {
@@ -52,6 +52,7 @@ mod certificate {
         not_after: Option<String>,
         last_failure_reason: Option<String>,
         renewal_time: Option<String>,
+        domains: Vec<String>,
     }
 
     #[schema]
@@ -95,13 +96,15 @@ mod certificate {
 }
 
 impl FromResource<Certificate> for CertificateStatus {
-    fn from_resource(_resource: Certificate) -> Result<Self> {
+    fn from_resource(resource: Certificate) -> Result<Self> {
+        let certificate = resource.latest();
         Ok(CertificateStatus {
             state: CertificateState::Pending,
             not_before: None,
             not_after: None,
             last_failure_reason: None,
             renewal_time: None,
+            domains: certificate.domains,
         })
     }
 }
