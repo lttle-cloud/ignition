@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 use ignition::agent::certificate::config::CertProvider;
+use ignition::agent::logs::LogsStoreConfig;
 use serde::{Deserialize, Serialize};
 use tokio::fs::read_to_string;
 use tracing::warn;
@@ -33,6 +34,8 @@ pub struct Config {
 
     #[serde(rename = "cert-provider", default)]
     pub cert_providers: Vec<CertProvider>,
+    #[serde(rename = "logs")]
+    pub logs_config: LogsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -83,6 +86,13 @@ pub struct DnsConfig {
     pub default_ttl: u32,
     #[serde(rename = "upstream-dns-servers", default)]
     pub upstream_dns_servers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LogsConfig {
+    #[serde(rename = "otel-ingest-endpoint")]
+    pub otel_ingest_endpoint: String,
+    pub store: LogsStoreConfig,
 }
 
 async fn resolve_config_path(path_override: Option<PathBuf>) -> Result<PathBuf> {

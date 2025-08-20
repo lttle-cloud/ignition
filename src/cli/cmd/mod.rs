@@ -14,6 +14,7 @@ use clap_complete::Shell;
 use ignition::resources::metadata::Namespace;
 
 use crate::{
+    cmd::machine::MachineLogsArgs,
     config::Config,
     ui::message::{message_info, message_warn},
 };
@@ -67,6 +68,12 @@ pub enum MachineCommand {
     /// Get a machine
     Get(GetNamespacedArgs),
 
+    /// Get logs for a machine
+    Logs(MachineLogsArgs),
+
+    /// Execute a command in a machine
+    Exec(machine::MachineExecArgs),
+
     /// Delete a machine (short: rm)
     #[command(alias = "rm")]
     Delete(DeleteNamespacedArgs),
@@ -119,6 +126,8 @@ pub async fn run_cli(config: &Config) -> Result<()> {
         Command::Machine(cmd) => match cmd {
             MachineCommand::List(args) => machine::run_machine_list(config, args).await,
             MachineCommand::Get(args) => machine::run_machine_get(config, args).await,
+            MachineCommand::Logs(args) => machine::run_machine_get_logs(config, args).await,
+            MachineCommand::Exec(args) => machine::run_machine_exec(config, args).await,
             MachineCommand::Delete(args) => machine::run_machine_delete(config, args).await,
         },
         Command::Service(cmd) => match cmd {

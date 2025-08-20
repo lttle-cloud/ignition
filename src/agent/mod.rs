@@ -3,6 +3,7 @@ pub mod data;
 pub mod dns;
 pub mod image;
 pub mod job;
+pub mod logs;
 pub mod machine;
 pub mod net;
 pub mod proxy;
@@ -18,6 +19,7 @@ use crate::{
         dns::{DnsAgent, config::DnsAgentConfig},
         image::{ImageAgent, ImageAgentConfig},
         job::JobAgent,
+        logs::{LogsAgent, LogsAgentConfig},
         machine::{MachineAgent, MachineAgentConfig},
         net::{NetAgent, NetAgentConfig},
         proxy::{ProxyAgent, ProxyAgentConfig},
@@ -38,6 +40,7 @@ pub struct AgentConfig {
     pub proxy_config: ProxyAgentConfig,
     pub dns_config: DnsAgentConfig,
     pub cert_config: CertificateAgentConfig,
+    pub logs_config: LogsAgentConfig,
 }
 
 pub struct Agent {
@@ -49,6 +52,7 @@ pub struct Agent {
     proxy: Arc<ProxyAgent>,
     dns: Arc<DnsAgent>,
     certificate: Arc<CertificateAgent>,
+    logs: Arc<LogsAgent>,
 }
 
 impl Agent {
@@ -79,6 +83,8 @@ impl Agent {
 
         let dns = DnsAgent::new(config.dns_config.clone(), net.clone(), repository).await?;
 
+        let logs = Arc::new(LogsAgent::new(config.logs_config.clone()));
+
         // Start the DNS server
         dns.start().await?;
 
@@ -91,6 +97,7 @@ impl Agent {
             proxy,
             dns,
             certificate,
+            logs,
         })
     }
 
@@ -124,5 +131,9 @@ impl Agent {
 
     pub fn certificate(&self) -> Arc<CertificateAgent> {
         self.certificate.clone()
+    }
+
+    pub fn logs(&self) -> Arc<LogsAgent> {
+        self.logs.clone()
     }
 }

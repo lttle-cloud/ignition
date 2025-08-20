@@ -8,7 +8,7 @@ use std::{
 use anyhow::{Result, anyhow, bail};
 use event_manager::{EventManager, MutEventSubscriber};
 use kvm_ioctls::VmFd;
-use takeoff_proto::proto::{MountPoint, TakeoffInitArgs};
+use takeoff_proto::proto::{LogsTelemetryConfig, MountPoint, TakeoffInitArgs};
 use tempfile::tempdir;
 use tokio::{
     fs::create_dir_all,
@@ -102,6 +102,7 @@ pub struct MachineConfig {
     pub envs: HashMap<String, String>,
     pub volume_mounts: Vec<VolumeMountConfig>,
     pub network: NetworkConfig,
+    pub logs_telemetry_config: LogsTelemetryConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -374,6 +375,7 @@ impl Machine {
                     read_only: mount.read_only,
                 })
                 .collect(),
+            logs_telemetry_config: config.logs_telemetry_config.clone(),
         };
         let takeoff_args_str = takeoff_args.encode()?;
         kernel_cmd.insert_str(format!("takeoff={}", takeoff_args_str))?;

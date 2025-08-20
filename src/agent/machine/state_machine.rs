@@ -285,7 +285,7 @@ impl MachineStateMachine {
         let is_first_start = self.current_state == MachineState::Idle;
 
         match self.current_state {
-            MachineState::Idle | MachineState::Stopped | MachineState::Suspended => {
+            MachineState::Idle | MachineState::Suspended => {
                 // Reset guest manager for non-first starts
                 if !is_first_start {
                     self.resources
@@ -332,7 +332,17 @@ impl MachineStateMachine {
         match self.current_state {
             MachineState::Ready | MachineState::Booting => {
                 self.set_state(MachineState::Suspending).await?;
-                self.resources.vcpu_manager.lock().await.stop_all().await?;
+                let mut vcpu_manager = self.resources.vcpu_manager.lock().await;
+
+                // For suspend, we're more tolerant of VCPU stop failures
+                // Log any errors but continue to Suspended state
+                if let Err(e) = vcpu_manager.stop_all().await {
+                    warn!("Failed to stop VCPUs: {}", e);
+                };
+
+                // Release the lock explicitly
+                drop(vcpu_manager);
+
                 self.set_state(MachineState::Suspended).await?;
                 Ok(())
             }
@@ -551,21 +561,38 @@ impl MachineStateMachine {
                 (first_boot_duration, last_boot_duration)
             };
 
-            scheduler
-                .push(
-                    self.resources.config.controller_key.tenant.clone(),
-                    ControllerEvent::AsyncWorkChange(
-                        self.resources.config.controller_key.clone(),
-                        AsyncWork::MachineStateChange {
-                            machine_id: self.resources.config.name.clone(),
-                            state: state.clone(),
-                            first_boot_duration,
-                            last_boot_duration,
-                        },
-                    ),
-                )
-                .await
-                .ok();
+            // Spawn a non-blocking task to avoid circular dependency deadlock
+            // State machine -> scheduler -> controller -> machine -> state machine
+            let tenant = self.resources.config.controller_key.tenant.clone();
+            let key = self.resources.config.controller_key.clone();
+            let machine_id = self.resources.config.name.clone();
+            let state_clone = state.clone();
+
+            let notify_machine_id = machine_id.clone();
+            let notify_state = state_clone.clone();
+            tokio::spawn(async move {
+                let result = scheduler
+                    .push(
+                        tenant,
+                        ControllerEvent::AsyncWorkChange(
+                            key,
+                            AsyncWork::MachineStateChange {
+                                machine_id,
+                                state: state_clone,
+                                first_boot_duration,
+                                last_boot_duration,
+                            },
+                        ),
+                    )
+                    .await;
+
+                if let Err(e) = result {
+                    warn!(
+                        "Failed to notify scheduler for machine '{}': {}",
+                        notify_machine_id, e
+                    );
+                }
+            });
         }
         Ok(())
     }

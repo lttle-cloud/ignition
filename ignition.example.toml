@@ -29,3 +29,10 @@ default-ttl = 300
 # Upstream DNS servers for resolving external domains (optional)
 # If not specified, external DNS resolution will not work
 upstream-dns-servers = ["8.8.8.8:53", "8.8.4.4:53"]
+
+[logs]
+otel-ingest-endpoint = "http://host.lttle.local:3100/otlp/v1/logs" # TODO: for now this needs to be resolvable from takeoff
+
+[logs.store]
+type = "loki"
+url = "http://localhost:3100"

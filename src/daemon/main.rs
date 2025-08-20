@@ -8,8 +8,9 @@ use clap::Parser;
 use ignition::{
     agent::{
         Agent, AgentConfig, certificate::config::CertificateAgentConfig,
-        dns::config::DnsAgentConfig, image::ImageAgentConfig, machine::MachineAgentConfig,
-        net::NetAgentConfig, proxy::ProxyAgentConfig, volume::VolumeAgentConfig,
+        dns::config::DnsAgentConfig, image::ImageAgentConfig, logs::LogsAgentConfig,
+        machine::MachineAgentConfig, net::NetAgentConfig, proxy::ProxyAgentConfig,
+        volume::VolumeAgentConfig,
     },
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
     constants::DEFAULT_KERNEL_CMD_LINE_INIT,
@@ -128,6 +129,12 @@ async fn main() -> Result<()> {
                                     .to_string_lossy()
                                     .to_string(),
                             },
+                            logs_config: LogsAgentConfig {
+                                store: scheduler_config.logs_config.store,
+                                otel_ingest_endpoint: scheduler_config
+                                    .logs_config
+                                    .otel_ingest_endpoint,
+                            },
                         },
                         agent_scheduler,
                         repository_clone,
@@ -142,7 +149,7 @@ async fn main() -> Result<()> {
             store.clone(),
             repository.clone(),
             agent,
-            SchedulerConfig { worker_count: 1 },
+            SchedulerConfig { worker_count: 4 },
             vec![
                 CertificateController::new_boxed(),
                 MachineController::new_boxed(),

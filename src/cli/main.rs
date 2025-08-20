@@ -3,9 +3,8 @@ pub mod cmd;
 pub mod config;
 pub mod ui;
 
-use anyhow::Result;
-
 use crate::{config::Config, ui::message::message_error};
+use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {

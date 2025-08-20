@@ -125,6 +125,7 @@ async fn build_api_schema(
         if resource.configuration.generate_service_get {
             let method = ApiMethod {
                 name: "get".to_string(),
+                namespaced: resource.namespaced,
                 verb: ApiVerb::Get,
                 path: vec![
                     ApiPathSegment::Static {
@@ -149,6 +150,7 @@ async fn build_api_schema(
         if resource.configuration.generate_service_list {
             let method = ApiMethod {
                 name: "list".to_string(),
+                namespaced: resource.namespaced,
                 verb: ApiVerb::Get,
                 path: vec![ApiPathSegment::Static {
                     value: resource.tag.to_string(),
@@ -170,6 +172,7 @@ async fn build_api_schema(
         if resource.configuration.generate_service_delete {
             let method = ApiMethod {
                 name: "delete".to_string(),
+                namespaced: resource.namespaced,
                 verb: ApiVerb::Delete,
                 path: vec![
                     ApiPathSegment::Static {
@@ -187,6 +190,7 @@ async fn build_api_schema(
         if resource.configuration.generate_service_set {
             let method = ApiMethod {
                 name: "apply".to_string(),
+                namespaced: resource.namespaced,
                 verb: ApiVerb::Put,
                 path: vec![ApiPathSegment::Static {
                     value: resource.tag.to_string(),
@@ -203,6 +207,7 @@ async fn build_api_schema(
         if resource.configuration.generate_service_get_status {
             let method = ApiMethod {
                 name: "get_status".to_string(),
+                namespaced: resource.namespaced,
                 verb: ApiVerb::Get,
                 path: vec![
                     ApiPathSegment::Static {
