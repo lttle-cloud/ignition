@@ -12,7 +12,7 @@ machine:
   volumes:
     - name: db-data
       path: /var/lib/postgresql/data
-  env:
+  environment:
     POSTGRES_PASSWORD: lbl # change this to a more secure password
     POSTGRES_USER: lbl
     POSTGRES_DB: lbl

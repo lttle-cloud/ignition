@@ -100,6 +100,7 @@ pub struct MachineConfig {
     pub resources: MachineResources,
     pub image: Image,
     pub envs: HashMap<String, String>,
+    pub cmd: Option<Vec<String>>,
     pub volume_mounts: Vec<VolumeMountConfig>,
     pub network: NetworkConfig,
     pub logs_telemetry_config: LogsTelemetryConfig,
@@ -337,6 +338,7 @@ pub struct Machine {
     first_boot_duration: Arc<tokio::sync::RwLock<Option<Duration>>>,
     last_start_time: Arc<tokio::sync::RwLock<Option<Instant>>>,
     last_ready_time: Arc<tokio::sync::RwLock<Option<Instant>>>,
+    last_exit_code: Arc<tokio::sync::RwLock<Option<i32>>>,
 
     // Legacy fields for compatibility (will be removed later)
     vcpu_event_tx: async_broadcast::Sender<VcpuEvent>,
@@ -365,6 +367,7 @@ impl Machine {
 
         let takeoff_args: TakeoffInitArgs = TakeoffInitArgs {
             envs: config.envs.clone(),
+            cmd: config.cmd.clone(),
             mount_points: config
                 .volume_mounts
                 .iter()
@@ -474,6 +477,7 @@ impl Machine {
         let first_boot_duration = Arc::new(tokio::sync::RwLock::new(None));
         let last_start_time = Arc::new(tokio::sync::RwLock::new(None));
         let last_ready_time = Arc::new(tokio::sync::RwLock::new(None));
+        let last_exit_code = Arc::new(tokio::sync::RwLock::new(None));
 
         // Create shared state for querying current state
         let current_state = Arc::new(tokio::sync::RwLock::new(MachineState::Idle));
@@ -493,6 +497,7 @@ impl Machine {
             first_boot_duration: first_boot_duration.clone(),
             last_start_time: last_start_time.clone(),
             last_ready_time: last_ready_time.clone(),
+            last_exit_code: last_exit_code.clone(),
             vcpu_event_tx,
             device_event_tx,
             vcpu_start_barrier: barrier,
@@ -511,6 +516,7 @@ impl Machine {
             first_boot_duration,
             last_start_time,
             last_ready_time,
+            last_exit_code,
         );
 
         let _state_machine_task = tokio::spawn(state_machine.run());
@@ -567,6 +573,7 @@ impl Machine {
                     DeviceEvent::StopRequested => StateCommand::SystemStopRequested,
                     DeviceEvent::FlashLock => StateCommand::SystemFlashLock,
                     DeviceEvent::FlashUnlock => StateCommand::SystemFlashUnlock,
+                    DeviceEvent::ExitCode(code) => StateCommand::SystemExitCode { code },
                 };
                 let _ = device_command_tx.send(command).await;
             }
@@ -657,6 +664,10 @@ impl Machine {
     pub async fn get_first_boot_duration(&self) -> Option<Duration> {
         let first_boot_duration = self.first_boot_duration.read().await;
         first_boot_duration.clone()
+    }
+
+    pub async fn get_last_exit_code(&self) -> Option<i32> {
+        self.last_exit_code.read().await.clone()
     }
 
     pub async fn start(&self) -> Result<()> {
