@@ -34,6 +34,7 @@ pub struct Config {
 
     #[serde(rename = "cert-provider", default)]
     pub cert_providers: Vec<CertProvider>,
+
     #[serde(rename = "logs")]
     pub logs_config: LogsConfig,
 }
