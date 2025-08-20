@@ -17,6 +17,7 @@ pub async fn main() {
         .resource::<resources::service::Service>()
         .resource_with_config::<resources::volume::Volume>(|cfg| {
             cfg.add_admission_rule(AdmissionRule::BeforeDelete)
+                .add_admission_rule(AdmissionRule::StatusCheck)
         })
         .build()
         .await
