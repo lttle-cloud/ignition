@@ -99,7 +99,6 @@ impl TriggerCode {
             TRIGGER_USER_SPACE_EXIT => {
                 // last 4 bytes are the exit code
                 let code = i32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-                println!("user space exit code: {} {:?}", code, &bytes[4..8]);
                 Some(TriggerCode::UserSpaceExit { code })
             }
             TRIGGER_MANUAL => {
@@ -224,7 +223,6 @@ impl GuestManagerDevice {
         }
 
         if let TriggerCode::UserSpaceExit { code } = trigger_code {
-            println!("user space exit code: {}", code);
             self.device_event_tx
                 .try_broadcast(DeviceEvent::ExitCode(code))
                 .ok();
