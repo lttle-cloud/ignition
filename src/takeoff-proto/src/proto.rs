@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub struct TakeoffInitArgs {
     #[serde(rename = "e")]
     pub envs: HashMap<String, String>,
+    #[serde(rename = "c")]
+    pub cmd: Option<Vec<String>>,
     #[serde(rename = "m")]
     pub mount_points: Vec<MountPoint>,
     #[serde(rename = "l")]
@@ -73,6 +75,7 @@ mod tests {
     fn test_encode_decode() {
         let args = TakeoffInitArgs {
             envs: HashMap::from([("TEST".to_string(), "test".to_string())]),
+            cmd: Some(vec!["echo".to_string(), "test".to_string()]),
             mount_points: vec![MountPoint {
                 source: "/dev/vdb".to_string(),
                 target: "/mnt/data".to_string(),

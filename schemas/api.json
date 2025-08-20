@@ -988,6 +988,23 @@
         }
       ]
     },
+    "MachineDependency": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
     "MachineMode": {
       "oneOf": [
         {
@@ -1033,13 +1050,15 @@
           "enum": [
             "idle",
             "pulling-image",
+            "waiting",
             "creating",
             "booting",
             "ready",
             "suspending",
             "suspended",
             "stopping",
-            "stopped"
+            "stopped",
+            "restarting"
           ]
         },
         {
@@ -1082,6 +1101,14 @@
       "required": [
         "cpu",
         "memory"
+      ]
+    },
+    "MachineRestartPolicy": {
+      "type": "string",
+      "enum": [
+        "never",
+        "always",
+        "on-failure"
       ]
     },
     "MachineSnapshotStrategy": {
@@ -1187,6 +1214,21 @@
           ],
           "format": "uint128",
           "minimum": 0
+        },
+        "last_restarting_time_us": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint128",
+          "minimum": 0
+        },
+        "last_exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
         }
       },
       "required": [
@@ -1221,6 +1263,16 @@
         "resources": {
           "$ref": "#/$defs/MachineResources"
         },
+        "restart-policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineRestartPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "mode": {
           "anyOf": [
             {
@@ -1240,13 +1292,31 @@
             "$ref": "#/$defs/MachineVolumeBinding"
           }
         },
-        "env": {
+        "command": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
           "type": [
             "object",
             "null"
           ],
           "additionalProperties": {
             "type": "string"
+          }
+        },
+        "depends-on": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/MachineDependency"
           }
         }
       },

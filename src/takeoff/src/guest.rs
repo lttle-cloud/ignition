@@ -53,6 +53,21 @@ impl GuestManager {
         }
     }
 
+    pub fn set_exit_code(&self, code: i32) {
+        unsafe {
+            let ptr = self.map_base.as_ptr() as *mut u64;
+            // first 4 bytes are the trigger code
+            // last byte is 0x04
+
+            let mut cmd = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04];
+            cmd[..4].copy_from_slice(&code.to_le_bytes());
+
+            let cmd_u64 = u64::from_be_bytes(cmd);
+
+            ptr.write_volatile(cmd_u64);
+        }
+    }
+
     #[allow(dead_code)]
     pub fn trigger_manual_snapshot(&self) {
         unsafe {

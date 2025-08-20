@@ -345,13 +345,15 @@
           "enum": [
             "idle",
             "pulling-image",
+            "waiting",
             "creating",
             "booting",
             "ready",
             "suspending",
             "suspended",
             "stopping",
-            "stopped"
+            "stopped",
+            "restarting"
           ],
           "type": "string"
         },
@@ -397,6 +399,14 @@
       ],
       "type": "object"
     },
+    "MachineRestartPolicy": {
+      "enum": [
+        "never",
+        "always",
+        "on-failure"
+      ],
+      "type": "string"
+    },
     "MachineSnapshotStrategy": {
       "oneOf": [
         {
@@ -440,7 +450,25 @@
     },
     "MachineV1": {
       "properties": {
-        "env": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "depends-on": {
+          "items": {
+            "$ref": "#/$defs/MachineDependency"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "environment": {
           "additionalProperties": {
             "type": "string"
           },
@@ -473,6 +501,16 @@
         },
         "resources": {
           "$ref": "#/$defs/MachineResources"
+        },
+        "restart-policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineRestartPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "tags": {
           "items": {

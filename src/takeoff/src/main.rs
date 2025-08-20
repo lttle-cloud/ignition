@@ -86,9 +86,12 @@ async fn takeoff() -> Result<()> {
     let config: OciConfig = serde_json::from_str(&config).unwrap();
     info!("oci_config: {:#?}", config);
 
-    let mut cmd = vec![];
-    cmd.extend(config.entrypoint.clone().unwrap_or_default());
-    cmd.extend(config.cmd.clone().unwrap_or_default());
+    let mut cmd = config.entrypoint.clone().unwrap_or_default();
+    if let Some(override_cmd) = args.cmd.clone() {
+        cmd.extend(override_cmd);
+    } else {
+        cmd.extend(config.cmd.clone().unwrap_or_default());
+    };
     info!("cmd: {:?}", cmd);
 
     let mut envs = HashMap::new();
@@ -208,6 +211,7 @@ async fn takeoff() -> Result<()> {
     let _ = err_task.await;
 
     info!("command exited with code {:?}", status.code());
+    guest_manager.set_exit_code(status.code().unwrap_or(1));
 
     {
         let mut rec = cmd_logger.create_log_record();
@@ -240,9 +244,7 @@ async fn takeoff() -> Result<()> {
         bail!("command failed: {}", status);
     }
 
-    loop {
-        sleep(Duration::from_secs(1)).await;
-    }
+    Ok(())
 }
 
 async fn configure_dns(cmdline: &str) -> Result<()> {

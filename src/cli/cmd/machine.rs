@@ -11,7 +11,9 @@ use ignition::{
     constants::{DEFAULT_NAMESPACE, DEFAULT_SUSPEND_TIMEOUT_SECS},
     resources::{
         core::{ExecParams, LogStreamParams, LogStreamTarget},
-        machine::{MachineLatest, MachineMode, MachineSnapshotStrategy, MachineStatus},
+        machine::{
+            MachineLatest, MachineMode, MachinePhase, MachineSnapshotStrategy, MachineStatus,
+        },
         metadata::Namespace,
     },
 };
@@ -119,6 +121,9 @@ pub struct MachineSummary {
     #[field(name = "suspend timeout")]
     suspend_timeout: Option<String>,
 
+    #[field(name = "restart policy")]
+    restart_policy: Option<String>,
+
     #[field(name = "internal ip")]
     internal_ip: Option<String>,
 
@@ -134,14 +139,26 @@ pub struct MachineSummary {
     #[field(name = "environment")]
     env: Vec<String>,
 
+    #[field(name = "command")]
+    cmd: Option<String>,
+
     #[field(name = "volumes")]
     volumes: Vec<String>,
+
+    #[field(name = "dependencies")]
+    depends_on: Vec<String>,
 
     #[field(name = "last boot time")]
     last_boot_time: Option<String>,
 
     #[field(name = "first boot time")]
     first_boot_time: Option<String>,
+
+    #[field(name = "last exit code")]
+    last_exit_code: Option<String>,
+
+    #[field(name = "last restarting time")]
+    last_restarting_time: Option<String>,
 
     #[field(name = "machine id (internal)")]
     hypervisor_machine_id: Option<String>,
@@ -156,7 +173,7 @@ pub struct MachineSummary {
 impl From<(MachineLatest, MachineStatus)> for MachineSummary {
     fn from((machine, status): (MachineLatest, MachineStatus)) -> Self {
         let env = machine
-            .env
+            .environment
             .unwrap_or_default()
             .into_iter()
             .map(|(k, v)| format!("{k} = {v}"))
@@ -226,18 +243,47 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
             duration.to_string()
         });
 
+        let depends_on = machine
+            .depends_on
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| {
+                let namespace = d
+                    .namespace
+                    .or_else(|| machine.namespace.clone())
+                    .unwrap_or(DEFAULT_NAMESPACE.to_string());
+                format!("{}/{}", namespace, d.name)
+            })
+            .collect();
+
+        let last_restarting_time = status.last_restarting_time_us.map(|t| {
+            let now_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
+
+            let duration = (now_ms - t) / 1_000;
+            let duration = Duration::from_secs(duration as u64);
+            let duration = humantime::format_duration(duration);
+
+            format!("{} ago", duration)
+        });
+
         Self {
             name: machine.name,
             namespace: machine.namespace,
             mode,
             snapshot_strategy,
+            restart_policy: machine.restart_policy.map(|r| r.to_string()),
             internal_ip: status.machine_ip.clone(),
             status: status.phase.to_string(),
             image: status.image_resolved_reference.unwrap_or(machine.image),
             cpu: machine.resources.cpu.to_string(),
             memory: format!("{} MiB", machine.resources.memory),
             env,
+            cmd: machine.command.clone().map(|c| c.join(" ")),
             volumes,
+            depends_on,
             suspend_timeout: timeout,
             hypervisor_machine_id: status.machine_id.clone(),
             hypervisor_root_volume_id: status.machine_image_volume_id.clone(),
@@ -252,6 +298,8 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
                 let duration = humantime::format_duration(duration);
                 duration.to_string()
             }),
+            last_restarting_time,
+            last_exit_code: status.last_exit_code.map(|c| c.to_string()),
         }
     }
 }
@@ -263,11 +311,17 @@ impl From<(MachineLatest, MachineStatus)> for MachineTableRow {
             _ => "flash".to_string(),
         };
 
+        let status_str = match (status.phase, status.last_exit_code) {
+            (MachinePhase::Stopped, Some(code)) => format!("stopped (exit: {})", code),
+            (MachinePhase::Error { message }, _) => format!("error ({})", message),
+            (phase, _) => phase.to_string(),
+        };
+
         Self {
             name: machine.name,
             namespace: machine.namespace,
             mode,
-            status: status.phase.to_string(),
+            status: status_str,
             image: status.image_resolved_reference.unwrap_or(machine.image),
             cpu: machine.resources.cpu.to_string(),
             memory: format!("{} MiB", machine.resources.memory),
