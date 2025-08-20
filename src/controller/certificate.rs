@@ -1,8 +1,12 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
+use hickory_resolver::{
+    TokioAsyncResolver,
+    config::{ResolverConfig, ResolverOpts},
+};
 use instant_acme::{AuthorizationStatus, ChallengeType, OrderStatus, RetryPolicy};
 use std::time::Duration;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     controller::{
@@ -27,6 +31,34 @@ impl CertificateController {
         Box::new(Self::new())
     }
 
+    async fn validate_domain_dns_resolution(&self, domains: &[String]) -> Result<()> {
+        let resolver =
+            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+
+        for domain in domains {
+            info!("Checking DNS resolution for domain: {}", domain);
+
+            // Try to resolve the domain to ensure it exists
+            match resolver.lookup_ip(domain).await {
+                Ok(lookup) => {
+                    let ips: Vec<_> = lookup.iter().collect();
+                    info!("Domain {} resolves to: {:?}", domain, ips);
+                }
+                Err(e) => {
+                    warn!("DNS resolution failed for domain {}: {}", domain, e);
+                    return Err(anyhow!(
+                        "DNS resolution failed for domain '{}': {}. Please ensure the domain exists and is properly configured.",
+                        domain,
+                        e
+                    ));
+                }
+            }
+        }
+
+        info!("All domains successfully resolved via DNS");
+        Ok(())
+    }
+
     async fn reconcile_auto_certificate(
         &self,
         ctx: &ControllerContext,
@@ -49,6 +81,7 @@ impl CertificateController {
                 domains, status.domains
             );
             status.state = CertificateState::Pending;
+            status.domains = domains.to_vec();
             status.last_failure_reason = None;
             return Ok(ReconcileNext::Immediate);
         }
@@ -75,8 +108,8 @@ impl CertificateController {
                     .await
                 {
                     Ok(Some(_account)) => {
-                        info!("ACME account exists, transitioning to PendingOrder");
-                        status.state = CertificateState::PendingOrder(None);
+                        info!("ACME account exists, transitioning to PendingDnsResolution");
+                        status.state = CertificateState::PendingDnsResolution; // Empty string since no order URL yet
                         status.last_failure_reason = None;
                         Ok(ReconcileNext::Immediate)
                     }
@@ -91,7 +124,7 @@ impl CertificateController {
                         {
                             Ok(account) => {
                                 info!("Successfully created ACME account: {}", account.account_id);
-                                status.state = CertificateState::PendingOrder(None);
+                                status.state = CertificateState::PendingDnsResolution; // Empty string since no order URL yet
                                 status.last_failure_reason = None;
                                 Ok(ReconcileNext::Immediate)
                             }
@@ -109,6 +142,29 @@ impl CertificateController {
                         status.state = CertificateState::Failed;
                         status.last_failure_reason = Some(format!("Account check failed: {}", e));
                         Ok(ReconcileNext::After(Duration::from_secs(60)))
+                    }
+                }
+            }
+
+            CertificateState::PendingDnsResolution => {
+                info!(
+                    "Certificate in PendingDnsResolution state, validating DNS resolution for domains: {:?}",
+                    domains
+                );
+
+                // Validate that all domains resolve via DNS before creating ACME order
+                match self.validate_domain_dns_resolution(domains).await {
+                    Ok(()) => {
+                        info!("DNS validation successful, transitioning to PendingOrder");
+                        status.state = CertificateState::PendingOrder(None);
+                        status.last_failure_reason = None;
+                        Ok(ReconcileNext::Immediate)
+                    }
+                    Err(e) => {
+                        error!("DNS validation failed: {}", e);
+                        status.state = CertificateState::Failed;
+                        status.last_failure_reason = Some(format!("DNS validation failed: {}", e));
+                        Ok(ReconcileNext::After(Duration::from_secs(300))) // Retry after 5 minutes for DNS issues
                     }
                 }
             }
@@ -185,9 +241,7 @@ impl CertificateController {
 
                 // Process authorizations to determine challenge type
                 let mut authorizations = order.authorizations();
-                let mut needs_dns_challenge = false;
-                let mut needs_http_challenge = false;
-                let mut all_valid = true;
+                let mut needs_challenge = false;
 
                 while let Some(result) = authorizations.next().await {
                     match result {
@@ -199,25 +253,13 @@ impl CertificateController {
                                     continue;
                                 }
                                 AuthorizationStatus::Pending => {
-                                    all_valid = false;
-                                    // Check what challenge types are available by iterating through the challenges field
-                                    // AuthorizationHandle derefs to AuthorizationState which has a challenges field
-                                    // Prefer HTTP-01 over DNS-01 as it's simpler to implement
-                                    let has_http = authz
+                                    if authz
                                         .challenges
                                         .iter()
-                                        .any(|c| c.r#type == ChallengeType::Http01);
-                                    let has_dns = authz
-                                        .challenges
-                                        .iter()
-                                        .any(|c| c.r#type == ChallengeType::Dns01);
-
-                                    if has_http {
-                                        needs_http_challenge = true;
+                                        .any(|c| c.r#type == ChallengeType::Http01)
+                                    {
+                                        needs_challenge = true;
                                         info!("Found HTTP-01 challenge for {}", identifier);
-                                    } else if has_dns {
-                                        needs_dns_challenge = true;
-                                        info!("Found DNS-01 challenge for {}", identifier);
                                     } else {
                                         error!("No supported challenge type for {}", identifier);
                                         status.state = CertificateState::Failed;
@@ -265,15 +307,9 @@ impl CertificateController {
                 }
 
                 // Determine next state based on authorizations (pass order URL along)
-                if all_valid {
-                    info!("All authorizations are valid, transitioning to Issuing");
-                    status.state = CertificateState::Issuing(order_url);
-                } else if needs_http_challenge {
+                if needs_challenge {
                     info!("Setting up HTTP-01 challenges");
-                    status.state = CertificateState::PendingHttpChallenge(order_url);
-                } else if needs_dns_challenge {
-                    info!("Setting up DNS-01 challenges");
-                    status.state = CertificateState::PendingDnsChallenge(order_url);
+                    status.state = CertificateState::PendingChallenge(order_url);
                 } else {
                     error!("No valid authorization path found");
                     status.state = CertificateState::Failed;
@@ -285,22 +321,9 @@ impl CertificateController {
                 Ok(ReconcileNext::Immediate)
             }
 
-            CertificateState::PendingDnsChallenge(order_url) => {
-                // DNS challenge set up, waiting for propagation
-                info!("Certificate in PendingDnsChallenge state, checking DNS propagation");
-                info!("Order URL: {}", order_url);
-
-                // TODO: Implement DNS challenge validation
-                // - Resume order from URL
-                // - Check DNS record propagation
-                // - Trigger ACME validation when ready
-                // - Transition to Validating(order_url)
-                Ok(ReconcileNext::After(Duration::from_secs(30)))
-            }
-
-            CertificateState::PendingHttpChallenge(order_url) => {
+            CertificateState::PendingChallenge(order_url) => {
                 // HTTP challenge set up, waiting for validation
-                info!("Certificate in PendingHttpChallenge state, checking HTTP challenge");
+                info!("Certificate in PendingChallenge state, checking HTTP challenge");
                 info!("Order URL: {}", order_url);
 
                 let account = cert_agent.get_acme_account(provider, email).await?.unwrap();

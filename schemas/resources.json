@@ -202,6 +202,7 @@
           "enum": [
             "pending",
             "pending-acme-account",
+            "pending-dns-resolution",
             "ready",
             "renewing",
             "failed",
@@ -228,24 +229,12 @@
         {
           "additionalProperties": false,
           "properties": {
-            "pending-dns-challenge": {
+            "pending-challenge": {
               "type": "string"
             }
           },
           "required": [
-            "pending-dns-challenge"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "pending-http-challenge": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "pending-http-challenge"
+            "pending-challenge"
           ],
           "type": "object"
         },

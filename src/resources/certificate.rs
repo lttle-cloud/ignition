@@ -63,14 +63,14 @@ mod certificate {
         #[serde(rename = "pending-acme-account")]
         PendingAcmeAccount, // Creating or verifying ACME account
 
+        #[serde(rename = "pending-dns-resolution")]
+        PendingDnsResolution, // Check DNS records for domains
+
         #[serde(rename = "pending-order")]
         PendingOrder(Option<String>), // ACME order URL (None on initial state, Some after order created)
 
-        #[serde(rename = "pending-dns-challenge")]
-        PendingDnsChallenge(String), // DNS-01 challenge
-
-        #[serde(rename = "pending-http-challenge")]
-        PendingHttpChallenge(String), // HTTP-01 challenge
+        #[serde(rename = "pending-challenge")]
+        PendingChallenge(String), // HTTP-01 challenge
 
         #[serde(rename = "validating")]
         Validating(String), // ACME server is validating
