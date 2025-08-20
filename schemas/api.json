@@ -616,13 +616,13 @@
             "manual": {
               "type": "object",
               "properties": {
-                "cert_path": {
+                "cert-path": {
                   "type": "string"
                 },
-                "key_path": {
+                "key-path": {
                   "type": "string"
                 },
-                "ca_path": {
+                "ca-path": {
                   "type": [
                     "string",
                     "null"
@@ -630,8 +630,8 @@
                 }
               },
               "required": [
-                "cert_path",
-                "key_path"
+                "cert-path",
+                "key-path"
               ]
             }
           },

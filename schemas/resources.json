@@ -146,22 +146,22 @@
           "properties": {
             "manual": {
               "properties": {
-                "ca_path": {
+                "ca-path": {
                   "type": [
                     "string",
                     "null"
                   ]
                 },
-                "cert_path": {
+                "cert-path": {
                   "type": "string"
                 },
-                "key_path": {
+                "key-path": {
                   "type": "string"
                 }
               },
               "required": [
-                "cert_path",
-                "key_path"
+                "cert-path",
+                "key-path"
               ],
               "type": "object"
             }

@@ -26,8 +26,11 @@ mod certificate {
         },
         #[serde(rename = "manual")]
         Manual {
+            #[serde(rename = "cert-path")]
             cert_path: String,
+            #[serde(rename = "key-path")]
             key_path: String,
+            #[serde(rename = "ca-path")]
             ca_path: Option<String>,
         },
     }
