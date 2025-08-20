@@ -11,7 +11,9 @@ use ignition::{
     constants::{DEFAULT_NAMESPACE, DEFAULT_SUSPEND_TIMEOUT_SECS},
     resources::{
         core::{ExecParams, LogStreamParams, LogStreamTarget},
-        machine::{MachineLatest, MachineMode, MachineSnapshotStrategy, MachineStatus},
+        machine::{
+            MachineLatest, MachineMode, MachinePhase, MachineSnapshotStrategy, MachineStatus,
+        },
         metadata::Namespace,
     },
 };
@@ -152,11 +154,11 @@ pub struct MachineSummary {
     #[field(name = "first boot time")]
     first_boot_time: Option<String>,
 
-    #[field(name = "last restarting time")]
-    last_restarting_time: Option<String>,
-
     #[field(name = "last exit code")]
     last_exit_code: Option<String>,
+
+    #[field(name = "last restarting time")]
+    last_restarting_time: Option<String>,
 
     #[field(name = "machine id (internal)")]
     hypervisor_machine_id: Option<String>,
@@ -297,7 +299,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
                 duration.to_string()
             }),
             last_restarting_time,
-            last_exit_code: None,
+            last_exit_code: status.last_exit_code.map(|c| c.to_string()),
         }
     }
 }
@@ -309,11 +311,17 @@ impl From<(MachineLatest, MachineStatus)> for MachineTableRow {
             _ => "flash".to_string(),
         };
 
+        let status_str = match (status.phase, status.last_exit_code) {
+            (MachinePhase::Stopped, Some(code)) => format!("stopped (exit: {})", code),
+            (MachinePhase::Error { message }, _) => format!("error ({})", message),
+            (phase, _) => phase.to_string(),
+        };
+
         Self {
             name: machine.name,
             namespace: machine.namespace,
             mode,
-            status: status.phase.to_string(),
+            status: status_str,
             image: status.image_resolved_reference.unwrap_or(machine.image),
             cpu: machine.resources.cpu.to_string(),
             memory: format!("{} MiB", machine.resources.memory),

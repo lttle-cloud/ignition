@@ -50,6 +50,7 @@ pub enum DeviceEvent {
     StopRequested,
     FlashLock,
     FlashUnlock,
+    ExitCode(i32),
 }
 
 pub async fn setup_devices(

@@ -42,6 +42,8 @@ pub enum StateCommand {
     SystemVcpuSuspended,
     SystemVcpuRestarted,
 
+    SystemExitCode { code: i32 },
+
     SystemSuspendTimeout,
 
     // Flash events
@@ -73,6 +75,7 @@ struct MachineResources {
     first_boot_duration: Arc<tokio::sync::RwLock<Option<Duration>>>,
     last_start_time: Arc<tokio::sync::RwLock<Option<Instant>>>,
     last_ready_time: Arc<tokio::sync::RwLock<Option<Instant>>>,
+    last_exit_code: Arc<tokio::sync::RwLock<Option<i32>>>,
 }
 
 pub struct VcpuManager {
@@ -189,6 +192,7 @@ impl MachineStateMachine {
         first_boot_duration: Arc<tokio::sync::RwLock<Option<Duration>>>,
         last_start_time: Arc<tokio::sync::RwLock<Option<Instant>>>,
         last_ready_time: Arc<tokio::sync::RwLock<Option<Instant>>>,
+        last_exit_code: Arc<tokio::sync::RwLock<Option<i32>>>,
     ) -> Self {
         let resources = MachineResources {
             config,
@@ -199,6 +203,7 @@ impl MachineStateMachine {
             first_boot_duration,
             last_start_time,
             last_ready_time,
+            last_exit_code,
         };
 
         Self {
@@ -263,6 +268,10 @@ impl MachineStateMachine {
 
             StateCommand::SystemVcpuRestarted => {
                 self.handle_vcpu_restarted().await?;
+            }
+
+            StateCommand::SystemExitCode { code } => {
+                self.handle_exit_code(code).await?;
             }
 
             StateCommand::SystemSuspendTimeout => {
@@ -467,6 +476,11 @@ impl MachineStateMachine {
                 self.resources.config.name
             );
         }
+        Ok(())
+    }
+
+    async fn handle_exit_code(&mut self, code: i32) -> Result<()> {
+        *self.resources.last_exit_code.write().await = Some(code);
         Ok(())
     }
 

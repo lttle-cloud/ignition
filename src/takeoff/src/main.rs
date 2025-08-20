@@ -211,6 +211,7 @@ async fn takeoff() -> Result<()> {
     let _ = err_task.await;
 
     info!("command exited with code {:?}", status.code());
+    guest_manager.set_exit_code(status.code().unwrap_or(1));
 
     {
         let mut rec = cmd_logger.create_log_record();
@@ -243,9 +244,7 @@ async fn takeoff() -> Result<()> {
         bail!("command failed: {}", status);
     }
 
-    loop {
-        sleep(Duration::from_secs(1)).await;
-    }
+    Ok(())
 }
 
 async fn configure_dns(cmdline: &str) -> Result<()> {

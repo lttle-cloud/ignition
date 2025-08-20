@@ -74,6 +74,14 @@ impl Controller for MachineController {
                         .machine(ctx.tenant.clone())
                         .patch_status(metadata.clone(), move |status| {
                             status.phase = new_phase.clone();
+                            status.last_exit_code = None;
+                        })
+                        .await?;
+                } else {
+                    ctx.repository
+                        .machine(ctx.tenant.clone())
+                        .patch_status(metadata.clone(), |status| {
+                            status.last_exit_code = None;
                         })
                         .await?;
                 }
@@ -154,6 +162,8 @@ impl Controller for MachineController {
                         .await
                         .and_then(|duration| Some(duration.as_micros()));
 
+                    let last_exit_code = running_machine.get_last_exit_code().await;
+
                     if let Some(new_phase) = new_phase {
                         if new_phase != status.phase {
                             let new_status = ctx
@@ -163,6 +173,9 @@ impl Controller for MachineController {
                                     status.phase = new_phase.clone();
                                     status.last_boot_time_us = last_boot_duration_us;
                                     status.first_boot_time_us = first_boot_duration_us;
+                                    if let Some(last_exit_code) = last_exit_code {
+                                        status.last_exit_code = Some(last_exit_code);
+                                    }
                                 })
                                 .await?;
                             Some((stored_machine, new_status))
