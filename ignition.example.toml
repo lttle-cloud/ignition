@@ -36,3 +36,9 @@ otel-ingest-endpoint = "http://host.lttle.local:3100/otlp/v1/logs" # TODO: for n
 [logs.store]
 type = "loki"
 url = "http://localhost:3100"
+
+[[cert-provider]]
+name = "letsencrypt-staging"
+acme-base-url = "https://acme-staging-v02.api.letsencrypt.org/directory"
+default-email = "test@lttle.cloud"
+environment = "staging"
