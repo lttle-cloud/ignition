@@ -164,7 +164,7 @@ impl CertificateController {
                         error!("DNS validation failed: {}", e);
                         status.state = CertificateState::Failed;
                         status.last_failure_reason = Some(format!("DNS validation failed: {}", e));
-                        Ok(ReconcileNext::After(Duration::from_secs(300))) // Retry after 5 minutes for DNS issues
+                        Ok(ReconcileNext::After(Duration::from_secs(30)))
                     }
                 }
             }
