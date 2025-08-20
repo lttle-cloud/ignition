@@ -82,7 +82,6 @@ impl CertificateController {
             );
             status.state = CertificateState::Pending;
             status.domains = domains.to_vec();
-            status.last_failure_reason = None;
             return Ok(ReconcileNext::Immediate);
         }
 
@@ -92,7 +91,6 @@ impl CertificateController {
                 // Initial state - transition to checking ACME account
                 info!("Certificate in Pending state, transitioning to PendingAcmeAccount");
                 status.state = CertificateState::PendingAcmeAccount;
-                status.last_failure_reason = None;
                 Ok(ReconcileNext::Immediate)
             }
 
@@ -110,7 +108,6 @@ impl CertificateController {
                     Ok(Some(_account)) => {
                         info!("ACME account exists, transitioning to PendingDnsResolution");
                         status.state = CertificateState::PendingDnsResolution; // Empty string since no order URL yet
-                        status.last_failure_reason = None;
                         Ok(ReconcileNext::Immediate)
                     }
                     Ok(None) => {
@@ -125,7 +122,6 @@ impl CertificateController {
                             Ok(account) => {
                                 info!("Successfully created ACME account: {}", account.account_id);
                                 status.state = CertificateState::PendingDnsResolution; // Empty string since no order URL yet
-                                status.last_failure_reason = None;
                                 Ok(ReconcileNext::Immediate)
                             }
                             Err(e) => Err(anyhow!("Failed to create ACME account: {}", e)),
@@ -146,7 +142,6 @@ impl CertificateController {
                     Ok(()) => {
                         info!("DNS validation successful, transitioning to PendingOrder");
                         status.state = CertificateState::PendingOrder(None);
-                        status.last_failure_reason = None;
                         Ok(ReconcileNext::Immediate)
                     }
                     Err(e) => Err(anyhow!("DNS validation failed: {}", e)),
@@ -260,7 +255,6 @@ impl CertificateController {
                 if order_status == instant_acme::OrderStatus::Ready {
                     info!("Order is already ready, transitioning to Issuing");
                     status.state = CertificateState::Issuing(order_url);
-                    status.last_failure_reason = None;
                     return Ok(ReconcileNext::Immediate);
                 }
 
@@ -272,7 +266,6 @@ impl CertificateController {
                     return Err(anyhow!("No valid authorization path found"));
                 }
 
-                status.last_failure_reason = None;
                 Ok(ReconcileNext::Immediate)
             }
 
@@ -391,7 +384,6 @@ impl CertificateController {
 
                 // Reset to initial state to retry
                 status.state = CertificateState::Pending;
-                status.last_failure_reason = None;
                 Ok(ReconcileNext::After(Duration::from_secs(60)))
             }
 
