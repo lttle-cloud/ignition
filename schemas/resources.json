@@ -301,6 +301,23 @@
       ],
       "type": "object"
     },
+    "MachineDependency": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "MachineMode": {
       "oneOf": [
         {
