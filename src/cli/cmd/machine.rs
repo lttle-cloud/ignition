@@ -349,7 +349,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineTableRow {
 }
 
 pub async fn run_machine_list(config: &Config, args: ListNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     let machines = api_client.machine().list(args.into()).await?;
 
     let mut table = MachineTable::new();
@@ -364,7 +364,7 @@ pub async fn run_machine_list(config: &Config, args: ListNamespacedArgs) -> Resu
 }
 
 pub async fn run_machine_get(config: &Config, args: GetNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     let (machine, status) = api_client
         .machine()
         .get(args.clone().into(), args.name)
@@ -377,7 +377,7 @@ pub async fn run_machine_get(config: &Config, args: GetNamespacedArgs) -> Result
 }
 
 pub async fn run_machine_get_logs(config: &Config, args: MachineLogsArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
 
     let namespace = Namespace::from_value_or_default(args.namespace);
 
@@ -452,7 +452,7 @@ pub async fn run_machine_exec(config: &Config, args: MachineExecArgs) -> Result<
     let stdin_enabled = args.stdin;
     let tty_mode = args.tty;
 
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     let ws_stream = api_client
         .core()
         .exec(
@@ -653,7 +653,7 @@ pub async fn run_machine_exec(config: &Config, args: MachineExecArgs) -> Result<
 }
 
 pub async fn run_machine_delete(config: &Config, args: DeleteNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     if !args.confirm {
         message_warn(format!(
             "You are about to delete the machine '{}'. This action cannot be undone. To confirm, run the command with --yes (or -y).",
@@ -673,7 +673,7 @@ pub async fn run_machine_delete(config: &Config, args: DeleteNamespacedArgs) -> 
 }
 
 pub async fn run_machine_restart(config: &Config, args: RestartNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
 
     let namespace = Namespace::from_value_or_default(args.namespace);
 

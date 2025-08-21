@@ -14,6 +14,12 @@ pub fn message_error(message: impl AsRef<str>) {
     println!("{}", message.as_ref())
 }
 
+pub fn message_detail(message: impl AsRef<str>) {
+    let padding = "█".repeat(MESSAGE_PADDING) + " ";
+    print!("{}", Style::new().fg(Color::Green).bold().paint(padding));
+    println!("{}", message.as_ref())
+}
+
 pub fn message_warn(message: impl AsRef<str>) {
     let padding = "warning: ";
     print!("{}", Style::new().fg(Color::Yellow).bold().paint(padding));

@@ -8,9 +8,7 @@ use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = Config::load().await?;
-
-    if let Err(e) = cmd::run_cli(&config).await {
+    if let Err(e) = cmd::run_cli().await {
         message_error(e.to_string());
     }
 

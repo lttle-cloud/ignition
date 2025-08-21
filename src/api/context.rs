@@ -11,6 +11,7 @@ use crate::{api::ApiState, resources::metadata::Namespace};
 #[derive(Debug, Clone)]
 pub struct ServiceRequestContext {
     pub tenant: String,
+    pub sub: String,
     pub namespace: Namespace,
 }
 
@@ -67,7 +68,8 @@ impl FromRequestParts<Arc<ApiState>> for ServiceRequestContext {
         };
 
         Ok(ServiceRequestContext {
-            tenant: claims.tenant.clone(),
+            tenant: claims.tenant,
+            sub: claims.sub,
             namespace,
         })
     }

@@ -27,7 +27,13 @@ pub struct CoreService {}
 impl ResourceService for CoreService {
     fn create_router(_state: Arc<ApiState>) -> ResourceServiceRouter {
         async fn me(ctx: ServiceRequestContext) -> impl IntoResponse {
-            (StatusCode::OK, Json(Me { tenant: ctx.tenant }))
+            (
+                StatusCode::OK,
+                Json(Me {
+                    tenant: ctx.tenant,
+                    sub: ctx.sub,
+                }),
+            )
         }
 
         async fn list_namespaces(

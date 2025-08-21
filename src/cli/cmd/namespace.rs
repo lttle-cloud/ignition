@@ -29,7 +29,7 @@ impl From<Namespace> for NamespaceTableRow {
 }
 
 pub async fn run_namespace_list(config: &Config) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     let response = api_client.core().list_namespaces().await?;
 
     let mut table = NamespaceTable::new();

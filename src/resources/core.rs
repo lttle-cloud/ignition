@@ -10,6 +10,7 @@ use crate::machinery::api_schema::{ApiMethod, ApiPathSegment, ApiService, ApiVer
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Me {
     pub tenant: String,
+    pub sub: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

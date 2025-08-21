@@ -23,13 +23,18 @@ impl AuthHandler {
         }
     }
 
-    pub fn generate_token(&self, tenant: impl AsRef<str>) -> Result<String> {
+    pub fn generate_token(
+        &self,
+        tenant: impl AsRef<str>,
+        subject: impl AsRef<str>,
+    ) -> Result<String> {
         let tenant = tenant.as_ref().to_string();
+        let sub = subject.as_ref().to_string();
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
 
         let claims = AuthTokenClaims {
             tenant,
-            sub: "test".to_string(),
+            sub,
             iat: now.as_secs(),
             exp: now.as_secs() + 60 * 60 * 24 * 30, // TODO: hardcoded 30 days
         };

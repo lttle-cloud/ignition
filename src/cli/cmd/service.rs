@@ -204,7 +204,7 @@ impl From<(ServiceLatest, ServiceStatus)> for ServiceSummary {
 }
 
 pub async fn run_service_list(config: &Config, args: ListNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     let services = api_client.service().list(args.into()).await?;
 
     let mut table = ServiceTable::new();
@@ -219,7 +219,7 @@ pub async fn run_service_list(config: &Config, args: ListNamespacedArgs) -> Resu
 }
 
 pub async fn run_service_get(config: &Config, args: GetNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     let (service, status) = api_client
         .service()
         .get(args.clone().into(), args.name)
@@ -232,7 +232,7 @@ pub async fn run_service_get(config: &Config, args: GetNamespacedArgs) -> Result
 }
 
 pub async fn run_service_delete(config: &Config, args: DeleteNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     if !args.confirm {
         message_warn(format!(
             "You are about to delete the service '{}'. This action cannot be undone. To confirm, run the command with --yes (or -y).",
