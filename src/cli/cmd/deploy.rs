@@ -29,7 +29,7 @@ pub struct DeployArgs {
 }
 
 pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
 
     let contents = read_to_string(args.file).await?;
 

@@ -141,7 +141,7 @@ fn format_certificate_state(state: &CertificateState) -> String {
 }
 
 pub async fn run_certificate_list(config: &Config, args: ListNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     let certificates = api_client.certificate().list(args.into()).await?;
 
     let mut table = CertificateTable::new();
@@ -156,7 +156,7 @@ pub async fn run_certificate_list(config: &Config, args: ListNamespacedArgs) -> 
 }
 
 pub async fn run_certificate_get(config: &Config, args: GetNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     let (certificate, status) = api_client
         .certificate()
         .get(args.clone().into(), args.name)
@@ -169,7 +169,7 @@ pub async fn run_certificate_get(config: &Config, args: GetNamespacedArgs) -> Re
 }
 
 pub async fn run_certificate_delete(config: &Config, args: DeleteNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     if !args.confirm {
         message_warn(format!(
             "You are about to delete the certificate '{}'. This action cannot be undone. To confirm, run the command with --yes (or -y).",

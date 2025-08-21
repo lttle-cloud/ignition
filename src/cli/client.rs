@@ -5,13 +5,8 @@ use ignition::{
     resources::{machine::Machine, metadata::Namespace},
 };
 
-use crate::config::Config;
-
-pub async fn get_api_client(config: &Config) -> Result<ApiClient> {
-    let api_client_config: ApiClientConfig = config.try_into()?;
-    let client = ApiClient::new(api_client_config);
-
-    Ok(client)
+pub fn get_api_client(config: ApiClientConfig) -> ApiClient {
+    ApiClient::new(config)
 }
 
 #[async_trait]

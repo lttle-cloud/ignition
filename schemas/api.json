@@ -1358,10 +1358,14 @@
       "properties": {
         "tenant": {
           "type": "string"
+        },
+        "sub": {
+          "type": "string"
         }
       },
       "required": [
-        "tenant"
+        "tenant",
+        "sub"
       ],
       "title": "Me",
       "$schema": "https://json-schema.org/draft/2020-12/schema"

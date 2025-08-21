@@ -9,8 +9,34 @@ use tokio::fs::{create_dir_all, read_to_string, write};
 pub struct Config {
     #[serde(skip_serializing, skip_deserializing)]
     pub config_path: PathBuf,
-    pub api_url: Option<String>,
-    pub token: Option<String>,
+
+    #[serde(rename = "current-profile")]
+    pub current_profile: String,
+
+    #[serde(rename = "profile")]
+    pub profiles: Vec<Profile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Profile {
+    pub name: String,
+    #[serde(rename = "api-url")]
+    pub api_url: String,
+    pub token: String,
+}
+
+impl Config {
+    pub fn get_profile(&self, name: &str) -> Result<Profile> {
+        self.profiles
+            .iter()
+            .find(|p| p.name == name)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Profile {} not found", name))
+    }
+
+    pub fn get_current_profile(&self) -> Result<Profile> {
+        self.get_profile(&self.current_profile)
+    }
 }
 
 impl Config {
@@ -35,8 +61,8 @@ impl Config {
         if !config_path.exists() {
             let config = Self {
                 config_path: config_path.clone(),
-                api_url: None,
-                token: None,
+                current_profile: "default".to_string(),
+                profiles: vec![],
             };
 
             config.save().await?;
@@ -63,21 +89,17 @@ impl TryInto<ApiClientConfig> for &Config {
     type Error = anyhow::Error;
 
     fn try_into(self) -> Result<ApiClientConfig, Self::Error> {
-        let Some(api_addr) = &self.api_url else {
+        if self.profiles.is_empty() {
             bail!(
-                "No API address found in config. Please make sure you have configured your CLI with `lttle login`"
+                "No profiles found in config. Please make sure you have configured your CLI with `lttle login`"
             );
-        };
+        }
 
-        let Some(token) = &self.token else {
-            bail!(
-                "No token found in config. Please make sure you have configured your CLI with `lttle login`"
-            );
-        };
+        let profile = self.get_current_profile()?;
 
         Ok(ApiClientConfig {
-            base_url: api_addr.clone(),
-            token: token.clone(),
+            base_url: profile.api_url,
+            token: profile.token,
         })
     }
 }
