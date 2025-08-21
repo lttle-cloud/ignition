@@ -25,6 +25,7 @@ use crate::{
 #[command(name = "lttle")]
 #[command(author = "lttle.cloud")]
 #[command(about = "lttle.cloud CLI", long_about = None)]
+#[command(version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
