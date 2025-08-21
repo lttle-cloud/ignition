@@ -31,7 +31,7 @@ install_file() {
   fi
   # Remove quarantine on macOS (ignore errors)
   if [[ "$(uname -s)" == "Darwin" ]] && command -v xattr >/dev/null 2>&1; then
-    xattr -d com.apple.quarantine "$dst" || true
+    sudo xattr -d com.apple.quarantine "$dst" || true
   fi
   say "✅ Installed: $dst"
 }
