@@ -100,116 +100,6 @@
       ]
     },
     {
-      "name": "Certificate",
-      "tag": "certificate",
-      "crate_path": "resources::certificate",
-      "namespaced": true,
-      "methods": [
-        {
-          "name": "get",
-          "namespaced": true,
-          "verb": "GET",
-          "path": [
-            {
-              "type": "static",
-              "value": "certificate"
-            },
-            {
-              "type": "resource_name"
-            }
-          ],
-          "request": null,
-          "response": {
-            "type": "tuple",
-            "list": false,
-            "optional": false,
-            "names": [
-              "CertificateV1",
-              "CertificateStatus"
-            ]
-          }
-        },
-        {
-          "name": "list",
-          "namespaced": true,
-          "verb": "GET",
-          "path": [
-            {
-              "type": "static",
-              "value": "certificate"
-            }
-          ],
-          "request": null,
-          "response": {
-            "type": "tuple",
-            "list": true,
-            "optional": false,
-            "names": [
-              "CertificateV1",
-              "CertificateStatus"
-            ]
-          }
-        },
-        {
-          "name": "delete",
-          "namespaced": true,
-          "verb": "DELETE",
-          "path": [
-            {
-              "type": "static",
-              "value": "certificate"
-            },
-            {
-              "type": "resource_name"
-            }
-          ],
-          "request": null,
-          "response": null
-        },
-        {
-          "name": "apply",
-          "namespaced": true,
-          "verb": "PUT",
-          "path": [
-            {
-              "type": "static",
-              "value": "certificate"
-            }
-          ],
-          "request": {
-            "type": "schema",
-            "name": "Certificate"
-          },
-          "response": null
-        },
-        {
-          "name": "get_status",
-          "namespaced": true,
-          "verb": "GET",
-          "path": [
-            {
-              "type": "static",
-              "value": "certificate"
-            },
-            {
-              "type": "resource_name"
-            },
-            {
-              "type": "static",
-              "value": "status"
-            }
-          ],
-          "request": null,
-          "response": {
-            "type": "schema",
-            "list": false,
-            "optional": false,
-            "name": "CertificateStatus"
-          }
-        }
-      ]
-    },
-    {
       "name": "Machine",
       "tag": "machine",
       "crate_path": "resources::machine",
@@ -425,6 +315,116 @@
             "list": false,
             "optional": false,
             "name": "ServiceStatus"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Certificate",
+      "tag": "certificate",
+      "crate_path": "resources::certificate",
+      "namespaced": true,
+      "methods": [
+        {
+          "name": "get",
+          "namespaced": true,
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": false,
+            "optional": false,
+            "names": [
+              "CertificateV1",
+              "CertificateStatus"
+            ]
+          }
+        },
+        {
+          "name": "list",
+          "namespaced": true,
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": true,
+            "optional": false,
+            "names": [
+              "CertificateV1",
+              "CertificateStatus"
+            ]
+          }
+        },
+        {
+          "name": "delete",
+          "namespaced": true,
+          "verb": "DELETE",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": null
+        },
+        {
+          "name": "apply",
+          "namespaced": true,
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "Certificate"
+          },
+          "response": null
+        },
+        {
+          "name": "get_status",
+          "namespaced": true,
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            },
+            {
+              "type": "resource_name"
+            },
+            {
+              "type": "static",
+              "value": "status"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "CertificateStatus"
           }
         }
       ]

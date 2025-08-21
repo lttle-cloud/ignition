@@ -1,4 +1,4 @@
-use std::{str::FromStr, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Result, anyhow, bail};
 use async_trait::async_trait;
@@ -10,6 +10,7 @@ use tracing::{error, info, warn};
 
 use crate::{
     agent::{
+        Agent,
         machine::machine::{
             MachineConfig, MachineMode, MachineResources, MachineState, MachineStateRetentionMode,
             NetworkConfig, SnapshotStrategy, VolumeMountConfig,
@@ -18,13 +19,14 @@ use crate::{
     },
     constants::{DEFAULT_NAMESPACE, DEFAULT_SUSPEND_TIMEOUT_SECS},
     controller::{
-        Controller, ReconcileNext,
+        AdmissionCheckBeforeSet, Controller, ReconcileNext,
         context::{AsyncWork, ControllerContext, ControllerEvent, ControllerKey},
     },
+    repository::Repository,
     resource_index::ResourceKind,
     resources::{
-        self, Convert,
-        machine::{MachinePhase, MachineStatus},
+        self, AdmissionCheckStatus, Convert,
+        machine::{Machine, MachinePhase, MachineStatus},
         metadata::{Metadata, Namespace},
         volume::VolumeMode,
     },
@@ -727,5 +729,85 @@ impl Controller for MachineController {
             .ok();
 
         ReconcileNext::done()
+    }
+}
+
+impl AdmissionCheckStatus<MachineStatus> for Machine {
+    fn admission_check_status(&self, status: &MachineStatus) -> Result<()> {
+        let hash = self.hash_with_updated_metadata();
+
+        if hash != status.hash {
+            bail!("Machines are not allowed to change their configuration after creation");
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl AdmissionCheckBeforeSet for Machine {
+    async fn before_set(
+        &self,
+        tenant: String,
+        repo: Arc<Repository>,
+        _agent: Arc<Agent>,
+        _metadata: Metadata,
+    ) -> Result<()> {
+        let resource = self.latest();
+        let resource_namespace = Namespace::from_value_or_default(resource.namespace.clone());
+
+        // see if the volumes are being used by other machines
+        let volumes = resource.volumes.unwrap_or_default();
+        if volumes.is_empty() {
+            return Ok(());
+        }
+
+        let machines = repo.machine(tenant.clone()).list(Namespace::Unspecified)?;
+        for machine in machines {
+            let machine = machine.latest();
+            let machine_namespace = Namespace::from_value_or_default(machine.namespace.clone());
+            if machine.name == resource.name && machine_namespace == resource_namespace {
+                continue;
+            }
+
+            let machine_volumes = machine.volumes.unwrap_or_default();
+
+            for volume in volumes.iter() {
+                let volume_namespace = Namespace::from_value_or_default(
+                    volume
+                        .namespace
+                        .clone()
+                        .or_else(|| resource.namespace.clone()),
+                );
+
+                for machine_volume in machine_volumes.iter() {
+                    if machine_volume.name != volume.name {
+                        continue;
+                    }
+
+                    let machine_volume_namespace = Namespace::from_value_or_default(
+                        machine_volume
+                            .namespace
+                            .clone()
+                            .or_else(|| machine.namespace.clone()),
+                    );
+
+                    if machine_volume_namespace != volume_namespace {
+                        continue;
+                    }
+
+                    bail!(
+                        "Volume {} is being used by machine {} in namespace {}",
+                        volume.name,
+                        machine.name,
+                        machine_volume_namespace
+                            .as_value()
+                            .unwrap_or(DEFAULT_NAMESPACE.to_string())
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 }

@@ -1,8 +1,8 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 use meta::resource;
 use std::collections::BTreeMap;
 
-use crate::resources::{AdmissionCheckStatus, Convert, FromResource, ProvideMetadata};
+use crate::resources::{Convert, FromResource, ProvideMetadata};
 
 #[resource(name = "Machine", tag = "machine")]
 mod machine {
@@ -180,17 +180,5 @@ impl Machine {
         let mut hasher = DefaultHasher::new();
         machine.hash(&mut hasher);
         hasher.finish()
-    }
-}
-
-impl AdmissionCheckStatus<MachineStatus> for Machine {
-    fn admission_check_status(&self, status: &MachineStatus) -> Result<()> {
-        let hash = self.hash_with_updated_metadata();
-
-        if hash != status.hash {
-            bail!("Machines are not allowed to change their configuration after creation");
-        }
-
-        Ok(())
     }
 }

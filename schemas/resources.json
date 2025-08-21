@@ -5,30 +5,6 @@
     {
       "type": "object",
       "properties": {
-        "certificate": {
-          "$ref": "#/$defs/CertificateV1"
-        }
-      },
-      "required": [
-        "certificate"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
-        "certificate.v1": {
-          "$ref": "#/$defs/CertificateV1"
-        }
-      },
-      "required": [
-        "certificate.v1"
-      ],
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "properties": {
         "machine": {
           "$ref": "#/$defs/MachineV1"
         }
@@ -71,6 +47,30 @@
       },
       "required": [
         "service.v1"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "certificate": {
+          "$ref": "#/$defs/CertificateV1"
+        }
+      },
+      "required": [
+        "certificate"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "certificate.v1": {
+          "$ref": "#/$defs/CertificateV1"
+        }
+      },
+      "required": [
+        "certificate.v1"
       ],
       "additionalProperties": false
     },

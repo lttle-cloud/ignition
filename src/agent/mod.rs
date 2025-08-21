@@ -7,6 +7,7 @@ pub mod logs;
 pub mod machine;
 pub mod net;
 pub mod proxy;
+pub mod tracker;
 pub mod volume;
 
 use std::sync::{Arc, Weak};
@@ -23,6 +24,7 @@ use crate::{
         machine::{MachineAgent, MachineAgentConfig},
         net::{NetAgent, NetAgentConfig},
         proxy::{ProxyAgent, ProxyAgentConfig},
+        tracker::TrackerAgent,
         volume::{VolumeAgent, VolumeAgentConfig},
     },
     controller::scheduler::Scheduler,
@@ -53,6 +55,7 @@ pub struct Agent {
     dns: Arc<DnsAgent>,
     certificate: Arc<CertificateAgent>,
     logs: Arc<LogsAgent>,
+    tracker: Arc<TrackerAgent>,
 }
 
 impl Agent {
@@ -85,6 +88,8 @@ impl Agent {
 
         let logs = Arc::new(LogsAgent::new(config.logs_config.clone()));
 
+        let tracker = Arc::new(TrackerAgent::new(store.clone()));
+
         // Start the DNS server
         dns.start().await?;
 
@@ -98,6 +103,7 @@ impl Agent {
             dns,
             certificate,
             logs,
+            tracker,
         })
     }
 
@@ -135,5 +141,9 @@ impl Agent {
 
     pub fn logs(&self) -> Arc<LogsAgent> {
         self.logs.clone()
+    }
+
+    pub fn tracker(&self) -> Arc<TrackerAgent> {
+        self.tracker.clone()
     }
 }
