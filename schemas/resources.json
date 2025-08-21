@@ -5,6 +5,30 @@
     {
       "type": "object",
       "properties": {
+        "certificate": {
+          "$ref": "#/$defs/CertificateV1"
+        }
+      },
+      "required": [
+        "certificate"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "certificate.v1": {
+          "$ref": "#/$defs/CertificateV1"
+        }
+      },
+      "required": [
+        "certificate.v1"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
         "machine": {
           "$ref": "#/$defs/MachineV1"
         }
@@ -76,6 +100,207 @@
     }
   ],
   "$defs": {
+    "CertificateIssuer": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "auto": {
+              "properties": {
+                "email": {
+                  "description": "Optional email override. If specified, takes precedence over provider's default-email.\nIf not specified, falls back to provider's default-email from config.\nValidation should error if neither this nor provider config has an email.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "provider": {
+                  "description": "References a provider name from ignition.toml [[cert-provider]] config",
+                  "type": "string"
+                },
+                "renewal": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/CertificateRenewalConfig"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Optional renewal configuration. Uses sensible defaults if not specified."
+                }
+              },
+              "required": [
+                "provider"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "auto"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "manual": {
+              "properties": {
+                "ca-path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "cert-path": {
+                  "type": "string"
+                },
+                "key-path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cert-path",
+                "key-path"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "manual"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "CertificateRenewalConfig": {
+      "properties": {
+        "days-before-expiry": {
+          "description": "Days before expiry to start renewal attempts. Default: 30 days.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "retry-interval-hours": {
+          "description": "Hours between renewal retry attempts on failure. Default: 12 hours.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "CertificateState": {
+      "oneOf": [
+        {
+          "enum": [
+            "pending",
+            "pending-acme-account",
+            "pending-dns-resolution",
+            "ready",
+            "renewing",
+            "failed",
+            "expired",
+            "revoked"
+          ],
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "pending-order": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "pending-order"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "pending-challenge": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "pending-challenge"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "validating": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "validating"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "issuing": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "issuing"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "CertificateV1": {
+      "properties": {
+        "domains": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "issuer": {
+          "$ref": "#/$defs/CertificateIssuer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "domains",
+        "issuer"
+      ],
+      "type": "object"
+    },
     "MachineDependency": {
       "properties": {
         "name": {

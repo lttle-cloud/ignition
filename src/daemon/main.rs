@@ -7,13 +7,15 @@ use anyhow::Result;
 use clap::Parser;
 use ignition::{
     agent::{
-        Agent, AgentConfig, dns::config::DnsAgentConfig, image::ImageAgentConfig,
-        logs::LogsAgentConfig, machine::MachineAgentConfig, net::NetAgentConfig,
-        proxy::ProxyAgentConfig, volume::VolumeAgentConfig,
+        Agent, AgentConfig, certificate::config::CertificateAgentConfig,
+        dns::config::DnsAgentConfig, image::ImageAgentConfig, logs::LogsAgentConfig,
+        machine::MachineAgentConfig, net::NetAgentConfig, proxy::ProxyAgentConfig,
+        volume::VolumeAgentConfig,
     },
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
     constants::DEFAULT_KERNEL_CMD_LINE_INIT,
     controller::{
+        certificate::CertificateController,
         machine::MachineController,
         scheduler::{Scheduler, SchedulerConfig},
         service::ServiceController,
@@ -120,6 +122,13 @@ async fn main() -> Result<()> {
                                     .dns_config
                                     .upstream_dns_servers,
                             },
+                            cert_config: CertificateAgentConfig {
+                                providers: scheduler_config.cert_providers,
+                                certs_base_dir: agent_dir
+                                    .join("certs")
+                                    .to_string_lossy()
+                                    .to_string(),
+                            },
                             logs_config: LogsAgentConfig {
                                 store: scheduler_config.logs_config.store,
                                 otel_ingest_endpoint: scheduler_config
@@ -142,6 +151,7 @@ async fn main() -> Result<()> {
             agent,
             SchedulerConfig { worker_count: 4 },
             vec![
+                CertificateController::new_boxed(),
                 MachineController::new_boxed(),
                 ServiceController::new_boxed(),
                 VolumeController::new_boxed(),
@@ -166,6 +176,7 @@ async fn main() -> Result<()> {
         },
     )
     .add_service::<CoreService>()
+    .add_service::<services::CertificateService>()
     .add_service::<services::MachineService>()
     .add_service::<services::ServiceService>()
     .add_service::<services::VolumeService>();

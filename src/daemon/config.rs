@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Result, bail};
+use ignition::agent::certificate::config::CertProvider;
 use ignition::agent::logs::LogsStoreConfig;
 use serde::{Deserialize, Serialize};
 use tokio::fs::read_to_string;
@@ -30,6 +31,9 @@ pub struct Config {
 
     #[serde(rename = "dns")]
     pub dns_config: DnsConfig,
+
+    #[serde(rename = "cert-provider", default)]
+    pub cert_providers: Vec<CertProvider>,
 
     #[serde(rename = "logs")]
     pub logs_config: LogsConfig,

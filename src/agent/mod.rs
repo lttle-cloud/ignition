@@ -1,3 +1,4 @@
+pub mod certificate;
 pub mod data;
 pub mod dns;
 pub mod image;
@@ -14,6 +15,7 @@ use anyhow::Result;
 
 use crate::{
     agent::{
+        certificate::{CertificateAgent, config::CertificateAgentConfig},
         dns::{DnsAgent, config::DnsAgentConfig},
         image::{ImageAgent, ImageAgentConfig},
         job::JobAgent,
@@ -37,6 +39,7 @@ pub struct AgentConfig {
     pub machine_config: MachineAgentConfig,
     pub proxy_config: ProxyAgentConfig,
     pub dns_config: DnsAgentConfig,
+    pub cert_config: CertificateAgentConfig,
     pub logs_config: LogsAgentConfig,
 }
 
@@ -48,6 +51,7 @@ pub struct Agent {
     machine: Arc<MachineAgent>,
     proxy: Arc<ProxyAgent>,
     dns: Arc<DnsAgent>,
+    certificate: Arc<CertificateAgent>,
     logs: Arc<LogsAgent>,
 }
 
@@ -68,7 +72,14 @@ impl Agent {
         let machine =
             Arc::new(MachineAgent::new(config.machine_config.clone(), scheduler.clone()).await?);
 
-        let proxy = ProxyAgent::new(config.proxy_config.clone(), machine.clone()).await?;
+        let certificate = CertificateAgent::new(store.clone(), config.cert_config.clone()).await?;
+
+        let proxy = ProxyAgent::new(
+            config.proxy_config.clone(),
+            machine.clone(),
+            certificate.clone(),
+        )
+        .await?;
 
         let dns = DnsAgent::new(config.dns_config.clone(), net.clone(), repository).await?;
 
@@ -85,6 +96,7 @@ impl Agent {
             machine,
             proxy,
             dns,
+            certificate,
             logs,
         })
     }
@@ -115,6 +127,10 @@ impl Agent {
 
     pub fn dns(&self) -> Arc<DnsAgent> {
         self.dns.clone()
+    }
+
+    pub fn certificate(&self) -> Arc<CertificateAgent> {
+        self.certificate.clone()
     }
 
     pub fn logs(&self) -> Arc<LogsAgent> {
