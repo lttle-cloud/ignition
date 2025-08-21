@@ -10,7 +10,7 @@ async fn main() -> Result<()> {
 
     let args = std::env::args().collect::<Vec<String>>();
 
-    if args.len() != 3 {
+    if args.len() != 4 {
         error!("Usage: generate-token-tool <jwt-secret> <tenant> <subject>");
         return Ok(());
     }
