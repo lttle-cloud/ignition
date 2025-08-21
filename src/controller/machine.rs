@@ -25,7 +25,7 @@ use crate::{
     repository::Repository,
     resource_index::ResourceKind,
     resources::{
-        self, AdmissionCheckStatus, Convert,
+        self, Convert,
         machine::{Machine, MachinePhase, MachineStatus},
         metadata::{Metadata, Namespace},
         volume::VolumeMode,
@@ -257,17 +257,68 @@ impl Controller for MachineController {
         };
 
         let hash = machine.hash_with_updated_metadata();
+
+        let mut machine = machine.latest();
+        let reference = Reference::from_str(&machine.image)
+            .map_err(|_| anyhow!("invalid image reference: {}", machine.image))?;
+        let resolved_reference_str = reference.to_string();
+
+        let tags = machine.tags.clone().unwrap_or_default();
+
+        // remove the tag and restart the machine if it's set
+        if tags.contains(&"ignitiond.restart".to_string()) {
+            machine.tags = Some(
+                tags.into_iter()
+                    .filter(|tag| tag != "ignitiond.restart")
+                    .collect(),
+            );
+
+            ctx.repository
+                .machine(key.tenant.clone())
+                .set(machine.into())
+                .await?;
+
+            ctx.repository
+                .machine(key.tenant.clone())
+                .patch_status(key.metadata(), |status| {
+                    status.phase = MachinePhase::Restarting;
+                })
+                .await?;
+
+            if let Some(running_machine) = ctx.agent.machine().get_machine(&machine_name) {
+                running_machine.stop().await?;
+
+                ctx.agent.machine().delete_machine(&machine_name).await?;
+            };
+
+            return Ok(ReconcileNext::immediate());
+        }
+
+        if hash != status.hash {
+            // the resource has changed, let's recreate the machine
+            ctx.repository
+                .machine(key.tenant.clone())
+                .patch_status(key.metadata(), |status| {
+                    status.hash = hash;
+                    status.phase = MachinePhase::Restarting;
+                })
+                .await?;
+
+            if let Some(running_machine) = ctx.agent.machine().get_machine(&machine_name) {
+                running_machine.stop().await?;
+
+                ctx.agent.machine().delete_machine(&machine_name).await?;
+            };
+
+            return Ok(ReconcileNext::immediate());
+        }
+
         ctx.repository
             .machine(key.tenant.clone())
             .patch_status(key.metadata(), |status| {
                 status.hash = hash;
             })
             .await?;
-
-        let machine = machine.latest();
-        let reference = Reference::from_str(&machine.image)
-            .map_err(|_| anyhow!("invalid image reference: {}", machine.image))?;
-        let resolved_reference_str = reference.to_string();
 
         'phase_match: {
             match status.phase {
@@ -693,7 +744,7 @@ impl Controller for MachineController {
                     ctx.repository
                         .machine(ctx.tenant.clone())
                         .patch_status(key.metadata(), |status| {
-                            status.phase = MachinePhase::Waiting;
+                            status.phase = MachinePhase::Idle;
                         })
                         .await?;
 
@@ -729,18 +780,6 @@ impl Controller for MachineController {
             .ok();
 
         ReconcileNext::done()
-    }
-}
-
-impl AdmissionCheckStatus<MachineStatus> for Machine {
-    fn admission_check_status(&self, status: &MachineStatus) -> Result<()> {
-        let hash = self.hash_with_updated_metadata();
-
-        if hash != status.hash {
-            bail!("Machines are not allowed to change their configuration after creation");
-        }
-
-        Ok(())
     }
 }
 

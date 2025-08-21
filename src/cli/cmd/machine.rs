@@ -21,7 +21,7 @@ use meta::{summary, table};
 use ordinal::Ordinal;
 
 use crate::{
-    client::get_api_client,
+    client::{MachineClientExt, get_api_client},
     cmd::{DeleteNamespacedArgs, GetNamespacedArgs, ListNamespacedArgs},
     config::Config,
     ui::message::{message_info, message_log_stderr, message_log_stdout, message_warn},
@@ -74,6 +74,16 @@ pub struct MachineExecArgs {
     command: Vec<String>,
 }
 
+#[derive(Clone, Debug, Args)]
+pub struct RestartNamespacedArgs {
+    /// Namespace of the machine (short: --ns)
+    #[arg(long = "namespace", alias = "ns")]
+    namespace: Option<String>,
+
+    /// Name of the machine to restart
+    name: String,
+}
+
 #[table]
 pub struct MachineTable {
     #[field(name = "name")]
@@ -108,6 +118,9 @@ pub struct MachineSummary {
 
     #[field(name = "namespace")]
     namespace: Option<String>,
+
+    #[field(name = "tags")]
+    tags: Vec<String>,
 
     #[field(name = "status", cell_style = important)]
     status: String,
@@ -272,6 +285,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
         Self {
             name: machine.name,
             namespace: machine.namespace,
+            tags: machine.tags.unwrap_or_default(),
             mode,
             snapshot_strategy,
             restart_policy: machine.restart_policy.map(|r| r.to_string()),
@@ -654,6 +668,23 @@ pub async fn run_machine_delete(config: &Config, args: DeleteNamespacedArgs) -> 
         .await?;
 
     message_info(format!("Machine '{}' has been deleted.", args.name));
+
+    Ok(())
+}
+
+pub async fn run_machine_restart(config: &Config, args: RestartNamespacedArgs) -> Result<()> {
+    let api_client = get_api_client(config).await?;
+
+    let namespace = Namespace::from_value_or_default(args.namespace);
+
+    api_client
+        .machine()
+        .add_tag(
+            namespace,
+            args.name.clone(),
+            "ignitiond.restart".to_string(),
+        )
+        .await?;
 
     Ok(())
 }

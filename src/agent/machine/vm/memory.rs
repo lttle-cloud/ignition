@@ -41,17 +41,14 @@ pub async fn create_memory(machine_config: &MachineConfig) -> Result<GuestMemory
 
 fn open_memory_file(path: impl AsRef<Path>, mem_size: u64) -> Result<File> {
     let path = path.as_ref();
-    let needs_init = !path.exists();
 
     let mem_file = OpenOptions::new()
         .read(true)
         .write(true)
-        .create(needs_init)
+        .create(true)
         .open(path)?;
 
-    if needs_init {
-        mem_file.set_len(mem_size)?;
-    }
+    mem_file.set_len(mem_size)?;
 
     Ok(mem_file)
 }

@@ -12,8 +12,7 @@ use crate::resources::AdmissionRule;
 pub async fn main() {
     resource::ResourcesBuilder::new()
         .resource_with_config::<resources::machine::Machine>(|cfg| {
-            cfg.add_admission_rule(AdmissionRule::StatusCheck)
-                .add_admission_rule(AdmissionRule::BeforeSet)
+            cfg.add_admission_rule(AdmissionRule::BeforeSet)
         })
         .resource_with_config::<resources::service::Service>(|cfg| {
             cfg.add_admission_rule(AdmissionRule::BeforeSet)
