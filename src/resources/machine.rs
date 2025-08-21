@@ -182,15 +182,3 @@ impl Machine {
         hasher.finish()
     }
 }
-
-impl AdmissionCheckStatus<MachineStatus> for Machine {
-    fn admission_check_status(&self, status: &MachineStatus) -> Result<()> {
-        let hash = self.hash_with_updated_metadata();
-
-        if hash != status.hash {
-            bail!("Machines are not allowed to change their configuration after creation");
-        }
-
-        Ok(())
-    }
-}
