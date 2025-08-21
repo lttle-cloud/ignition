@@ -5,7 +5,7 @@ use hickory_resolver::{
     config::{ResolverConfig, ResolverOpts},
 };
 use instant_acme::{AuthorizationStatus, ChallengeType, OrderStatus, RetryPolicy};
-use std::time::Duration;
+use std::{net::IpAddr, time::Duration};
 use tracing::{error, info, warn};
 
 use crate::{
@@ -31,7 +31,11 @@ impl CertificateController {
         Box::new(Self::new())
     }
 
-    async fn validate_domain_dns_resolution(&self, domains: &[String]) -> Result<()> {
+    async fn validate_domain_dns_resolution(
+        &self,
+        domains: &[String],
+        external_bind_address: IpAddr,
+    ) -> Result<()> {
         let resolver =
             TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
 
@@ -43,6 +47,14 @@ impl CertificateController {
                 Ok(lookup) => {
                     let ips: Vec<_> = lookup.iter().collect();
                     info!("Domain {} resolves to: {:?}", domain, ips);
+                    if ips.contains(&external_bind_address) {
+                        info!("Domain {} resolves to external bind address", domain);
+                    } else {
+                        return Err(anyhow!(
+                            "Domain {} does not resolve to external bind address",
+                            domain
+                        ));
+                    }
                 }
                 Err(e) => {
                     warn!("DNS resolution failed for domain {}: {}", domain, e);
@@ -137,8 +149,20 @@ impl CertificateController {
                     domains
                 );
 
+                let external_bind_address = ctx
+                    .agent
+                    .proxy()
+                    .config()
+                    .clone()
+                    .external_bind_address
+                    .parse::<IpAddr>()
+                    .unwrap();
+
                 // Validate that all domains resolve via DNS before creating ACME order
-                match self.validate_domain_dns_resolution(domains).await {
+                match self
+                    .validate_domain_dns_resolution(domains, external_bind_address)
+                    .await
+                {
                     Ok(()) => {
                         info!("DNS validation successful, transitioning to PendingOrder");
                         status.state = CertificateState::PendingOrder(None);

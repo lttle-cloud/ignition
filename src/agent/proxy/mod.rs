@@ -166,6 +166,10 @@ impl ProxyAgent {
         Ok(agent)
     }
 
+    pub fn config(&self) -> &ProxyAgentConfig {
+        &self.config
+    }
+
     pub async fn set_binding(&self, binding_name: &str, binding: ProxyBinding) -> Result<()> {
         info!(
             "Setting binding '{}' with target network tag: {}",
