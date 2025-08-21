@@ -522,12 +522,13 @@ impl Controller for CertificateController {
         let cert_repo = ctx.repository.certificate(tenant.clone());
 
         // Get the certificate resource
-        let cert = cert_repo
-            .get(
-                Namespace::from_value_or_default(metadata.namespace.clone()),
-                metadata.name.clone(),
-            )?
-            .ok_or_else(|| anyhow!("Certificate not found"))?;
+        let Some(cert) = cert_repo.get(
+            Namespace::from_value_or_default(metadata.namespace.clone()),
+            metadata.name.clone(),
+        )?
+        else {
+            return Ok(ReconcileNext::done());
+        };
 
         let cert = match cert {
             Certificate::V1(v1) => v1,
