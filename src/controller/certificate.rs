@@ -3,10 +3,13 @@ use async_trait::async_trait;
 use futures_util::future::join_all;
 use hickory_resolver::{
     TokioAsyncResolver,
-    config::{ResolverConfig, ResolverOpts},
+    config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts},
 };
 use instant_acme::{AuthorizationStatus, ChallengeType, OrderStatus, RetryPolicy};
-use std::{net::IpAddr, time::Duration};
+use std::{
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 use tracing::{error, info, warn};
 
 use crate::{
@@ -34,11 +37,38 @@ impl CertificateController {
 
     async fn validate_domain_dns_resolution(
         &self,
+        ctx: &ControllerContext,
         domains: &[String],
-        external_bind_address: IpAddr,
     ) -> Result<()> {
-        let resolver =
-            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+        let external_bind_address = ctx
+            .agent
+            .proxy()
+            .config()
+            .external_bind_address
+            .parse::<IpAddr>()
+            .unwrap();
+
+        let upstream_dns_servers = ctx.agent.dns().config().upstream_dns_servers.clone();
+
+        let resolver = if upstream_dns_servers.is_empty() {
+            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default())
+        } else {
+            let mut resolver_config = ResolverConfig::new();
+            for server in upstream_dns_servers {
+                if let Ok(addr) = server.parse::<SocketAddr>() {
+                    resolver_config.add_name_server(NameServerConfig {
+                        socket_addr: addr,
+                        protocol: Protocol::Udp,
+                        tls_dns_name: None,
+                        trust_negative_responses: true,
+                        bind_addr: None,
+                    });
+                }
+            }
+
+            let opts = ResolverOpts::default();
+            TokioAsyncResolver::tokio(resolver_config, opts)
+        };
 
         let futures: Vec<_> = domains
         .iter()
@@ -158,21 +188,8 @@ impl CertificateController {
                     "Certificate in PendingDnsResolution state, validating DNS resolution for domains: {:?}",
                     domains
                 );
-
-                let external_bind_address = ctx
-                    .agent
-                    .proxy()
-                    .config()
-                    .clone()
-                    .external_bind_address
-                    .parse::<IpAddr>()
-                    .unwrap();
-
                 // Validate that all domains resolve via DNS before creating ACME order
-                match self
-                    .validate_domain_dns_resolution(domains, external_bind_address)
-                    .await
-                {
+                match self.validate_domain_dns_resolution(ctx, domains).await {
                     Ok(()) => {
                         info!("DNS validation successful, transitioning to PendingOrder");
                         status.state = CertificateState::PendingOrder(None);
