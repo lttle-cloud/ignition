@@ -1,30 +1,33 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use async_trait::async_trait;
 use tokio::{runtime, task::spawn_blocking};
 use tracing::{error, info};
 
 use crate::{
     agent::{
+        Agent,
         net::IpReservationKind,
         proxy::{
             BindingMode, ExternalBindingRouting, ExternnalBindingRoutingTlsNestedProtocol,
             ProxyBinding,
         },
+        tracker::{TrackedResourceKind, TrackedResourceOwner},
     },
     constants::{DEFAULT_NAMESPACE, DEFAULT_TRAFFIC_AWARE_INACTIVITY_TIMEOUT_SECS},
     controller::{
-        Controller, ReconcileNext,
+        AdmissionCheckBeforeDelete, AdmissionCheckBeforeSet, Controller, ReconcileNext,
         context::{ControllerContext, ControllerEvent, ControllerKey},
         machine::machine_name_from_key,
     },
+    repository::Repository,
     resource_index::ResourceKind,
     resources::{
         Convert,
-        metadata::Namespace,
+        metadata::{Metadata, Namespace},
         service::{
-            ServiceBind, ServiceBindExternalProtocol, ServiceTargetConnectionTracking,
+            Service, ServiceBind, ServiceBindExternalProtocol, ServiceTargetConnectionTracking,
             ServiceTargetProtocol,
         },
     },
@@ -262,5 +265,76 @@ impl Controller for ServiceController {
         );
 
         ReconcileNext::done()
+    }
+}
+
+#[async_trait]
+impl AdmissionCheckBeforeSet for Service {
+    async fn before_set(
+        &self,
+        tenant: String,
+        _repo: Arc<Repository>,
+        agent: Arc<Agent>,
+        _metadata: Metadata,
+    ) -> Result<()> {
+        let resource = self.latest();
+
+        let ServiceBind::External { host, port, .. } = &resource.bind else {
+            return Ok(());
+        };
+
+        let kind = TrackedResourceKind::ServiceDomain(format!(
+            "{}:{}",
+            host,
+            port.unwrap_or(resource.target.port)
+        ));
+
+        let resource_owner = TrackedResourceOwner {
+            kind: kind.clone(),
+            tenant,
+            resource_name: resource.name,
+            resource_namespace: resource.namespace.unwrap_or(DEFAULT_NAMESPACE.to_string()),
+        };
+
+        if let Some(owner) = agent
+            .tracker()
+            .get_tracked_resource_owner(kind.clone())
+            .await?
+        {
+            if owner != resource_owner {
+                bail!("Service domain and port is already bound to another resource")
+            }
+        };
+
+        agent.tracker().track_resource_owner(resource_owner).await?;
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl AdmissionCheckBeforeDelete for Service {
+    async fn before_delete(
+        &self,
+        _tenant: String,
+        _repo: Arc<Repository>,
+        agent: Arc<Agent>,
+        _metadata: Metadata,
+    ) -> Result<()> {
+        let resource = self.latest();
+
+        let ServiceBind::External { host, port, .. } = &resource.bind else {
+            return Ok(());
+        };
+
+        let kind = TrackedResourceKind::ServiceDomain(format!(
+            "{}:{}",
+            host,
+            port.unwrap_or(resource.target.port)
+        ));
+
+        agent.tracker().untrack_resource_owner(kind).await?;
+
+        Ok(())
     }
 }

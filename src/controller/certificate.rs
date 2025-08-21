@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use async_trait::async_trait;
 use futures_util::future::join_all;
 use hickory_resolver::{
@@ -8,19 +8,27 @@ use hickory_resolver::{
 use instant_acme::{AuthorizationStatus, ChallengeType, OrderStatus, RetryPolicy};
 use std::{
     net::{IpAddr, SocketAddr},
+    sync::Arc,
     time::Duration,
 };
 use tracing::{error, info, warn};
 
 use crate::{
+    agent::{
+        Agent,
+        tracker::{TrackedResourceKind, TrackedResourceOwner},
+    },
+    constants::DEFAULT_NAMESPACE,
     controller::{
-        Controller, ReconcileNext,
+        AdmissionCheckBeforeDelete, AdmissionCheckBeforeSet, Controller, ReconcileNext,
         context::{ControllerContext, ControllerEvent, ControllerKey},
     },
+    repository::Repository,
     resource_index::ResourceKind,
     resources::{
+        Convert,
         certificate::{Certificate, CertificateIssuer, CertificateState, CertificateStatus},
-        metadata::Namespace,
+        metadata::{Metadata, Namespace},
     },
 };
 
@@ -605,5 +613,75 @@ impl Controller for CertificateController {
 
         // Retry after 30 seconds
         ReconcileNext::After(Duration::from_secs(30))
+    }
+}
+
+#[async_trait]
+impl AdmissionCheckBeforeSet for Certificate {
+    async fn before_set(
+        &self,
+        tenant: String,
+        _repo: Arc<Repository>,
+        agent: Arc<Agent>,
+        _metadata: Metadata,
+    ) -> Result<()> {
+        let resource = self.latest();
+
+        let domains = resource.domains.clone();
+        let kinds = domains
+            .iter()
+            .map(|domain| TrackedResourceKind::CertificateDomain(domain.clone()))
+            .collect::<Vec<_>>();
+
+        for kind in kinds {
+            let resource_owner = TrackedResourceOwner {
+                kind: kind.clone(),
+                tenant: tenant.clone(),
+                resource_name: resource.name.clone(),
+                resource_namespace: resource
+                    .namespace
+                    .clone()
+                    .unwrap_or(DEFAULT_NAMESPACE.to_string()),
+            };
+
+            if let Some(owner) = agent
+                .tracker()
+                .get_tracked_resource_owner(kind.clone())
+                .await?
+            {
+                if owner != resource_owner {
+                    bail!("Certificate domain is already bound to another resource")
+                }
+            };
+
+            agent.tracker().track_resource_owner(resource_owner).await?;
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl AdmissionCheckBeforeDelete for Certificate {
+    async fn before_delete(
+        &self,
+        _tenant: String,
+        _repo: Arc<Repository>,
+        agent: Arc<Agent>,
+        _metadata: Metadata,
+    ) -> Result<()> {
+        let resource = self.latest();
+
+        let domains = resource.domains.clone();
+        let kinds = domains
+            .iter()
+            .map(|domain| TrackedResourceKind::CertificateDomain(domain.clone()))
+            .collect::<Vec<_>>();
+
+        for kind in kinds {
+            agent.tracker().untrack_resource_owner(kind).await?;
+        }
+
+        Ok(())
     }
 }
