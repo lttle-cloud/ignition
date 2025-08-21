@@ -22,6 +22,10 @@ path = "src/cli/main.rs"
 name = "generate-token-tool"
 path = "src/tools/generate_token.rs"
 
+[[bin]]
+name = "generate-cli-install-script"
+path = "src/tools/generate_cli_install_script.rs"
+
 [workspace]
 members = ["meta", "src/takeoff", "src/takeoff-proto", "."]
 resolver = "2"
