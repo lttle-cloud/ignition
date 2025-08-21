@@ -487,6 +487,14 @@ impl Controller for CertificateController {
                     metadata.name.clone(),
                 )))
             }
+            ControllerEvent::BringUp(ResourceKind::Certificate, metadata) => {
+                Ok(Some(ControllerKey::new(
+                    ctx.tenant,
+                    ResourceKind::Certificate,
+                    metadata.namespace.clone(),
+                    metadata.name.clone(),
+                )))
+            }
             _ => Ok(None),
         }
     }
