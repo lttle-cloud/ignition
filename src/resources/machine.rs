@@ -1,8 +1,8 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 use meta::resource;
 use std::collections::BTreeMap;
 
-use crate::resources::{AdmissionCheckStatus, Convert, FromResource, ProvideMetadata};
+use crate::resources::{Convert, FromResource, ProvideMetadata};
 
 #[resource(name = "Machine", tag = "machine")]
 mod machine {
