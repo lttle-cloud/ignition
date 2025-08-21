@@ -1,5 +1,6 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
+use futures_util::future::join_all;
 use hickory_resolver::{
     TokioAsyncResolver,
     config::{ResolverConfig, ResolverOpts},
@@ -39,32 +40,41 @@ impl CertificateController {
         let resolver =
             TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
 
-        for domain in domains {
-            info!("Checking DNS resolution for domain: {}", domain);
-
-            // Try to resolve the domain to ensure it exists
-            match resolver.lookup_ip(domain).await {
-                Ok(lookup) => {
-                    let ips: Vec<_> = lookup.iter().collect();
-                    info!("Domain {} resolves to: {:?}", domain, ips);
-                    if ips.contains(&external_bind_address) {
-                        info!("Domain {} resolves to external bind address", domain);
-                    } else {
-                        return Err(anyhow!(
-                            "Domain {} does not resolve to external bind address",
-                            domain
-                        ));
+        let futures: Vec<_> = domains
+        .iter()
+        .map(|domain| {
+            let domain = domain.clone();
+            let resolver = resolver.clone();
+            async move {
+                info!("Checking DNS resolution for domain: {}", domain);
+                match resolver.lookup_ip(&domain).await {
+                    Ok(lookup) => {
+                        let ips: Vec<_> = lookup.iter().collect();
+                        info!("Domain {} resolves to: {:?}", domain, ips);
+                        if !ips.contains(&external_bind_address) {
+                            Err(anyhow!(
+                                "Domain {} does not resolve to external bind address",
+                                domain
+                            ))
+                        } else {
+                            Ok(())
+                        }
                     }
-                }
-                Err(e) => {
-                    warn!("DNS resolution failed for domain {}: {}", domain, e);
-                    return Err(anyhow!(
+                    Err(e) => Err(anyhow!(
                         "DNS resolution failed for domain '{}': {}. Please ensure the domain exists and is properly configured.",
                         domain,
                         e
-                    ));
+                    )),
                 }
             }
+        })
+        .collect();
+
+        let results = join_all(futures).await;
+
+        // Check for any errors
+        for result in results {
+            result?;
         }
 
         info!("All domains successfully resolved via DNS");
