@@ -103,8 +103,6 @@ impl LogsAgent {
         origin: LogStreamOrigin,
         range: RangeInclusive<u128>,
     ) -> Result<Vec<LogStreamItem>> {
-        println!("querying logs {:?} {:?}", origin, range);
-
         let loki_client = self.get_loki_client()?;
         let loki_log_query = origin.loki_log_query();
 
