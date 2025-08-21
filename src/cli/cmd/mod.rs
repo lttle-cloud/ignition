@@ -1,4 +1,5 @@
 pub mod certificate;
+pub mod completion;
 pub mod deploy;
 pub mod login;
 pub mod machine;
@@ -7,10 +8,7 @@ pub mod profile;
 pub mod service;
 pub mod volume;
 
-use std::fs::File;
-
 use anyhow::Result;
-use atty::Stream;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 use ignition::resources::metadata::Namespace;
@@ -18,7 +16,6 @@ use ignition::resources::metadata::Namespace;
 use crate::{
     cmd::machine::{MachineLogsArgs, RestartNamespacedArgs},
     config::Config,
-    ui::message::{message_info, message_warn},
 };
 
 #[derive(Parser)]
@@ -167,36 +164,7 @@ pub async fn run_cli() -> Result<()> {
     let mut cmd = Cli::command();
 
     if let Command::Completions { shell } = &cli.command {
-        if let Some(file_path) = match &shell {
-            Shell::Bash => Some("/etc/bash_completion.d/lttle"),
-            Shell::Zsh => Some("~/.local/share/zsh/site-functions/lttle"),
-            _ => None,
-        } {
-            let mut file = File::create(file_path)?;
-            clap_complete::generate(shell.clone(), &mut cmd, "lttle", &mut file);
-            message_info(format!(
-                "Installed completions for {} to {}",
-                shell.to_string(),
-                file_path
-            ));
-
-            return Ok(());
-        }
-
-        if atty::is(Stream::Stdout) {
-            message_warn(format!(
-                "Automatic installation is not supported for {}. \
-                 Please check the documentation for manual installation instructions. \
-                 To get the completion script, pipe this command to your shell's specific completion file. \
-                 For example in bash: `lttle completions bash > /etc/bash_completion.d/lttle`",
-                shell.to_string()
-            ));
-
-            return Ok(());
-        }
-
-        clap_complete::generate(shell.clone(), &mut cmd, "lttle", &mut std::io::stdout());
-        return Ok(());
+        return completion::install_completion(shell.clone(), &mut cmd);
     }
 
     let config = Config::load().await?;
