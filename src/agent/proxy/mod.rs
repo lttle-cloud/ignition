@@ -36,6 +36,7 @@ use crate::agent::{
 pub struct ProxyAgentConfig {
     pub external_bind_address: String,
     pub evergreen_external_ports: Vec<u16>,
+    pub blacklisted_external_ports: Vec<u16>,
     pub default_tls_cert_path: String,
     pub default_tls_key_path: String,
 }
@@ -151,7 +152,7 @@ impl ProxyAgent {
         let tls_acceptor = Arc::new(TlsAcceptor::from(Arc::new(tls_server_config)));
 
         let agent = Arc::new(Self {
-            config,
+            config: config.clone(),
             machine_agent,
             bindings: Arc::new(HashMap::new()),
             servers: HashMap::new(),
@@ -161,6 +162,26 @@ impl ProxyAgent {
             tls_acceptor,
             certificate_agent,
         });
+
+        for port in config.evergreen_external_ports {
+            info!("Starting server for evergreen port {}", port);
+            agent.start_server(
+                &ProxyBinding {
+                    target_network_tag: format!("internal-evergreen-{}", port),
+                    target_port: port,
+                    mode: BindingMode::External {
+                        port,
+                        routing: ExternalBindingRouting::HttpHostHeader {
+                            host: format!("evergreen-{}.local", port),
+                        },
+                    },
+                    inactivity_timeout: None,
+                },
+                (config.external_bind_address.clone(), port).into(),
+            );
+        }
+
+        agent.evaluate_bindings().await?;
 
         info!("Proxy agent created successfully");
         Ok(agent)
@@ -217,17 +238,40 @@ impl ProxyAgent {
     async fn evaluate_bindings(&self) -> Result<()> {
         info!("Evaluating proxy bindings");
 
+        let evergreen_server_keys = self
+            .config
+            .evergreen_external_ports
+            .iter()
+            .map(|port| (self.config.external_bind_address.clone(), *port))
+            .collect::<Vec<(String, u16)>>();
+
+        let blacklisted_server_keys = self
+            .config
+            .blacklisted_external_ports
+            .iter()
+            .map(|port| (self.config.external_bind_address.clone(), *port))
+            .collect::<Vec<(String, u16)>>();
+
         let mut server_keys_set = HashSet::new();
         let bindings = self.bindings.pin();
 
         for (_, binding) in bindings.iter() {
             let server_key = binding.proxy_server_key(&self.config);
+            if blacklisted_server_keys.contains(&server_key) {
+                info!(
+                    "Skipping blacklisted server key: {:?} from binding: {}",
+                    server_key, binding.target_network_tag
+                );
+                continue;
+            }
+
             server_keys_set.insert(server_key);
         }
 
         let servers = self.servers.pin();
         for (server_key, _) in servers.iter() {
-            if !server_keys_set.contains(server_key) {
+            if !server_keys_set.contains(server_key) && !evergreen_server_keys.contains(server_key)
+            {
                 info!(
                     "Stopping server for {}:{} (no longer needed)",
                     server_key.0, server_key.1
@@ -240,60 +284,67 @@ impl ProxyAgent {
         }
 
         for (_, binding) in bindings.iter() {
-            let server_key = binding.proxy_server_key(&self.config);
-            if !servers.contains_key(&server_key) {
-                info!("Starting new server for {}:{}", server_key.0, server_key.1);
-
-                let proxy_mode = match &binding.mode {
-                    BindingMode::Internal { .. } => ProxyServerMode::Internal,
-                    BindingMode::External { .. } => ProxyServerMode::External,
-                };
-
-                let task_server_key = server_key.clone();
-                let task_machine_agent = self.machine_agent.clone();
-                let task_bindings = self.bindings.clone();
-                let task_tls_acceptor = self.tls_acceptor.clone();
-                let task_binding = binding.clone();
-                let task_certificate_agent = self.certificate_agent.clone();
-
-                let task = match proxy_mode {
-                    ProxyServerMode::Internal => spawn(async move {
-                        internal_listener(
-                            format!("{}:{}", task_server_key.0, task_server_key.1),
-                            task_machine_agent,
-                            task_binding,
-                        )
-                        .await?;
-
-                        Ok(())
-                    }),
-                    ProxyServerMode::External => spawn(async move {
-                        external_listener(
-                            format!("{}:{}", task_server_key.0, task_server_key.1),
-                            task_machine_agent,
-                            task_bindings,
-                            task_tls_acceptor,
-                            task_certificate_agent,
-                        )
-                        .await?;
-
-                        Ok(())
-                    }),
-                };
-
-                let server = ProxyServer {
-                    address: server_key.0.clone(),
-                    port: server_key.1,
-                    task,
-                    proxy_mode,
-                };
-
-                servers.insert(server_key, server);
+            let server_key: (String, u16) = binding.proxy_server_key(&self.config);
+            if !servers.contains_key(&server_key) && !blacklisted_server_keys.contains(&server_key)
+            {
+                self.start_server(binding, server_key);
             }
         }
 
         info!("Binding evaluation completed");
         Ok(())
+    }
+
+    fn start_server(&self, binding: &ProxyBinding, server_key: (String, u16)) {
+        let servers = self.servers.pin();
+
+        info!("Starting new server for {}:{}", server_key.0, server_key.1);
+
+        let proxy_mode = match &binding.mode {
+            BindingMode::Internal { .. } => ProxyServerMode::Internal,
+            BindingMode::External { .. } => ProxyServerMode::External,
+        };
+
+        let task_server_key = server_key.clone();
+        let task_machine_agent = self.machine_agent.clone();
+        let task_bindings = self.bindings.clone();
+        let task_tls_acceptor = self.tls_acceptor.clone();
+        let task_binding = binding.clone();
+        let task_certificate_agent = self.certificate_agent.clone();
+
+        let task = match proxy_mode {
+            ProxyServerMode::Internal => spawn(async move {
+                internal_listener(
+                    format!("{}:{}", task_server_key.0, task_server_key.1),
+                    task_machine_agent,
+                    task_binding,
+                )
+                .await?;
+
+                Ok(())
+            }),
+            ProxyServerMode::External => spawn(async move {
+                external_listener(
+                    format!("{}:{}", task_server_key.0, task_server_key.1),
+                    task_machine_agent,
+                    task_bindings,
+                    task_tls_acceptor,
+                    task_certificate_agent,
+                )
+                .await?;
+
+                Ok(())
+            }),
+        };
+
+        let server = ProxyServer {
+            address: server_key.0.clone(),
+            port: server_key.1,
+            task,
+            proxy_mode,
+        };
+
+        servers.insert(server_key, server);
     }
 }
 
@@ -586,8 +637,12 @@ fn find_http_binding(
     bindings
         .values()
         .find(|b| match &b.mode {
-            BindingMode::External { routing, .. } => match routing {
-                ExternalBindingRouting::HttpHostHeader { host } if *host == target_host => true,
+            BindingMode::External { routing, port } => match routing {
+                ExternalBindingRouting::HttpHostHeader { host }
+                    if *host == target_host || format!("{}:{}", host, port) == target_host =>
+                {
+                    true
+                }
                 _ => false,
             },
             _ => false,
