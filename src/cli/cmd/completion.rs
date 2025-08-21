@@ -1,7 +1,4 @@
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use atty::Stream;
@@ -22,20 +19,29 @@ pub fn install_completion(shell: Shell, cmd: &mut Command) -> Result<()> {
             break 'auto_install false;
         };
 
-        let file_path = outdir.join("lttle");
-
-        let Ok(mut file) = File::create(&file_path) else {
+        let Ok(path) = clap_complete::generate_to(shell.clone(), cmd, "lttle", &outdir) else {
             break 'auto_install false;
         };
 
-        clap_complete::generate(shell.clone(), cmd, "lttle", &mut file);
         message_info(format!(
             "Installed completions for {} to {}",
             shell.to_string(),
-            file_path.display()
+            path.display()
         ));
 
-        true
+        if shell == Shell::Zsh {
+            // If it's not a known Homebrew path, user may need to add to fpath
+            if !path.starts_with("/opt/homebrew/") && !path.starts_with("/usr/local/") {
+                message_warn(format!(
+                    "Add this to your ~/.zshrc if you haven't:\n\
+                    fpath=({} $fpath)\n\
+                    autoload -Uz compinit; compinit",
+                    outdir.display()
+                ));
+            }
+        }
+
+        return Ok(());
     };
 
     if !auto_install && atty::is(Stream::Stdout) {
