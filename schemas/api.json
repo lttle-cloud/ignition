@@ -768,6 +768,12 @@
           "items": {
             "type": "string"
           }
+        },
+        "auto_provider_name": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

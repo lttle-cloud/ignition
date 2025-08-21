@@ -137,6 +137,20 @@ impl CertificateController {
             return Ok(ReconcileNext::Immediate);
         }
 
+        if status.auto_provider_name != Some(provider.to_string()) {
+            info!(
+                "Provider changed from {} to {}, resetting certificate",
+                status
+                    .auto_provider_name
+                    .as_ref()
+                    .unwrap_or(&"".to_string()),
+                provider
+            );
+            status.state = CertificateState::Pending;
+            status.auto_provider_name = Some(provider.to_string());
+            return Ok(ReconcileNext::Immediate);
+        }
+
         // State machine for auto certificate lifecycle
         match &status.state {
             CertificateState::Pending => {
@@ -514,6 +528,7 @@ impl Controller for CertificateController {
                     last_failure_reason: None,
                     renewal_time: None,
                     domains: cert.domains.clone(),
+                    auto_provider_name: None,
                 });
 
         // Handle based on issuer type and current state

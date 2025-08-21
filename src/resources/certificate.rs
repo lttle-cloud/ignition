@@ -53,6 +53,7 @@ mod certificate {
         last_failure_reason: Option<String>,
         renewal_time: Option<String>,
         domains: Vec<String>,
+        auto_provider_name: Option<String>,
     }
 
     #[schema]
@@ -105,6 +106,10 @@ impl FromResource<Certificate> for CertificateStatus {
             last_failure_reason: None,
             renewal_time: None,
             domains: certificate.domains,
+            auto_provider_name: match certificate.issuer {
+                CertificateIssuer::Auto { provider, .. } => Some(provider),
+                _ => None,
+            },
         })
     }
 }
