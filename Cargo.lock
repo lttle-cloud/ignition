@@ -1675,6 +1675,7 @@ dependencies = [
  "hickory-proto",
  "hickory-resolver",
  "hickory-server",
+ "home",
  "http-body-util",
  "httparse",
  "humantime",
