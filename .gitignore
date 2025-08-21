@@ -1,6 +1,7 @@
 /target
 /data
 /certs
+/dist
 
 ignition.toml
 .claude

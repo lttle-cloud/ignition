@@ -19,5 +19,17 @@ build-takeoff:
 	cd target/cpio && find . | cpio -o --format=newc > ../takeoff.cpio
 	sudo rm -rf target/cpio
 
+release-cli-linux:
+	cargo build --release --bin lttle
+	strip target/release/lttle
+	mkdir -p dist
+	mv target/release/lttle dist/lttle_linux_x86_64
+
+release-cli-darwin:
+	cargo build --release --bin lttle
+	strip target/release/lttle
+	mkdir -p dist
+	mv target/release/lttle dist/lttle_darwin_aarch64
+
 clean:
 	cargo clean
