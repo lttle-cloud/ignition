@@ -527,6 +527,7 @@ impl Controller for CertificateController {
             metadata.name.clone(),
         )?
         else {
+            cert_repo.delete_status(metadata.clone()).await.ok(); // delete status if resource is deleted
             return Ok(ReconcileNext::done());
         };
 
