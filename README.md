@@ -61,6 +61,16 @@ The CLI also comes with completions for your shell. To get further instructions 
 lttle completions --help
 ```
 
+The resource authoring experience heavily relies on YAML. Given that we don't have any docs yet, we encourage you to setup the YAML LSP for your editor of choice and add our resources schema to it.
+
+For example, in VSCode, you can install the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) and add the following to your `settings.json`:
+```json
+"yaml.schemas": {
+  "https://raw.githubusercontent.com/lttle-cloud/ignition/refs/heads/master/schemas/resources.json": "*.yaml"
+}
+```
+Make sure that the path is correct for your workspace (`*.yaml` matches all the YAML files in the root of the workspace).
+
 ## After installation
 
 After installing the CLI, you will have to authenticate with an `ignitiond` server. You can do this by running:
