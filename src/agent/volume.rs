@@ -61,20 +61,24 @@ impl VolumeAgent {
     }
 
     pub async fn volume_create_empty_sparse(&self, sparse_size: u64) -> Result<Volume> {
+        // at least 16MB
+        let size = sparse_size.max(16 * 1024 * 1024);
+        let size = (size as f64 * 1.2).ceil() as u64;
+
         let id = uuid::Uuid::new_v4().to_string();
         let path = self.base_path.join(&id).to_string_lossy().to_string();
-        fs::create_sparse_file(&path, sparse_size).await?;
+        fs::create_sparse_file(&path, size).await?;
 
         let ov_path = self
             .base_path
             .join(format!("{}.ov", id))
             .to_string_lossy()
             .to_string();
-        fs::create_sparse_file(&ov_path, sparse_size).await?;
+        fs::create_sparse_file(&ov_path, size).await?;
 
         let volume = Volume {
             id: id.clone(),
-            sparse_size,
+            sparse_size: size,
             path,
             ov_path,
             cloned_from: None,
