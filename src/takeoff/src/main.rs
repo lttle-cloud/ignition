@@ -142,6 +142,19 @@ async fn takeoff() -> Result<()> {
 
     let working_dir = config.working_dir.clone().unwrap_or("/".to_string());
 
+    if cmd.is_empty() {
+        let mut rec = cmd_logger.create_log_record();
+        rec.set_severity_number(Severity::Error);
+        rec.set_severity_text("ERROR");
+        rec.add_attribute("log.stream", "stderr");
+        rec.set_body(AnyValue::String("no entrypoint/cmd provided".into()));
+        rec.add_attribute("process.status.success", false);
+        rec.add_attribute("process.exit_code", 1i64);
+        cmd_logger.emit(rec);
+        guest_manager.set_exit_code(1);
+        return Ok(());
+    }
+
     let mut child = Command::new(cmd[0].clone())
         .args(&cmd[1..])
         .envs(envs.clone())
