@@ -811,6 +811,7 @@ impl Controller for MachineController {
 impl AdmissionCheckBeforeSet for Machine {
     async fn before_set(
         &self,
+        _before: Option<&Self>,
         tenant: String,
         repo: Arc<Repository>,
         _agent: Arc<Agent>,
