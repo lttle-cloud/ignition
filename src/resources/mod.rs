@@ -82,8 +82,6 @@ pub struct ResourceBuildInfo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AdmissionRule {
-    /// Only allow create through PATCH, disallow update through PATCH.
-    DissalowPatchUpdate,
     /// Custom admission status check
     StatusCheck,
     /// Before create/patch
