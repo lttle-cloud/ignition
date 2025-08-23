@@ -17,9 +17,15 @@ pub fn generate_version_struct(
         panic!("struct must have named fields");
     };
 
-    named.insert(0, syn::parse_quote!(name: String));
+    named.insert(
+        0,
+        syn::parse_quote!(#[serde(deserialize_with = "super::de_trim_non_empty_string")] name: String),
+    );
     if args.namespaced {
-        named.insert(0, syn::parse_quote!(namespace: Option<String>));
+        named.insert(
+            0,
+            syn::parse_quote!(#[serde(deserialize_with = "super::de_opt_trim_non_empty_string")] namespace: Option<String>),
+        );
     }
     named.insert(0, syn::parse_quote!(tags: Option<Vec<String>>));
 
