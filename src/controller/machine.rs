@@ -138,6 +138,48 @@ impl Controller for MachineController {
 
         let Some((machine, status)) = ('actual_vs_desired: {
             match (running_machine, stored_machine) {
+                (Some(running_machine), Some((stored_machine, status)))
+                    if status.phase == MachinePhase::Restarting =>
+                {
+                    let original_status = status.clone();
+
+                    info!(
+                        "cleaning up machine {} with status: {:?}",
+                        machine_name, status
+                    );
+
+                    // we have a running machine but no stored machine. time to clean up
+                    running_machine.stop().await?;
+                    ctx.agent.machine().delete_machine(&machine_name).await?;
+
+                    // delete tap device
+                    if let Some(tap_name) = status.machine_tap {
+                        ctx.agent.net().device_delete(&tap_name).await?;
+                    }
+
+                    // delete associated ip reservation
+                    if let Some(ip) = status.machine_ip {
+                        ctx.agent
+                            .net()
+                            .ip_reservation_delete(IpReservationKind::VM, &ip)?;
+                    }
+
+                    // delete image volume
+                    if let Some(volume_id) = status.machine_image_volume_id {
+                        ctx.agent.volume().volume_delete(&volume_id).await?;
+                    }
+
+                    ctx.repository
+                        .machine(ctx.tenant.clone())
+                        .patch_status(key.metadata(), |status| {
+                            status.machine_ip = None;
+                            status.machine_tap = None;
+                            status.machine_image_volume_id = None;
+                        })
+                        .await?;
+
+                    Some((stored_machine, original_status))
+                }
                 (Some(running_machine), Some((stored_machine, status))) => {
                     // we have a running machine and a stored machine
                     let current_state = running_machine.get_state().await;
@@ -282,33 +324,23 @@ impl Controller for MachineController {
                 .machine(key.tenant.clone())
                 .patch_status(key.metadata(), |status| {
                     status.phase = MachinePhase::Restarting;
+                    status.last_restarting_time_us = Some(Utc::now().timestamp_millis() as u128);
                 })
                 .await?;
-
-            if let Some(running_machine) = ctx.agent.machine().get_machine(&machine_name) {
-                running_machine.stop().await?;
-
-                ctx.agent.machine().delete_machine(&machine_name).await?;
-            };
 
             return Ok(ReconcileNext::immediate());
         }
 
-        if hash != status.hash {
+        if hash != status.hash && status.hash != 0 {
             // the resource has changed, let's recreate the machine
             ctx.repository
                 .machine(key.tenant.clone())
                 .patch_status(key.metadata(), |status| {
                     status.hash = hash;
                     status.phase = MachinePhase::Restarting;
+                    status.last_restarting_time_us = Some(Utc::now().timestamp_millis() as u128);
                 })
                 .await?;
-
-            if let Some(running_machine) = ctx.agent.machine().get_machine(&machine_name) {
-                running_machine.stop().await?;
-
-                ctx.agent.machine().delete_machine(&machine_name).await?;
-            };
 
             return Ok(ReconcileNext::immediate());
         }
@@ -710,8 +742,6 @@ impl Controller for MachineController {
                         break 'phase_match;
                     }
 
-                    ctx.agent.machine().delete_machine(&machine_name).await?;
-
                     ctx.repository
                         .machine(ctx.tenant.clone())
                         .patch_status(key.metadata(), |status| {
@@ -724,12 +754,6 @@ impl Controller for MachineController {
                     return Ok(ReconcileNext::immediate());
                 }
                 MachinePhase::Restarting => {
-                    if let Some(running_machine) = ctx.agent.machine().get_machine(&machine_name) {
-                        running_machine.stop().await?;
-
-                        ctx.agent.machine().delete_machine(&machine_name).await?;
-                    };
-
                     if let Some(last_restarting_time_us) = status.last_restarting_time_us {
                         let now = Utc::now().timestamp_millis() as u128;
                         let duration =
