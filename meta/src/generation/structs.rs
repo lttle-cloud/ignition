@@ -24,7 +24,7 @@ pub fn generate_version_struct(
     if args.namespaced {
         named.insert(
             0,
-            syn::parse_quote!(#[serde(deserialize_with = "super::de_opt_trim_non_empty_string")] namespace: Option<String>),
+            syn::parse_quote!(#[serde(default, deserialize_with = "super::de_opt_trim_non_empty_string")] namespace: Option<String>),
         );
     }
     named.insert(0, syn::parse_quote!(tags: Option<Vec<String>>));

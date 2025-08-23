@@ -22,7 +22,7 @@ mod certificate {
             /// Optional email override. If specified, takes precedence over provider's default-email.
             /// If not specified, falls back to provider's default-email from config.
             /// Validation should error if neither this nor provider config has an email.
-            #[serde(deserialize_with = "super::de_opt_trim_non_empty_string")]
+            #[serde(default, deserialize_with = "super::de_opt_trim_non_empty_string")]
             email: Option<String>,
             /// Optional renewal configuration. Uses sensible defaults if not specified.
             renewal: Option<CertificateRenewalConfig>,
@@ -41,6 +41,7 @@ mod certificate {
             key_path: String,
             #[serde(
                 rename = "ca-path",
+                default,
                 deserialize_with = "super::de_opt_trim_non_empty_string"
             )]
             ca_path: Option<String>,

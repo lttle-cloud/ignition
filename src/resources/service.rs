@@ -16,7 +16,7 @@ mod service {
     struct ServiceTarget {
         #[serde(deserialize_with = "super::de_trim_non_empty_string")]
         name: String,
-        #[serde(deserialize_with = "super::de_opt_trim_non_empty_string")]
+        #[serde(default, deserialize_with = "super::de_opt_trim_non_empty_string")]
         namespace: Option<String>,
         port: u16,
         protocol: ServiceTargetProtocol,

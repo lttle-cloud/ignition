@@ -66,7 +66,7 @@ mod machine {
     struct MachineVolumeBinding {
         #[serde(deserialize_with = "super::de_trim_non_empty_string")]
         name: String,
-        #[serde(deserialize_with = "super::de_opt_trim_non_empty_string")]
+        #[serde(default, deserialize_with = "super::de_opt_trim_non_empty_string")]
         namespace: Option<String>,
         #[serde(deserialize_with = "super::de_trim_non_empty_string")]
         path: String,
@@ -76,7 +76,7 @@ mod machine {
     struct MachineDependency {
         #[serde(deserialize_with = "super::de_trim_non_empty_string")]
         name: String,
-        #[serde(deserialize_with = "super::de_opt_trim_non_empty_string")]
+        #[serde(default, deserialize_with = "super::de_opt_trim_non_empty_string")]
         namespace: Option<String>,
     }
 

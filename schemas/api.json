@@ -586,7 +586,8 @@
                   "type": [
                     "string",
                     "null"
-                  ]
+                  ],
+                  "default": null
                 },
                 "renewal": {
                   "description": "Optional renewal configuration. Uses sensible defaults if not specified.",
@@ -626,7 +627,8 @@
                   "type": [
                     "string",
                     "null"
-                  ]
+                  ],
+                  "default": null
                 }
               },
               "required": [
@@ -797,7 +799,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
         "name": {
           "type": "string"
@@ -1004,7 +1007,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         }
       },
       "required": [
@@ -1258,7 +1262,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
         "name": {
           "type": "string"
@@ -1342,7 +1347,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
         "path": {
           "type": "string"
@@ -1514,7 +1520,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
         "port": {
           "type": "integer",
@@ -1597,7 +1604,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
         "name": {
           "type": "string"
@@ -1691,7 +1699,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
         "name": {
           "type": "string"

@@ -185,11 +185,12 @@ pub fn de_opt_trim_non_empty_string<'de, D>(
 where
     D: Deserializer<'de>,
 {
+    println!("de_opt_trim_non_empty_string");
     let s = Option::<String>::deserialize(deserializer)?;
     if let Some(s) = s {
         let s = s.trim().to_string();
         if s.is_empty() {
-            return Ok(None);
+            return Err(serde::de::Error::custom("string cannot be empty"));
         }
         Ok(Some(s))
     } else {
