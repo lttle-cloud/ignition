@@ -19,6 +19,9 @@ build-takeoff:
 	cd target/cpio && find . | cpio -o --format=newc > ../takeoff.cpio
 	sudo rm -rf target/cpio
 
+release-takeoff: build-takeoff
+	cp target/takeoff.cpio dist/takeoff.cpio
+
 release-ignitiond-linux:
 	cargo build --bin ignitiond --features daemon
 	cp target/debug/ignitiond dist/ignitiond
