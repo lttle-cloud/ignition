@@ -14,7 +14,9 @@ mod service {
 
     #[schema]
     struct ServiceTarget {
+        #[serde(deserialize_with = "super::de_trim_non_empty_string")]
         name: String,
+        #[serde(deserialize_with = "super::de_opt_trim_non_empty_string")]
         namespace: Option<String>,
         port: u16,
         protocol: ServiceTargetProtocol,
@@ -50,12 +52,11 @@ mod service {
         },
         #[serde(rename = "external")]
         External {
+            #[serde(deserialize_with = "super::de_trim_non_empty_string")]
             host: String,
             /// If not provided, the port will be inferred from protocol or target port.
             port: Option<u16>,
             protocol: ServiceBindExternalProtocol,
-            /// If not provided, the default certificate will be served.
-            certificate: Option<ServiceBindExternalCertificate>,
         },
     }
 
@@ -69,12 +70,6 @@ mod service {
         Tls,
     }
 
-    #[schema]
-    struct ServiceBindExternalCertificate {
-        name: String,
-        namespace: Option<String>,
-    }
-
     #[status]
     struct Status {
         service_ip: Option<String>,
@@ -84,7 +79,7 @@ mod service {
 
 impl FromResource<Service> for ServiceStatus {
     fn from_resource(_resource: Service) -> Result<Self> {
-        Ok(ServiceStatus { 
+        Ok(ServiceStatus {
             service_ip: None,
             internal_dns_hostname: None,
         })

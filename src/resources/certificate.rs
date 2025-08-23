@@ -7,6 +7,7 @@ use crate::resources::{Convert, FromResource};
 mod certificate {
     #[version(stored + served + latest)]
     struct V1 {
+        #[serde(deserialize_with = "super::de_vec_trim_non_empty_string")]
         domains: Vec<String>,
         issuer: CertificateIssuer,
     }
@@ -16,21 +17,32 @@ mod certificate {
         #[serde(rename = "auto")]
         Auto {
             /// References a provider name from ignition.toml [[cert-provider]] config
+            #[serde(deserialize_with = "super::de_trim_non_empty_string")]
             provider: String,
             /// Optional email override. If specified, takes precedence over provider's default-email.
             /// If not specified, falls back to provider's default-email from config.
             /// Validation should error if neither this nor provider config has an email.
+            #[serde(deserialize_with = "super::de_opt_trim_non_empty_string")]
             email: Option<String>,
             /// Optional renewal configuration. Uses sensible defaults if not specified.
             renewal: Option<CertificateRenewalConfig>,
         },
         #[serde(rename = "manual")]
         Manual {
-            #[serde(rename = "cert-path")]
+            #[serde(
+                rename = "cert-path",
+                deserialize_with = "super::de_trim_non_empty_string"
+            )]
             cert_path: String,
-            #[serde(rename = "key-path")]
+            #[serde(
+                rename = "key-path",
+                deserialize_with = "super::de_trim_non_empty_string"
+            )]
             key_path: String,
-            #[serde(rename = "ca-path")]
+            #[serde(
+                rename = "ca-path",
+                deserialize_with = "super::de_opt_trim_non_empty_string"
+            )]
             ca_path: Option<String>,
         },
     }

@@ -179,7 +179,6 @@ impl Controller for ServiceController {
                 host,
                 port,
                 protocol,
-                certificate: _certificate,
             } => {
                 let port = port.unwrap_or(protocol.default_port(&service.target));
 

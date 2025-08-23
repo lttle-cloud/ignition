@@ -199,6 +199,17 @@ where
     }
 }
 
+pub fn de_vec_trim_non_empty_string<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = Vec::<String>::deserialize(deserializer)?;
+    let s = s.iter().map(|x| x.trim().to_string()).collect();
+    Ok(s)
+}
+
 pub trait AdmissionCheckStatus<TStatus>
 where
     Self: Sized,

@@ -1464,17 +1464,6 @@
                 },
                 "protocol": {
                   "$ref": "#/$defs/ServiceBindExternalProtocol"
-                },
-                "certificate": {
-                  "description": "If not provided, the default certificate will be served.",
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/ServiceBindExternalCertificate"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
                 }
               },
               "required": [
@@ -1488,23 +1477,6 @@
           ],
           "additionalProperties": false
         }
-      ]
-    },
-    "ServiceBindExternalCertificate": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "namespace": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "name"
       ]
     },
     "ServiceBindExternalProtocol": {
