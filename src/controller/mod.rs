@@ -61,6 +61,7 @@ pub trait Controller: Send + Sync {
 pub trait AdmissionCheckBeforeSet {
     async fn before_set(
         &self,
+        before: Option<&Self>,
         tenant: String,
         repo: Arc<Repository>,
         agent: Arc<Agent>,

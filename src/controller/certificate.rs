@@ -622,6 +622,7 @@ impl Controller for CertificateController {
 impl AdmissionCheckBeforeSet for Certificate {
     async fn before_set(
         &self,
+        before: Option<&Self>,
         tenant: String,
         _repo: Arc<Repository>,
         agent: Arc<Agent>,
@@ -630,6 +631,23 @@ impl AdmissionCheckBeforeSet for Certificate {
         let resource = self.latest();
 
         let domains = resource.domains.clone();
+
+        if let Some(before) = before {
+            let before = before.latest();
+            // figure out which domains were before and not in the new domains
+            let old_domains = before.domains.clone();
+            let new_domains = domains.clone();
+            let old_domains = old_domains
+                .iter()
+                .filter(|domain| !new_domains.contains(domain))
+                .collect::<Vec<_>>();
+
+            for domain in old_domains {
+                let kind = TrackedResourceKind::CertificateDomain(domain.clone());
+                agent.tracker().untrack_resource_owner(kind).await?;
+            }
+        }
+
         let kinds = domains
             .iter()
             .map(|domain| TrackedResourceKind::CertificateDomain(domain.clone()))

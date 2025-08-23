@@ -179,7 +179,6 @@ impl Controller for ServiceController {
                 host,
                 port,
                 protocol,
-                certificate: _certificate,
             } => {
                 let port = port.unwrap_or(protocol.default_port(&service.target));
 
@@ -272,6 +271,7 @@ impl Controller for ServiceController {
 impl AdmissionCheckBeforeSet for Service {
     async fn before_set(
         &self,
+        before: Option<&Self>,
         tenant: String,
         _repo: Arc<Repository>,
         agent: Arc<Agent>,
@@ -279,15 +279,38 @@ impl AdmissionCheckBeforeSet for Service {
     ) -> Result<()> {
         let resource = self.latest();
 
-        let ServiceBind::External { host, port, .. } = &resource.bind else {
+        let ServiceBind::External {
+            host,
+            port,
+            protocol,
+        } = &resource.bind
+        else {
             return Ok(());
         };
 
-        let kind = TrackedResourceKind::ServiceDomain(format!(
-            "{}:{}",
-            host,
-            port.unwrap_or(resource.target.port)
-        ));
+        if let Some(before) = before {
+            let before = before.latest();
+            if let ServiceBind::External {
+                host: before_host,
+                port: before_port,
+                protocol: before_protocol,
+            } = &before.bind
+            {
+                if before_host != host || before_port != port {
+                    let before_port =
+                        before_port.unwrap_or(before_protocol.default_port(&before.target));
+
+                    let before_kind = TrackedResourceKind::ServiceDomain(format!(
+                        "{}:{}",
+                        before_host, before_port
+                    ));
+                    agent.tracker().untrack_resource_owner(before_kind).await?;
+                }
+            }
+        }
+
+        let port = port.unwrap_or(protocol.default_port(&resource.target));
+        let kind = TrackedResourceKind::ServiceDomain(format!("{}:{}", host, port));
 
         let resource_owner = TrackedResourceOwner {
             kind: kind.clone(),
@@ -323,15 +346,17 @@ impl AdmissionCheckBeforeDelete for Service {
     ) -> Result<()> {
         let resource = self.latest();
 
-        let ServiceBind::External { host, port, .. } = &resource.bind else {
+        let ServiceBind::External {
+            host,
+            port,
+            protocol,
+        } = &resource.bind
+        else {
             return Ok(());
         };
 
-        let kind = TrackedResourceKind::ServiceDomain(format!(
-            "{}:{}",
-            host,
-            port.unwrap_or(resource.target.port)
-        ));
+        let port = port.unwrap_or(protocol.default_port(&resource.target));
+        let kind = TrackedResourceKind::ServiceDomain(format!("{}:{}", host, port));
 
         agent.tracker().untrack_resource_owner(kind).await?;
 

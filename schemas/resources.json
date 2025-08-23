@@ -108,6 +108,7 @@
             "auto": {
               "properties": {
                 "email": {
+                  "default": null,
                   "description": "Optional email override. If specified, takes precedence over provider's default-email.\nIf not specified, falls back to provider's default-email from config.\nValidation should error if neither this nor provider config has an email.",
                   "type": [
                     "string",
@@ -147,6 +148,7 @@
             "manual": {
               "properties": {
                 "ca-path": {
+                  "default": null,
                   "type": [
                     "string",
                     "null"
@@ -279,6 +281,7 @@
           "type": "string"
         },
         "namespace": {
+          "default": null,
           "type": [
             "string",
             "null"
@@ -307,6 +310,7 @@
           "type": "string"
         },
         "namespace": {
+          "default": null,
           "type": [
             "string",
             "null"
@@ -511,6 +515,7 @@
           "type": "string"
         },
         "namespace": {
+          "default": null,
           "type": [
             "string",
             "null"
@@ -561,6 +566,7 @@
           "type": "string"
         },
         "namespace": {
+          "default": null,
           "type": [
             "string",
             "null"
@@ -607,17 +613,6 @@
           "properties": {
             "external": {
               "properties": {
-                "certificate": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/ServiceBindExternalCertificate"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "description": "If not provided, the default certificate will be served."
-                },
                 "host": {
                   "type": "string"
                 },
@@ -649,23 +644,6 @@
         }
       ]
     },
-    "ServiceBindExternalCertificate": {
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "namespace": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "type": "object"
-    },
     "ServiceBindExternalProtocol": {
       "enum": [
         "http",
@@ -690,6 +668,7 @@
           "type": "string"
         },
         "namespace": {
+          "default": null,
           "type": [
             "string",
             "null"
@@ -760,6 +739,7 @@
           "type": "string"
         },
         "namespace": {
+          "default": null,
           "type": [
             "string",
             "null"
@@ -801,6 +781,7 @@
           "type": "string"
         },
         "namespace": {
+          "default": null,
           "type": [
             "string",
             "null"
