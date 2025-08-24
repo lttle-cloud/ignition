@@ -35,11 +35,17 @@ impl Summary {
     pub fn print(&self) {
         let terminal_width = terminal_size().map(|(w, _)| w.0).unwrap_or(DEFAULT_WIDTH);
 
-        let names_max_width = self.rows.iter().map(|r| r.name.len()).max().unwrap_or(0) + 2;
+        let names_max_width = self
+            .rows
+            .iter()
+            .map(|r| r.name.chars().count())
+            .max()
+            .unwrap_or(0)
+            + 2;
         let values_max_width = terminal_width as usize - names_max_width - COLUMN_GAP - END_PADDING;
 
         for row in &self.rows {
-            let front_padding = " ".repeat(names_max_width - row.name.len());
+            let front_padding = " ".repeat(names_max_width - row.name.chars().count());
             print!("{}", front_padding);
 
             print!("{}: ", Style::new().bold().paint(row.name.clone()));
@@ -47,8 +53,9 @@ impl Summary {
             // print each value, start a new line after each and pad to the right
             for (i, value) in row.value.iter().enumerate() {
                 let value_style = row.cell_style.get_style();
-                let value = if value.len() > values_max_width {
-                    format!("{}...", value_style.paint(&value[..values_max_width - 3]))
+                let value = if value.chars().count() > values_max_width {
+                    let truncated: String = value.chars().take(values_max_width - 3).collect();
+                    format!("{}...", value_style.paint(truncated))
                 } else {
                     value_style.paint(value).to_string()
                 };

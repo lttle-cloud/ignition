@@ -38,14 +38,14 @@ impl Table {
         let mut column_widths = self
             .headers
             .iter()
-            .map(|h| h.text.len())
+            .map(|h| h.text.chars().count())
             .collect::<Vec<_>>();
         for row in &self.rows {
             for (i, cell) in row.iter().enumerate() {
                 let max_width = self.headers[i].max_width.unwrap_or(usize::MAX);
                 let min_width = self.headers[i].min_width.unwrap_or(0);
                 column_widths[i] = column_widths[i]
-                    .max(cell.as_ref().map(|c| c.len()).unwrap_or(0))
+                    .max(cell.as_ref().map(|c| c.chars().count()).unwrap_or(0))
                     .min(max_width)
                     .max(min_width);
             }
@@ -74,7 +74,7 @@ impl Table {
             let mut shrinked_count = 0;
             for index in max_width_indices.iter() {
                 let new_width = column_widths[*index] - 1;
-                if new_width < self.headers[*index].text.len() {
+                if new_width < self.headers[*index].text.chars().count() {
                     continue;
                 }
 
@@ -90,7 +90,7 @@ impl Table {
 
         for (i, header) in self.headers.iter().enumerate() {
             print!("{}", Style::new().bold().paint(header.text.clone()));
-            for _ in 0..(column_widths[i] - header.text.len()) {
+            for _ in 0..(column_widths[i] - header.text.chars().count()) {
                 print!(" ");
             }
             if i < self.headers.len() - 1 {
@@ -103,12 +103,15 @@ impl Table {
             for (i, cell) in row.iter().enumerate() {
                 let style = self.headers[i].cell_style.get_style();
 
-                let cell_len = cell.as_ref().map(|c| c.len()).unwrap_or(0);
+                let cell_len = cell.as_ref().map(|c| c.chars().count()).unwrap_or(0);
                 if cell_len > column_widths[i] {
-                    print!(
-                        "{}",
-                        style.paint(&cell.as_ref().unwrap()[..column_widths[i] - 3])
-                    );
+                    let truncated: String = cell
+                        .as_ref()
+                        .unwrap()
+                        .chars()
+                        .take(column_widths[i] - 3)
+                        .collect();
+                    print!("{}", style.paint(truncated));
                     print!("{}", style.paint("..."));
                 } else {
                     print!("{}", style.paint(cell.clone().unwrap_or("".to_string())));
