@@ -24,6 +24,7 @@ const CMD_OFFSET: u8 = 64;
 const TRIGGER_SYS_LISTEN: u8 = 1;
 const TRIGGER_SYS_BIND: u8 = 2;
 const TRIGGER_USER_SPACE_READY: u8 = 3;
+const TRIGGER_USER_SPACE_EXIT: u8 = 4;
 const TRIGGER_MANUAL: u8 = 10;
 
 const TRIGGER_SYS_LISTEN_AFTER: u8 = TRIGGER_AFTER_OFFSET + TRIGGER_SYS_LISTEN;
@@ -43,6 +44,7 @@ enum TriggerCode {
     AfterListen { port: u16, addr: Ipv4Addr },
     AfterBind { port: u16, addr: Ipv4Addr },
     UserSpaceReady { data: [u8; 7] },
+    UserSpaceExit { code: i32 },
     Manual { data: [u8; 7] },
 }
 
@@ -93,6 +95,11 @@ impl TriggerCode {
             TRIGGER_USER_SPACE_READY => {
                 let data = bytes[1..].try_into().ok()?;
                 Some(TriggerCode::UserSpaceReady { data })
+            }
+            TRIGGER_USER_SPACE_EXIT => {
+                // last 4 bytes are the exit code
+                let code = i32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+                Some(TriggerCode::UserSpaceExit { code })
             }
             TRIGGER_MANUAL => {
                 let data = bytes[1..].try_into().ok()?;
@@ -201,7 +208,7 @@ impl GuestManagerDevice {
 
     fn process_trigger(&mut self, data: &[u8]) -> bool {
         let Some(trigger_code) = TriggerCode::from_bytes(data) else {
-            warn!("Failed to parse trigger data");
+            warn!("Failed to parse trigger data {:?}", data);
             return false;
         };
 
@@ -212,6 +219,12 @@ impl GuestManagerDevice {
         if matches!(trigger_code, TriggerCode::UserSpaceReady { data: _ }) {
             self.device_event_tx
                 .try_broadcast(DeviceEvent::UserSpaceReady)
+                .ok();
+        }
+
+        if let TriggerCode::UserSpaceExit { code } = trigger_code {
+            self.device_event_tx
+                .try_broadcast(DeviceEvent::ExitCode(code))
                 .ok();
         }
 

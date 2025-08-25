@@ -10,7 +10,10 @@ machine:
       strategy:
         listen-on-port: 4477
       timeout: 2
-  env:
+  depends-on:
+    - name: db
+  restart-policy: always
+  environment:
     DATABASE_URL: "postgresql://lbl:lbl@db-internal.lbl.svc.lttle.local:5432/lbl" # change this to use a more secure password
     API_KEY: "your_api_key" # change this to a more secure key
 ---

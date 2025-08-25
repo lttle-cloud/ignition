@@ -12,11 +12,19 @@ use crate::resources::AdmissionRule;
 pub async fn main() {
     resource::ResourcesBuilder::new()
         .resource_with_config::<resources::machine::Machine>(|cfg| {
-            cfg.add_admission_rule(AdmissionRule::StatusCheck)
+            cfg.add_admission_rule(AdmissionRule::BeforeSet)
         })
-        .resource::<resources::service::Service>()
+        .resource_with_config::<resources::service::Service>(|cfg| {
+            cfg.add_admission_rule(AdmissionRule::BeforeSet)
+                .add_admission_rule(AdmissionRule::BeforeDelete)
+        })
+        .resource_with_config::<resources::certificate::Certificate>(|cfg| {
+            cfg.add_admission_rule(AdmissionRule::BeforeSet)
+                .add_admission_rule(AdmissionRule::BeforeDelete)
+        })
         .resource_with_config::<resources::volume::Volume>(|cfg| {
             cfg.add_admission_rule(AdmissionRule::BeforeDelete)
+                .add_admission_rule(AdmissionRule::StatusCheck)
         })
         .build()
         .await

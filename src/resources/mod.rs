@@ -2,13 +2,14 @@
 
 use anyhow::Result;
 use schemars::{JsonSchema, Schema};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 
 use crate::{
     machinery::store::{Key, PartialKey},
     resources::metadata::{Metadata, Namespace},
 };
 
+pub mod certificate;
 pub mod core;
 pub mod machine;
 pub mod metadata;
@@ -81,10 +82,10 @@ pub struct ResourceBuildInfo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AdmissionRule {
-    /// Only allow create through PATCH, disallow update through PATCH.
-    DissalowPatchUpdate,
     /// Custom admission status check
     StatusCheck,
+    /// Before create/patch
+    BeforeSet,
     /// Custom before delete check
     BeforeDelete,
 }
@@ -164,6 +165,47 @@ pub trait FromResource<T> {
     fn from_resource(resource: T) -> Result<Self>
     where
         Self: Sized;
+}
+
+pub fn de_trim_non_empty_string<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    let s = s.trim().to_string();
+    if s.is_empty() {
+        return Err(serde::de::Error::custom("string cannot be empty"));
+    }
+    Ok(s)
+}
+
+pub fn de_opt_trim_non_empty_string<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = Option::<String>::deserialize(deserializer)?;
+    if let Some(s) = s {
+        let s = s.trim().to_string();
+        if s.is_empty() {
+            return Err(serde::de::Error::custom("string cannot be empty"));
+        }
+        Ok(Some(s))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn de_vec_trim_non_empty_string<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = Vec::<String>::deserialize(deserializer)?;
+    let s = s.iter().map(|x| x.trim().to_string()).collect();
+    Ok(s)
 }
 
 pub trait AdmissionCheckStatus<TStatus>

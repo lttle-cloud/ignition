@@ -7,13 +7,15 @@ use anyhow::Result;
 use clap::Parser;
 use ignition::{
     agent::{
-        Agent, AgentConfig, dns::config::DnsAgentConfig, image::ImageAgentConfig,
+        Agent, AgentConfig, certificate::config::CertificateAgentConfig,
+        dns::config::DnsAgentConfig, image::ImageAgentConfig, logs::LogsAgentConfig,
         machine::MachineAgentConfig, net::NetAgentConfig, proxy::ProxyAgentConfig,
         volume::VolumeAgentConfig,
     },
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
     constants::DEFAULT_KERNEL_CMD_LINE_INIT,
     controller::{
+        certificate::CertificateController,
         machine::MachineController,
         scheduler::{Scheduler, SchedulerConfig},
         service::ServiceController,
@@ -112,6 +114,7 @@ async fn main() -> Result<()> {
                                     .proxy_config
                                     .default_tls_key_path,
                                 evergreen_external_ports: vec![80, 443],
+                                blacklisted_external_ports: vec![21, 22, 51, 5100, 9898],
                             },
                             dns_config: DnsAgentConfig {
                                 zone_suffix: scheduler_config.dns_config.zone_suffix,
@@ -119,6 +122,19 @@ async fn main() -> Result<()> {
                                 upstream_dns_servers: scheduler_config
                                     .dns_config
                                     .upstream_dns_servers,
+                            },
+                            cert_config: CertificateAgentConfig {
+                                providers: scheduler_config.cert_providers,
+                                certs_base_dir: agent_dir
+                                    .join("certs")
+                                    .to_string_lossy()
+                                    .to_string(),
+                            },
+                            logs_config: LogsAgentConfig {
+                                store: scheduler_config.logs_config.store,
+                                otel_ingest_endpoint: scheduler_config
+                                    .logs_config
+                                    .otel_ingest_endpoint,
                             },
                         },
                         agent_scheduler,
@@ -136,6 +152,7 @@ async fn main() -> Result<()> {
             agent,
             SchedulerConfig { worker_count: 4 },
             vec![
+                CertificateController::new_boxed(),
                 MachineController::new_boxed(),
                 ServiceController::new_boxed(),
                 VolumeController::new_boxed(),
@@ -160,6 +177,7 @@ async fn main() -> Result<()> {
         },
     )
     .add_service::<CoreService>()
+    .add_service::<services::CertificateService>()
     .add_service::<services::MachineService>()
     .add_service::<services::ServiceService>()
     .add_service::<services::VolumeService>();

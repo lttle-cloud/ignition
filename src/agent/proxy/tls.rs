@@ -1,4 +1,7 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{Result, bail};
 use papaya::HashMap;
@@ -56,6 +59,7 @@ pub struct ProxyTlsCertResolver {
     cert_pool: Arc<HashMap<String, Arc<CertifiedKey>>>,
     default_cert: Arc<CertifiedKey>,
     crypto_provider: Arc<CryptoProvider>,
+    certs_base_dir: PathBuf,
 }
 
 impl ProxyTlsCertResolver {
@@ -63,6 +67,7 @@ impl ProxyTlsCertResolver {
         cert_pool: Arc<HashMap<String, Arc<CertifiedKey>>>,
         default_cert: Arc<CertifiedKey>,
         crypto_provider: Arc<CryptoProvider>,
+        certs_base_dir: PathBuf,
     ) -> Self {
         info!(
             "Creating new TLS certificate resolver with {} certificates in pool",
@@ -72,6 +77,7 @@ impl ProxyTlsCertResolver {
             cert_pool,
             default_cert,
             crypto_provider,
+            certs_base_dir,
         }
     }
 
@@ -82,6 +88,14 @@ impl ProxyTlsCertResolver {
         if let Some(cert) = cert {
             info!("Found specific certificate for host: {}", host);
             return Some(cert.clone());
+        }
+
+        // Attempt to load from disk on demand if present
+        if let Some(loaded) = self.try_load_from_disk(host) {
+            let cert_pool = self.cert_pool.pin();
+            cert_pool.insert(host.to_string(), loaded.clone());
+            info!("Loaded certificate for host {} from disk", host);
+            return Some(loaded);
         }
 
         info!("Using default certificate for host: {}", host);
@@ -99,5 +113,47 @@ impl ResolvesServerCert for ProxyTlsCertResolver {
         let host_name = server_name.to_string();
         info!("Resolving certificate for server name: {}", host_name);
         self.resolve_cert(&host_name)
+    }
+}
+
+impl ProxyTlsCertResolver {
+    fn try_load_from_disk(&self, host: &str) -> Option<Arc<CertifiedKey>> {
+        let cert_path = self.certs_base_dir.join(format!("{}.cert", host));
+        let key_path = self.certs_base_dir.join(format!("{}.key", host));
+
+        if !cert_path.exists() || !key_path.exists() {
+            return None;
+        }
+
+        info!(
+            "Attempting to load TLS certificate for host {} from {:?} and key from {:?}",
+            host, cert_path, key_path
+        );
+
+        let Ok(cert_file_iter) = CertificateDer::pem_file_iter(&cert_path) else {
+            warn!("Failed to load certificate from {:?}", cert_path);
+            return None;
+        };
+
+        let Ok(cert_der) = cert_file_iter
+            .map(|cert| cert)
+            .collect::<Result<Vec<_>, _>>()
+        else {
+            warn!("Failed to parse certificate from {:?}", cert_path);
+            return None;
+        };
+
+        let Ok(key) = PrivateKeyDer::from_pem_file(&key_path) else {
+            warn!("Failed to load private key from {:?}", key_path);
+            return None;
+        };
+
+        let Ok(cert_key) = sign::CertifiedKey::from_der(cert_der, key, &self.crypto_provider)
+        else {
+            warn!("Failed to create certified key for host {}", host);
+            return None;
+        };
+
+        Some(Arc::new(cert_key))
     }
 }

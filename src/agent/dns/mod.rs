@@ -61,7 +61,9 @@ impl DnsAgent {
             repository: self.repository.clone(),
             default_ttl: self.config.default_ttl,
             zone_suffix: self.config.zone_suffix.clone(),
-            upstream_resolver: DnsHandler::create_upstream_resolver(&self.config.upstream_dns_servers),
+            upstream_resolver: DnsHandler::create_upstream_resolver(
+                &self.config.upstream_dns_servers,
+            ),
         };
 
         let mut server = ServerFuture::new(handler);
@@ -88,5 +90,9 @@ impl DnsAgent {
             task.abort();
         }
         Ok(())
+    }
+
+    pub fn config(&self) -> &DnsAgentConfig {
+        &self.config
     }
 }

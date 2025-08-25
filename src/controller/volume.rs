@@ -5,8 +5,9 @@ use async_trait::async_trait;
 use tracing::{error, info};
 
 use crate::{
+    agent::Agent,
     controller::{
-        BeforeDelete, Controller, ReconcileNext,
+        AdmissionCheckBeforeDelete, Controller, ReconcileNext,
         context::{ControllerContext, ControllerEvent, ControllerKey},
     },
     repository::Repository,
@@ -131,11 +132,12 @@ impl Controller for VolumeController {
 }
 
 #[async_trait]
-impl BeforeDelete for Volume {
+impl AdmissionCheckBeforeDelete for Volume {
     async fn before_delete(
         &self,
         tenant: String,
         repo: Arc<Repository>,
+        _agent: Arc<Agent>,
         metadata: Metadata,
     ) -> Result<()> {
         let Some(volume) = repo.volume(tenant.clone()).get(

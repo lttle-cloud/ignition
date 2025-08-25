@@ -9,6 +9,8 @@ pub enum ApiVerb {
     Put,
     #[serde(rename = "DELETE")]
     Delete,
+    #[serde(rename = "WS")]
+    WebSocket,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,11 +48,13 @@ pub enum ApiResponse {
         optional: bool,
         names: Vec<String>,
     },
+    RawSocket,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiMethod {
     pub name: String,
+    pub namespaced: bool,
     pub verb: ApiVerb,
     pub path: Vec<ApiPathSegment>,
     pub request: Option<ApiRequest>,

@@ -1,10 +1,13 @@
+pub mod certificate;
 pub mod data;
 pub mod dns;
 pub mod image;
 pub mod job;
+pub mod logs;
 pub mod machine;
 pub mod net;
 pub mod proxy;
+pub mod tracker;
 pub mod volume;
 
 use std::sync::{Arc, Weak};
@@ -13,12 +16,15 @@ use anyhow::Result;
 
 use crate::{
     agent::{
+        certificate::{CertificateAgent, config::CertificateAgentConfig},
         dns::{DnsAgent, config::DnsAgentConfig},
         image::{ImageAgent, ImageAgentConfig},
         job::JobAgent,
+        logs::{LogsAgent, LogsAgentConfig},
         machine::{MachineAgent, MachineAgentConfig},
         net::{NetAgent, NetAgentConfig},
         proxy::{ProxyAgent, ProxyAgentConfig},
+        tracker::TrackerAgent,
         volume::{VolumeAgent, VolumeAgentConfig},
     },
     controller::scheduler::Scheduler,
@@ -35,6 +41,8 @@ pub struct AgentConfig {
     pub machine_config: MachineAgentConfig,
     pub proxy_config: ProxyAgentConfig,
     pub dns_config: DnsAgentConfig,
+    pub cert_config: CertificateAgentConfig,
+    pub logs_config: LogsAgentConfig,
 }
 
 pub struct Agent {
@@ -45,6 +53,9 @@ pub struct Agent {
     machine: Arc<MachineAgent>,
     proxy: Arc<ProxyAgent>,
     dns: Arc<DnsAgent>,
+    certificate: Arc<CertificateAgent>,
+    logs: Arc<LogsAgent>,
+    tracker: Arc<TrackerAgent>,
 }
 
 impl Agent {
@@ -64,9 +75,20 @@ impl Agent {
         let machine =
             Arc::new(MachineAgent::new(config.machine_config.clone(), scheduler.clone()).await?);
 
-        let proxy = ProxyAgent::new(config.proxy_config.clone(), machine.clone()).await?;
+        let certificate = CertificateAgent::new(store.clone(), config.cert_config.clone()).await?;
+
+        let proxy = ProxyAgent::new(
+            config.proxy_config.clone(),
+            machine.clone(),
+            certificate.clone(),
+        )
+        .await?;
 
         let dns = DnsAgent::new(config.dns_config.clone(), net.clone(), repository).await?;
+
+        let logs = Arc::new(LogsAgent::new(config.logs_config.clone()));
+
+        let tracker = Arc::new(TrackerAgent::new(store.clone()));
 
         // Start the DNS server
         dns.start().await?;
@@ -79,6 +101,9 @@ impl Agent {
             machine,
             proxy,
             dns,
+            certificate,
+            logs,
+            tracker,
         })
     }
 
@@ -108,5 +133,17 @@ impl Agent {
 
     pub fn dns(&self) -> Arc<DnsAgent> {
         self.dns.clone()
+    }
+
+    pub fn certificate(&self) -> Arc<CertificateAgent> {
+        self.certificate.clone()
+    }
+
+    pub fn logs(&self) -> Arc<LogsAgent> {
+        self.logs.clone()
+    }
+
+    pub fn tracker(&self) -> Arc<TrackerAgent> {
+        self.tracker.clone()
     }
 }

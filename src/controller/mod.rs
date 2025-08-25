@@ -1,6 +1,7 @@
 pub mod context;
 pub mod scheduler;
 
+pub mod certificate;
 pub mod machine;
 pub mod service;
 pub mod volume;
@@ -10,6 +11,7 @@ use async_trait::async_trait;
 use std::{sync::Arc, time::Duration};
 
 use crate::{
+    agent::Agent,
     controller::context::{ControllerContext, ControllerEvent, ControllerKey},
     repository::Repository,
     resources::metadata::Metadata,
@@ -56,11 +58,24 @@ pub trait Controller: Send + Sync {
 }
 
 #[async_trait]
-pub trait BeforeDelete {
+pub trait AdmissionCheckBeforeSet {
+    async fn before_set(
+        &self,
+        before: Option<&Self>,
+        tenant: String,
+        repo: Arc<Repository>,
+        agent: Arc<Agent>,
+        metadata: Metadata,
+    ) -> Result<()>;
+}
+
+#[async_trait]
+pub trait AdmissionCheckBeforeDelete {
     async fn before_delete(
         &self,
         tenant: String,
         repo: Arc<Repository>,
+        agent: Arc<Agent>,
         metadata: Metadata,
     ) -> Result<()>;
 }

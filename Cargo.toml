@@ -1,6 +1,6 @@
 [package]
 name = "ignition"
-version = "0.1.0"
+version = "0.1.0-rc4"
 edition = "2024"
 
 build = "src/build.rs"
@@ -12,6 +12,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "ignitiond"
 path = "src/daemon/main.rs"
+required-features = ["daemon"]
 
 [[bin]]
 name = "lttle"
@@ -21,6 +22,10 @@ path = "src/cli/main.rs"
 name = "generate-token-tool"
 path = "src/tools/generate_token.rs"
 
+[[bin]]
+name = "generate-cli-install-script"
+path = "src/tools/generate_cli_install_script.rs"
+
 [workspace]
 members = ["meta", "src/takeoff", "src/takeoff-proto", "."]
 resolver = "2"
@@ -29,7 +34,7 @@ resolver = "2"
 meta = { path = "meta" }
 takeoff-proto = { path = "src/takeoff-proto" }
 anyhow = "1.0.98"
-axum = { version = "0.8.4", features = ["macros"] }
+axum = { version = "0.8.4", features = ["macros", "ws"] }
 base62 = "2.2.1"
 docker_credential = "1.3.2"
 flate2 = "1.1.2"
@@ -40,7 +45,7 @@ nix = { version = "0.30.1", features = ["fs", "mman", "mount"] }
 oci-client = "0.15.0"
 papaya = { version = "0.2.1", features = ["serde"] }
 rand = "0.9.1"
-rtnetlink = "0.17.0"
+rtnetlink = { version = "0.17.0", optional = true }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.140", features = ["preserve_order"] }
 tar = "0.4.44"
@@ -64,21 +69,26 @@ clap_complete = "4.5.55"
 atty = "0.2.14"
 bincode = "2.0.1"
 hex = "0.4.3"
+base64 = "0.22.1"
+tokio-tungstenite = "0.27.0"
+url = "2.5.4"
 vm-memory = { version = "0.16.2", features = ["backend-mmap"] }
 vm-allocator = "0.1.3"
 linux-loader = { version = "0.13.0", features = ["elf"] }
 libc = "0.2.169"
 kvm-bindings = { version = "0.13.0", features = ["fam-wrappers"] }
-kvm-ioctls = "0.23.0"
-event-manager = { version = "0.4.0", features = ["remote_endpoint"] }
-vmm-sys-util = "0.14.0"
+kvm-ioctls = { version = "0.23.0", optional = true }
+event-manager = { version = "0.4.0", features = [
+    "remote_endpoint",
+], optional = true }
+vmm-sys-util = { version = "0.14.0", optional = true }
 vm-device = "0.1.0"
 vm-superio = "0.8.0"
-virtio-device = { git = "https://github.com/rust-vmm/vm-virtio.git" }
-virtio-queue = { git = "https://github.com/rust-vmm/vm-virtio.git" }
+virtio-device = { git = "https://github.com/rust-vmm/vm-virtio.git", optional = true }
+virtio-queue = { git = "https://github.com/rust-vmm/vm-virtio.git", optional = true }
 virtio-blk = { git = "https://github.com/rust-vmm/vm-virtio.git", features = [
     "backend-stdio",
-] }
+], optional = true }
 thiserror = "2.0.12"
 async-broadcast = "0.7.2"
 ordinal = "0.4.0"
@@ -93,6 +103,27 @@ hyper-util = "0.1.16"
 hickory-server = "0.24"
 hickory-resolver = "0.24"
 hickory-proto = "0.24"
+chrono = { version = "0.4.41", features = ["serde"] }
+instant-acme = "0.8.2"
+http-body-util = "0.1.3"
+serde_urlencoded = "0.7.1"
+tungstenite = "0.27.0"
+crossterm = "0.29.0"
+scopeguard = "1.2.0"
+x509-parser = "0.16.0"
+home = "0.5.11"
+
+[features]
+default = []
+daemon = [
+    "rtnetlink",
+    "kvm-ioctls",
+    "vmm-sys-util",
+    "event-manager",
+    "virtio-device",
+    "virtio-queue",
+    "virtio-blk",
+]
 
 [build-dependencies]
 meta = { path = "meta" }

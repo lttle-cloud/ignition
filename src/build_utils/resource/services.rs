@@ -171,27 +171,15 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
             "            let repo = state.repository.{}(ctx.tenant.clone());\n",
             collection_name
         ));
-
-        // Check admission rules
-        if resource
-            .configuration
-            .admission_rules
-            .contains(&AdmissionRule::DissalowPatchUpdate)
-        {
-            src.push_str("            // Check if resource already exists (DisallowPatchUpdate admission rule)\n");
-            src.push_str("            let metadata = resource.metadata();\n");
-            if namespaced {
-                src.push_str("            if let Ok(Some(_)) = repo.get(Namespace::from_value_or_default(metadata.namespace.clone()), metadata.name.clone()) {\n");
-            } else {
-                src.push_str(
-                    "            if let Ok(Some(_)) = repo.get(metadata.name.clone()) {\n",
-                );
-            }
-            src.push_str(&format!(
-                "                return (StatusCode::BAD_REQUEST, \"{} already exists\".to_string()).into_response();\n",
-                resource_name
-            ));
-            src.push_str("            }\n\n");
+        src.push_str("            let metadata = resource.metadata();\n");
+        if namespaced {
+            src.push_str("            let Ok(before) = repo.get(Namespace::from_value_or_default(metadata.namespace.clone()), metadata.name.clone()) else {\n");
+            src.push_str("                return (StatusCode::INTERNAL_SERVER_ERROR, \"Failed to get resource\".to_string()).into_response();\n");
+            src.push_str("            };\n");
+        } else {
+            src.push_str("            let Ok(before) = repo.get(metadata.name.clone()) else {\n");
+            src.push_str("                return (StatusCode::INTERNAL_SERVER_ERROR, \"Failed to get resource\".to_string()).into_response();\n");
+            src.push_str("            };\n");
         }
 
         // Check admission rules
@@ -217,6 +205,18 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
             src.push_str("            };\n\n");
         }
 
+        if resource
+            .configuration
+            .admission_rules
+            .contains(&AdmissionRule::BeforeSet)
+        {
+            src.push_str("            use crate::controller::AdmissionCheckBeforeSet;\n");
+            src.push_str("            let result = resource.before_set(before.as_ref(), ctx.tenant, state.repository.clone(), state.scheduler.agent.clone(), resource.metadata()).await;\n");
+            src.push_str("            if let Err(e) = result {\n");
+            src.push_str("                return (StatusCode::BAD_REQUEST, e.to_string()).into_response();\n");
+            src.push_str("            };\n\n");
+        }
+
         src.push_str("            let result = repo.set(resource).await;\n\n");
         src.push_str("            match result {\n");
         src.push_str("                Ok(()) => StatusCode::OK.into_response(),\n");
@@ -232,7 +232,7 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
         src.push_str("            ctx: ServiceRequestContext,\n");
         src.push_str("            Path(name): Path<String>,\n");
         src.push_str("        ) -> impl IntoResponse {\n");
-        src.push_str("            use crate::controller::BeforeDelete;\n");
+        src.push_str("            use crate::controller::{AdmissionCheckBeforeSet, AdmissionCheckBeforeDelete};\n");
         src.push_str(&format!(
             "            let repo = state.repository.{}(ctx.tenant.clone());\n",
             collection_name
@@ -260,7 +260,7 @@ fn generate_resource_service(src: &mut String, resource: &ResourceBuildInfo) {
             .contains(&AdmissionRule::BeforeDelete)
         {
             src.push_str(&format!(
-            "            let result = resource.before_delete(ctx.tenant, state.repository.clone(), metadata).await;\n",
+            "            let result = resource.before_delete(ctx.tenant, state.repository.clone(), state.scheduler.agent.clone(), metadata).await;\n",
         ));
             src.push_str("            if let Err(e) = result {\n");
             src.push_str("                return (StatusCode::BAD_REQUEST, e.to_string()).into_response();\n");

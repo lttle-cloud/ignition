@@ -4,6 +4,8 @@ pub mod tls;
 use std::{collections::HashSet, convert::Infallible, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Result, bail};
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
 use hyper::{Request, Uri, Version, service::service_fn};
 use hyper_util::{
     client::legacy::{Client, connect::HttpConnector},
@@ -22,6 +24,7 @@ use tokio_rustls::TlsAcceptor;
 use tracing::{info, warn};
 
 use crate::agent::{
+    certificate::CertificateAgent,
     machine::{
         MachineAgent,
         machine::{Machine, TrafficAwareConnection},
@@ -33,6 +36,7 @@ use crate::agent::{
 pub struct ProxyAgentConfig {
     pub external_bind_address: String,
     pub evergreen_external_ports: Vec<u16>,
+    pub blacklisted_external_ports: Vec<u16>,
     pub default_tls_cert_path: String,
     pub default_tls_key_path: String,
 }
@@ -47,6 +51,7 @@ pub struct ProxyAgent {
     tls_cert_resolver: Arc<ProxyTlsCertResolver>,
     tls_acceptor: Arc<TlsAcceptor>,
     servers: HashMap<(String, u16), ProxyServer>,
+    certificate_agent: Arc<CertificateAgent>,
 }
 
 #[allow(unused)]
@@ -115,6 +120,7 @@ impl ProxyAgent {
     pub async fn new(
         config: ProxyAgentConfig,
         machine_agent: Arc<MachineAgent>,
+        certificate_agent: Arc<CertificateAgent>,
     ) -> Result<Arc<Self>> {
         info!(
             "Creating new proxy agent with external bind address: {}",
@@ -134,6 +140,7 @@ impl ProxyAgent {
             Arc::new(HashMap::new()),
             default_cert.clone(),
             tls_server_config_builder.crypto_provider().clone(),
+            std::path::PathBuf::from(certificate_agent.config().certs_base_dir.clone()),
         ));
 
         let mut tls_server_config =
@@ -145,7 +152,7 @@ impl ProxyAgent {
         let tls_acceptor = Arc::new(TlsAcceptor::from(Arc::new(tls_server_config)));
 
         let agent = Arc::new(Self {
-            config,
+            config: config.clone(),
             machine_agent,
             bindings: Arc::new(HashMap::new()),
             servers: HashMap::new(),
@@ -153,10 +160,35 @@ impl ProxyAgent {
             default_cert,
             tls_cert_resolver,
             tls_acceptor,
+            certificate_agent,
         });
+
+        for port in config.evergreen_external_ports {
+            info!("Starting server for evergreen port {}", port);
+            agent.start_server(
+                &ProxyBinding {
+                    target_network_tag: format!("internal-evergreen-{}", port),
+                    target_port: port,
+                    mode: BindingMode::External {
+                        port,
+                        routing: ExternalBindingRouting::HttpHostHeader {
+                            host: format!("evergreen-{}.local", port),
+                        },
+                    },
+                    inactivity_timeout: None,
+                },
+                (config.external_bind_address.clone(), port).into(),
+            );
+        }
+
+        agent.evaluate_bindings().await?;
 
         info!("Proxy agent created successfully");
         Ok(agent)
+    }
+
+    pub fn config(&self) -> &ProxyAgentConfig {
+        &self.config
     }
 
     pub async fn set_binding(&self, binding_name: &str, binding: ProxyBinding) -> Result<()> {
@@ -206,17 +238,40 @@ impl ProxyAgent {
     async fn evaluate_bindings(&self) -> Result<()> {
         info!("Evaluating proxy bindings");
 
+        let evergreen_server_keys = self
+            .config
+            .evergreen_external_ports
+            .iter()
+            .map(|port| (self.config.external_bind_address.clone(), *port))
+            .collect::<Vec<(String, u16)>>();
+
+        let blacklisted_server_keys = self
+            .config
+            .blacklisted_external_ports
+            .iter()
+            .map(|port| (self.config.external_bind_address.clone(), *port))
+            .collect::<Vec<(String, u16)>>();
+
         let mut server_keys_set = HashSet::new();
         let bindings = self.bindings.pin();
 
         for (_, binding) in bindings.iter() {
             let server_key = binding.proxy_server_key(&self.config);
+            if blacklisted_server_keys.contains(&server_key) {
+                info!(
+                    "Skipping blacklisted server key: {:?} from binding: {}",
+                    server_key, binding.target_network_tag
+                );
+                continue;
+            }
+
             server_keys_set.insert(server_key);
         }
 
         let servers = self.servers.pin();
         for (server_key, _) in servers.iter() {
-            if !server_keys_set.contains(server_key) {
+            if !server_keys_set.contains(server_key) && !evergreen_server_keys.contains(server_key)
+            {
                 info!(
                     "Stopping server for {}:{} (no longer needed)",
                     server_key.0, server_key.1
@@ -229,58 +284,67 @@ impl ProxyAgent {
         }
 
         for (_, binding) in bindings.iter() {
-            let server_key = binding.proxy_server_key(&self.config);
-            if !servers.contains_key(&server_key) {
-                info!("Starting new server for {}:{}", server_key.0, server_key.1);
-
-                let proxy_mode = match &binding.mode {
-                    BindingMode::Internal { .. } => ProxyServerMode::Internal,
-                    BindingMode::External { .. } => ProxyServerMode::External,
-                };
-
-                let task_server_key = server_key.clone();
-                let task_machine_agent = self.machine_agent.clone();
-                let task_bindings = self.bindings.clone();
-                let task_tls_acceptor = self.tls_acceptor.clone();
-                let task_binding = binding.clone();
-
-                let task = match proxy_mode {
-                    ProxyServerMode::Internal => spawn(async move {
-                        internal_listener(
-                            format!("{}:{}", task_server_key.0, task_server_key.1),
-                            task_machine_agent,
-                            task_binding,
-                        )
-                        .await?;
-
-                        Ok(())
-                    }),
-                    ProxyServerMode::External => spawn(async move {
-                        external_listener(
-                            format!("{}:{}", task_server_key.0, task_server_key.1),
-                            task_machine_agent,
-                            task_bindings,
-                            task_tls_acceptor,
-                        )
-                        .await?;
-
-                        Ok(())
-                    }),
-                };
-
-                let server = ProxyServer {
-                    address: server_key.0.clone(),
-                    port: server_key.1,
-                    task,
-                    proxy_mode,
-                };
-
-                servers.insert(server_key, server);
+            let server_key: (String, u16) = binding.proxy_server_key(&self.config);
+            if !servers.contains_key(&server_key) && !blacklisted_server_keys.contains(&server_key)
+            {
+                self.start_server(binding, server_key);
             }
         }
 
         info!("Binding evaluation completed");
         Ok(())
+    }
+
+    fn start_server(&self, binding: &ProxyBinding, server_key: (String, u16)) {
+        let servers = self.servers.pin();
+
+        info!("Starting new server for {}:{}", server_key.0, server_key.1);
+
+        let proxy_mode = match &binding.mode {
+            BindingMode::Internal { .. } => ProxyServerMode::Internal,
+            BindingMode::External { .. } => ProxyServerMode::External,
+        };
+
+        let task_server_key = server_key.clone();
+        let task_machine_agent = self.machine_agent.clone();
+        let task_bindings = self.bindings.clone();
+        let task_tls_acceptor = self.tls_acceptor.clone();
+        let task_binding = binding.clone();
+        let task_certificate_agent = self.certificate_agent.clone();
+
+        let task = match proxy_mode {
+            ProxyServerMode::Internal => spawn(async move {
+                internal_listener(
+                    format!("{}:{}", task_server_key.0, task_server_key.1),
+                    task_machine_agent,
+                    task_binding,
+                )
+                .await?;
+
+                Ok(())
+            }),
+            ProxyServerMode::External => spawn(async move {
+                external_listener(
+                    format!("{}:{}", task_server_key.0, task_server_key.1),
+                    task_machine_agent,
+                    task_bindings,
+                    task_tls_acceptor,
+                    task_certificate_agent,
+                )
+                .await?;
+
+                Ok(())
+            }),
+        };
+
+        let server = ProxyServer {
+            address: server_key.0.clone(),
+            port: server_key.1,
+            task,
+            proxy_mode,
+        };
+
+        servers.insert(server_key, server);
     }
 }
 
@@ -289,6 +353,7 @@ async fn external_listener(
     machine_agent: Arc<MachineAgent>,
     bindings: Arc<HashMap<String, ProxyBinding>>,
     tls_acceptor: Arc<TlsAcceptor>,
+    certificate_agent: Arc<CertificateAgent>,
 ) -> Result<Infallible> {
     info!("Starting external listener on {}", addr);
     let listener = TcpListener::bind(addr).await?;
@@ -298,9 +363,17 @@ async fn external_listener(
         let bindings = bindings.clone();
         let machine_agent = machine_agent.clone();
         let tls_acceptor = tls_acceptor.clone();
+        let certificate_agent = certificate_agent.clone();
 
         spawn(async move {
-            handle_external_connection(stream, bindings, machine_agent, tls_acceptor).await
+            handle_external_connection(
+                stream,
+                bindings,
+                machine_agent,
+                tls_acceptor,
+                certificate_agent,
+            )
+            .await
         });
     }
 }
@@ -310,6 +383,7 @@ async fn handle_external_connection(
     bindings: Arc<HashMap<String, ProxyBinding>>,
     machine_agent: Arc<MachineAgent>,
     tls_acceptor: Arc<TlsAcceptor>,
+    certificate_agent: Arc<CertificateAgent>,
 ) -> Result<()> {
     let protocol = proto::sniff_protocol(&mut stream).await?;
 
@@ -320,7 +394,7 @@ async fn handle_external_connection(
         }
         SniffedProtocol::Http => {
             info!("Handling HTTP connection");
-            handle_http_connection(stream, bindings, machine_agent).await
+            handle_http_connection(stream, bindings, machine_agent, certificate_agent).await
         }
         SniffedProtocol::PgSsl => {
             info!("Handling PostgreSQL SSL connection");
@@ -338,12 +412,14 @@ async fn handle_http_connection(
     stream: TcpStream,
     bindings: Arc<HashMap<String, ProxyBinding>>,
     machine_agent: Arc<MachineAgent>,
+    certificate_agent: Arc<CertificateAgent>,
 ) -> Result<()> {
     let io = TokioIo::new(stream);
 
     let svc = service_fn(move |mut req: Request<hyper::body::Incoming>| {
         let machine_agent = machine_agent.clone();
         let bindings = bindings.clone();
+        let certificate_agent = certificate_agent.clone();
 
         let mut base = HttpConnector::new();
         base.enforce_http(true);
@@ -358,6 +434,20 @@ async fn handle_http_connection(
                 .and_then(|h| h.to_str().ok())
                 .unwrap_or_default()
                 .to_string();
+
+            if req.uri().path().starts_with("/.well-known/acme-challenge/") {
+                match certificate_agent.get_challenge_response(target_host.as_str()) {
+                    Ok(Some(key_auth)) => {
+                        return Ok(hyper::Response::new(
+                            Full::new(Bytes::from(key_auth))
+                                .map_err(|never| match never {})
+                                .boxed(),
+                        ));
+                    }
+                    Ok(None) => return Err("Challenge not found"),
+                    Err(_) => return Err("Error retrieving challenge"),
+                }
+            }
 
             let Ok(binding) = find_http_binding(&bindings, &target_host) else {
                 return Err("failed to find binding for HTTP host");
@@ -404,7 +494,7 @@ async fn handle_http_connection(
                 return Err("failed to get response from origin");
             };
 
-            Ok(response)
+            Ok(response.map(|b| b.boxed()))
         }
     });
 
@@ -547,8 +637,12 @@ fn find_http_binding(
     bindings
         .values()
         .find(|b| match &b.mode {
-            BindingMode::External { routing, .. } => match routing {
-                ExternalBindingRouting::HttpHostHeader { host } if *host == target_host => true,
+            BindingMode::External { routing, port } => match routing {
+                ExternalBindingRouting::HttpHostHeader { host }
+                    if *host == target_host || format!("{}:{}", host, port) == target_host =>
+                {
+                    true
+                }
                 _ => false,
             },
             _ => false,

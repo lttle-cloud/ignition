@@ -1,0 +1,52 @@
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+limits_config:
+  allow_structured_metadata: true
+  max_label_names_per_series: 30
+  otlp_config:
+    resource_attributes:
+      attributes_config:
+        - action: index_label
+          attributes:
+            - service.group
+            - service.tenant
+            - service.namespace
+            - service.name
+            - log.stream
+
+distributor:
+  otlp_config:
+    default_resource_attributes_as_index_labels:
+      - service.group
+      - service.tenant
+      - service.namespace
+      - service.name
+      - log.stream
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2025-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+ruler:
+  alertmanager_url: http://localhost:9093

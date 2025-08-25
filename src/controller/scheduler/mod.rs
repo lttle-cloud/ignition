@@ -174,6 +174,29 @@ impl Scheduler {
                 )
                 .await?;
             }
+
+            let certificates = self
+                .repository
+                .certificate(tenant.clone())
+                .list(Namespace::Unspecified)?;
+            for certificate in certificates {
+                let metadata = certificate.metadata();
+
+                let key = ControllerKey::new(
+                    tenant.clone(),
+                    ResourceKind::Certificate,
+                    metadata.namespace.clone(),
+                    metadata.name.clone(),
+                );
+
+                info!("scheduled bringup for resource {}", key.to_string());
+
+                self.push(
+                    tenant.clone(),
+                    ControllerEvent::BringUp(ResourceKind::Certificate, metadata),
+                )
+                .await?;
+            }
         }
 
         Ok(())

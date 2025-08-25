@@ -1,30 +1,33 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use async_trait::async_trait;
 use tokio::{runtime, task::spawn_blocking};
 use tracing::{error, info};
 
 use crate::{
     agent::{
+        Agent,
         net::IpReservationKind,
         proxy::{
             BindingMode, ExternalBindingRouting, ExternnalBindingRoutingTlsNestedProtocol,
             ProxyBinding,
         },
+        tracker::{TrackedResourceKind, TrackedResourceOwner},
     },
     constants::{DEFAULT_NAMESPACE, DEFAULT_TRAFFIC_AWARE_INACTIVITY_TIMEOUT_SECS},
     controller::{
-        Controller, ReconcileNext,
+        AdmissionCheckBeforeDelete, AdmissionCheckBeforeSet, Controller, ReconcileNext,
         context::{ControllerContext, ControllerEvent, ControllerKey},
         machine::machine_name_from_key,
     },
+    repository::Repository,
     resource_index::ResourceKind,
     resources::{
         Convert,
-        metadata::Namespace,
+        metadata::{Metadata, Namespace},
         service::{
-            ServiceBind, ServiceBindExternalProtocol, ServiceTargetConnectionTracking,
+            Service, ServiceBind, ServiceBindExternalProtocol, ServiceTargetConnectionTracking,
             ServiceTargetProtocol,
         },
     },
@@ -176,7 +179,6 @@ impl Controller for ServiceController {
                 host,
                 port,
                 protocol,
-                certificate: _certificate,
             } => {
                 let port = port.unwrap_or(protocol.default_port(&service.target));
 
@@ -262,5 +264,102 @@ impl Controller for ServiceController {
         );
 
         ReconcileNext::done()
+    }
+}
+
+#[async_trait]
+impl AdmissionCheckBeforeSet for Service {
+    async fn before_set(
+        &self,
+        before: Option<&Self>,
+        tenant: String,
+        _repo: Arc<Repository>,
+        agent: Arc<Agent>,
+        _metadata: Metadata,
+    ) -> Result<()> {
+        let resource = self.latest();
+
+        let ServiceBind::External {
+            host,
+            port,
+            protocol,
+        } = &resource.bind
+        else {
+            return Ok(());
+        };
+
+        if let Some(before) = before {
+            let before = before.latest();
+            if let ServiceBind::External {
+                host: before_host,
+                port: before_port,
+                protocol: before_protocol,
+            } = &before.bind
+            {
+                if before_host != host || before_port != port {
+                    let before_port =
+                        before_port.unwrap_or(before_protocol.default_port(&before.target));
+
+                    let before_kind = TrackedResourceKind::ServiceDomain(format!(
+                        "{}:{}",
+                        before_host, before_port
+                    ));
+                    agent.tracker().untrack_resource_owner(before_kind).await?;
+                }
+            }
+        }
+
+        let port = port.unwrap_or(protocol.default_port(&resource.target));
+        let kind = TrackedResourceKind::ServiceDomain(format!("{}:{}", host, port));
+
+        let resource_owner = TrackedResourceOwner {
+            kind: kind.clone(),
+            tenant,
+            resource_name: resource.name,
+            resource_namespace: resource.namespace.unwrap_or(DEFAULT_NAMESPACE.to_string()),
+        };
+
+        if let Some(owner) = agent
+            .tracker()
+            .get_tracked_resource_owner(kind.clone())
+            .await?
+        {
+            if owner != resource_owner {
+                bail!("Service domain and port is already bound to another resource")
+            }
+        };
+
+        agent.tracker().track_resource_owner(resource_owner).await?;
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl AdmissionCheckBeforeDelete for Service {
+    async fn before_delete(
+        &self,
+        _tenant: String,
+        _repo: Arc<Repository>,
+        agent: Arc<Agent>,
+        _metadata: Metadata,
+    ) -> Result<()> {
+        let resource = self.latest();
+
+        let ServiceBind::External {
+            host,
+            port,
+            protocol,
+        } = &resource.bind
+        else {
+            return Ok(());
+        };
+
+        let port = port.unwrap_or(protocol.default_port(&resource.target));
+        let kind = TrackedResourceKind::ServiceDomain(format!("{}:{}", host, port));
+
+        agent.tracker().untrack_resource_owner(kind).await?;
+
+        Ok(())
     }
 }

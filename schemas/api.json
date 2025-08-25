@@ -8,6 +8,7 @@
       "methods": [
         {
           "name": "me",
+          "namespaced": false,
           "verb": "GET",
           "path": [
             {
@@ -29,6 +30,7 @@
         },
         {
           "name": "list_namespaces",
+          "namespaced": false,
           "verb": "GET",
           "path": [
             {
@@ -47,6 +49,53 @@
             "optional": false,
             "name": "ListNamespaces"
           }
+        },
+        {
+          "name": "stream_logs",
+          "namespaced": true,
+          "verb": "WS",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "logs"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "LogStreamParams"
+          },
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "LogStreamItem"
+          }
+        },
+        {
+          "name": "exec",
+          "namespaced": true,
+          "verb": "WS",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "exec"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "ExecParams"
+          },
+          "response": {
+            "type": "RawSocket"
+          }
         }
       ]
     },
@@ -58,6 +107,7 @@
       "methods": [
         {
           "name": "get",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -81,6 +131,7 @@
         },
         {
           "name": "list",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -101,6 +152,7 @@
         },
         {
           "name": "delete",
+          "namespaced": true,
           "verb": "DELETE",
           "path": [
             {
@@ -116,6 +168,7 @@
         },
         {
           "name": "apply",
+          "namespaced": true,
           "verb": "PUT",
           "path": [
             {
@@ -131,6 +184,7 @@
         },
         {
           "name": "get_status",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -163,6 +217,7 @@
       "methods": [
         {
           "name": "get",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -186,6 +241,7 @@
         },
         {
           "name": "list",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -206,6 +262,7 @@
         },
         {
           "name": "delete",
+          "namespaced": true,
           "verb": "DELETE",
           "path": [
             {
@@ -221,6 +278,7 @@
         },
         {
           "name": "apply",
+          "namespaced": true,
           "verb": "PUT",
           "path": [
             {
@@ -236,6 +294,7 @@
         },
         {
           "name": "get_status",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -261,6 +320,116 @@
       ]
     },
     {
+      "name": "Certificate",
+      "tag": "certificate",
+      "crate_path": "resources::certificate",
+      "namespaced": true,
+      "methods": [
+        {
+          "name": "get",
+          "namespaced": true,
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": false,
+            "optional": false,
+            "names": [
+              "CertificateV1",
+              "CertificateStatus"
+            ]
+          }
+        },
+        {
+          "name": "list",
+          "namespaced": true,
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": true,
+            "optional": false,
+            "names": [
+              "CertificateV1",
+              "CertificateStatus"
+            ]
+          }
+        },
+        {
+          "name": "delete",
+          "namespaced": true,
+          "verb": "DELETE",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": null
+        },
+        {
+          "name": "apply",
+          "namespaced": true,
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "Certificate"
+          },
+          "response": null
+        },
+        {
+          "name": "get_status",
+          "namespaced": true,
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "certificate"
+            },
+            {
+              "type": "resource_name"
+            },
+            {
+              "type": "static",
+              "value": "status"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "CertificateStatus"
+          }
+        }
+      ]
+    },
+    {
       "name": "Volume",
       "tag": "volume",
       "crate_path": "resources::volume",
@@ -268,6 +437,7 @@
       "methods": [
         {
           "name": "get",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -291,6 +461,7 @@
         },
         {
           "name": "list",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -311,6 +482,7 @@
         },
         {
           "name": "delete",
+          "namespaced": true,
           "verb": "DELETE",
           "path": [
             {
@@ -326,6 +498,7 @@
         },
         {
           "name": "apply",
+          "namespaced": true,
           "verb": "PUT",
           "path": [
             {
@@ -341,6 +514,7 @@
         },
         {
           "name": "get_status",
+          "namespaced": true,
           "verb": "GET",
           "path": [
             {
@@ -367,6 +541,315 @@
     }
   ],
   "defs": {
+    "Certificate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "certificate": {
+              "$ref": "#/$defs/CertificateV1"
+            }
+          },
+          "required": [
+            "certificate"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "certificate.v1": {
+              "$ref": "#/$defs/CertificateV1"
+            }
+          },
+          "required": [
+            "certificate.v1"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CertificateIssuer": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "auto": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "description": "References a provider name from ignition.toml [[cert-provider]] config",
+                  "type": "string"
+                },
+                "email": {
+                  "description": "Optional email override. If specified, takes precedence over provider's default-email.\nIf not specified, falls back to provider's default-email from config.\nValidation should error if neither this nor provider config has an email.",
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "default": null
+                },
+                "renewal": {
+                  "description": "Optional renewal configuration. Uses sensible defaults if not specified.",
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/CertificateRenewalConfig"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "provider"
+              ]
+            }
+          },
+          "required": [
+            "auto"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "manual": {
+              "type": "object",
+              "properties": {
+                "cert-path": {
+                  "type": "string"
+                },
+                "key-path": {
+                  "type": "string"
+                },
+                "ca-path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "cert-path",
+                "key-path"
+              ]
+            }
+          },
+          "required": [
+            "manual"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CertificateRenewalConfig": {
+      "type": "object",
+      "properties": {
+        "days-before-expiry": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0,
+          "description": "Days before expiry to start renewal attempts. Default: 30 days."
+        },
+        "retry-interval-hours": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0,
+          "description": "Hours between renewal retry attempts on failure. Default: 12 hours."
+        }
+      }
+    },
+    "CertificateState": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "pending",
+            "pending-acme-account",
+            "pending-dns-resolution",
+            "ready",
+            "renewing",
+            "failed",
+            "expired",
+            "revoked"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "pending-order": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "pending-order"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "pending-challenge": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "pending-challenge"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "validating": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "validating"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "issuing": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "issuing"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CertificateStatus": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/CertificateState"
+        },
+        "not_before": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "not_after": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_failure_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "renewal_time": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "auto_provider_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "domains"
+      ]
+    },
+    "CertificateV1": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "name": {
+          "type": "string"
+        },
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "issuer": {
+          "$ref": "#/$defs/CertificateIssuer"
+        }
+      },
+      "required": [
+        "name",
+        "domains",
+        "issuer"
+      ]
+    },
+    "ExecParams": {
+      "type": "object",
+      "properties": {
+        "machine_name": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "stdin": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "tty": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "machine_name",
+        "command"
+      ],
+      "title": "ExecParams",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
     "ListNamespaces": {
       "type": "object",
       "properties": {
@@ -402,6 +885,90 @@
         }
       }
     },
+    "LogStreamItem": {
+      "type": "object",
+      "properties": {
+        "timestamp": {
+          "type": "integer",
+          "format": "uint128",
+          "minimum": 0
+        },
+        "message": {
+          "type": "string"
+        },
+        "target_stream": {
+          "$ref": "#/$defs/LogStreamTarget"
+        }
+      },
+      "required": [
+        "timestamp",
+        "message",
+        "target_stream"
+      ],
+      "title": "LogStreamItem",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "LogStreamTarget": {
+          "type": "string",
+          "enum": [
+            "stdout",
+            "stderr"
+          ]
+        }
+      }
+    },
+    "LogStreamParams": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "machine_name": {
+              "type": "string"
+            },
+            "start_ts_ns": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "end_ts_ns": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "machine_name"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "group_name": {
+              "type": "string"
+            },
+            "start_ts_ns": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "end_ts_ns": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "group_name"
+          ]
+        }
+      ],
+      "title": "LogStreamParams",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
     "Machine": {
       "oneOf": [
         {
@@ -428,6 +995,24 @@
           ],
           "additionalProperties": false
         }
+      ]
+    },
+    "MachineDependency": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "name"
       ]
     },
     "MachineMode": {
@@ -475,13 +1060,15 @@
           "enum": [
             "idle",
             "pulling-image",
+            "waiting",
             "creating",
             "booting",
             "ready",
             "suspending",
             "suspended",
             "stopping",
-            "stopped"
+            "stopped",
+            "restarting"
           ]
         },
         {
@@ -524,6 +1111,14 @@
       "required": [
         "cpu",
         "memory"
+      ]
+    },
+    "MachineRestartPolicy": {
+      "type": "string",
+      "enum": [
+        "never",
+        "always",
+        "on-failure"
       ]
     },
     "MachineSnapshotStrategy": {
@@ -629,6 +1224,21 @@
           ],
           "format": "uint128",
           "minimum": 0
+        },
+        "last_restarting_time_us": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint128",
+          "minimum": 0
+        },
+        "last_exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
         }
       },
       "required": [
@@ -652,7 +1262,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
         "name": {
           "type": "string"
@@ -662,6 +1273,16 @@
         },
         "resources": {
           "$ref": "#/$defs/MachineResources"
+        },
+        "restart-policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineRestartPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "mode": {
           "anyOf": [
@@ -682,13 +1303,31 @@
             "$ref": "#/$defs/MachineVolumeBinding"
           }
         },
-        "env": {
+        "command": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
           "type": [
             "object",
             "null"
           ],
           "additionalProperties": {
             "type": "string"
+          }
+        },
+        "depends-on": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/MachineDependency"
           }
         }
       },
@@ -708,7 +1347,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
         "path": {
           "type": "string"
@@ -724,10 +1364,14 @@
       "properties": {
         "tenant": {
           "type": "string"
+        },
+        "sub": {
+          "type": "string"
         }
       },
       "required": [
-        "tenant"
+        "tenant",
+        "sub"
       ],
       "title": "Me",
       "$schema": "https://json-schema.org/draft/2020-12/schema"
@@ -826,17 +1470,6 @@
                 },
                 "protocol": {
                   "$ref": "#/$defs/ServiceBindExternalProtocol"
-                },
-                "certificate": {
-                  "description": "If not provided, the default certificate will be served.",
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/ServiceBindExternalCertificate"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
                 }
               },
               "required": [
@@ -850,23 +1483,6 @@
           ],
           "additionalProperties": false
         }
-      ]
-    },
-    "ServiceBindExternalCertificate": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "namespace": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "name"
       ]
     },
     "ServiceBindExternalProtocol": {
@@ -904,7 +1520,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
         "port": {
           "type": "integer",
@@ -987,7 +1604,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
         "name": {
           "type": "string"
@@ -1081,7 +1699,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
         "name": {
           "type": "string"

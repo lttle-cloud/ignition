@@ -35,9 +35,56 @@ Depending on your configuration, Ignition can capture the snapshot:
 
 The modified Linux kernel detects these triggers automatically, so you don’t have to alter your application’s code. As a result, you can enjoy rapid startup times without any extra development overhead.
 
+## Installation
+
+At the moment we only provide pre-built binaries for the CLI on macOS ARM and Linux x86_64.
+
+To install the `lttle` CLI, you can run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lttle-cloud/ignition/refs/heads/master/get/lttle.sh | bash
+```
+
+If you're on a different platform, you can build it from source:
+
+```sh
+git clone https://github.com/lttle-cloud/ignition.git
+cd ignition
+cargo build --release --bin lttle
+# the built binary will be at this path: target/release/lttle
+# make sure to move it to a location in your $PATH
+```
+
+The CLI also comes with completions for your shell. To get further instructions on how to install them, run:
+
+```bash
+lttle completions --help
+```
+
+The resource authoring experience heavily relies on YAML. Given that we don't have any docs yet, we encourage you to setup the YAML LSP for your editor of choice and add our resources schema to it.
+
+For example, in VSCode, you can install the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) and add the following to your `settings.json`:
+```json
+"yaml.schemas": {
+  "https://raw.githubusercontent.com/lttle-cloud/ignition/refs/heads/master/schemas/resources.json": "*.yaml"
+}
+```
+Make sure that the path is correct for your workspace (`*.yaml` matches all the YAML files in the root of the workspace).
+
+## After installation
+
+After installing the CLI, you will have to authenticate with an `ignitiond` server. You can do this by running:
+
+```bash
+lttle login
+```
+
+If you applied for the early-access program, you will receive the instructions and credentials for one of our hosted regions. If you didn't apply, you can do so [on our website](https://lttle.cloud), or you can build and self-host the `ignitiond` daemon. There are no docs on how to do this yet; you're on your own (feel free to [reach out to us on discord](https://discord.gg/xhNGGrZQja) if you need help).
+
+
 ## State of the project
 
-Ignition is under active development. We don't recommend using it in production yet. However, you can build and self-host it to get a feel for how it works. There are no docs on how to do this yet; you're on your own (feel free to [reach out to us on discord](https://discord.gg/xhNGGrZQja) if you need help).
+Ignition is under **active** development. We don't recommend using it in production yet. If you're interested in contributing, reach-out to us on [discord](https://discord.gg/xhNGGrZQja) to coordinate.
 
 ## Acknowledgements
 

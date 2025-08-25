@@ -89,7 +89,7 @@ impl From<(VolumeLatest, VolumeStatus)> for VolumeSummary {
 }
 
 pub async fn run_volume_list(config: &Config, args: ListNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     let volumes = api_client.volume().list(args.into()).await?;
 
     let mut table = VolumeTable::new();
@@ -104,7 +104,7 @@ pub async fn run_volume_list(config: &Config, args: ListNamespacedArgs) -> Resul
 }
 
 pub async fn run_volume_get(config: &Config, args: GetNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     let (volume, status) = api_client
         .volume()
         .get(args.clone().into(), args.name)
@@ -117,7 +117,7 @@ pub async fn run_volume_get(config: &Config, args: GetNamespacedArgs) -> Result<
 }
 
 pub async fn run_volume_delete(config: &Config, args: DeleteNamespacedArgs) -> Result<()> {
-    let api_client = get_api_client(config).await?;
+    let api_client = get_api_client(config.try_into()?);
     if !args.confirm {
         message_warn(format!(
             "You are about to delete the volume '{}'. This action cannot be undone. To confirm, run the command with --yes (or -y).",
