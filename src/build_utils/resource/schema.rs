@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use anyhow::Result;
 use schemars::{Schema, SchemaGenerator};
@@ -273,7 +273,8 @@ async fn build_resources_json_schema(
         schema_generator,
     );
 
-    schema["$defs"] = transform_primitive_or_expr(schema["$defs"].clone());
+    schema["$defs"] =
+        transform_remove_default_null(transform_primitive_or_expr(schema["$defs"].clone()));
 
     schema["$defs"]["expr"] = serde_json::json!({
         "type": "string",
@@ -332,6 +333,22 @@ fn transform_primitive_or_expr(original: Value) -> Value {
         let mut new_obj = Map::new();
         for (key, value) in obj {
             new_obj.insert(key.clone(), transform_primitive_or_expr(value.clone()));
+        }
+        Value::Object(new_obj)
+    } else {
+        original
+    }
+}
+
+// remove properties "default": null from all objects
+fn transform_remove_default_null(original: Value) -> Value {
+    if let Some(obj) = original.as_object() {
+        let mut new_obj = Map::new();
+        for (key, value) in obj {
+            if key == "default" && value == &Value::Null {
+                continue;
+            }
+            new_obj.insert(key.clone(), transform_remove_default_null(value.clone()));
         }
         Value::Object(new_obj)
     } else {
