@@ -1,10 +1,12 @@
 machine:
   name: landing-page
+  namespace: landing
   image: ghcr.io/laurci/lttle-cloud-landing:latest
   mode:
     flash:
       strategy:
         listen-on-port: 80
+      timeout: 5
   resources:
     cpu: 1
     memory: 512

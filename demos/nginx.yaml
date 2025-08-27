@@ -15,11 +15,11 @@ service:
     external:
       host: nginx.alpha1.ovh-rbx.lttle.host
       protocol: https
----
-certificate:
-  name: nginx-test
-  domains:
-    - nginx.alpha1.ovh-rbx.lttle.host
-  issuer:
-    auto:
-      provider: letsencrypt-staging
+# ---
+# certificate:
+#   name: nginx-test
+#   domains:
+#     - nginx.alpha1.ovh-rbx.lttle.host
+#   issuer:
+#     auto:
+#       provider: letsencrypt-staging

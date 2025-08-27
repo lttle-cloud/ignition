@@ -13,7 +13,7 @@ machine:
     - name: db-data
       path: /var/lib/postgresql/data
   environment:
-    POSTGRES_PASSWORD: lbl # change this to a more secure password
+    POSTGRES_PASSWORD: L6NyLVNdwmpk
     POSTGRES_USER: lbl
     POSTGRES_DB: lbl
 ---
