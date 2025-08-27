@@ -258,7 +258,18 @@ fn parse_and_eval_expr(expr: &str, context: &ExprEvalContext) -> Result<Option<V
 
     let expr = expr.trim();
 
-    if expr.starts_with("${{") && expr.ends_with("}}") {
+    let expr_start_marker_count = expr.matches("${{").count();
+    let expr_end_marker_count = expr.matches("}}").count();
+
+    if expr_start_marker_count == 0 && expr_end_marker_count == 0 {
+        return Ok(None);
+    }
+
+    if expr.starts_with("${{")
+        && expr.ends_with("}}")
+        && expr_start_marker_count == 1
+        && expr_end_marker_count == 1
+    {
         let expr = expr
             .trim_start_matches("${{")
             .trim_end_matches("}}")
@@ -266,43 +277,40 @@ fn parse_and_eval_expr(expr: &str, context: &ExprEvalContext) -> Result<Option<V
             .to_string();
 
         return eval_expr(&expr, context).map(|v| Some(v));
-    } else if expr.contains("${{") && expr.contains("}}") {
-        // loop should be find, split, eval, replace, repeat
-
-        let mut output = expr.to_string();
-        loop {
-            let start = output.find("${{").unwrap_or(0);
-            let end = output.find("}}").unwrap_or(0);
-
-            if start == 0 && end == 0 {
-                break;
-            }
-
-            let expr = output[start + 3..end - 1].trim();
-
-            if expr.is_empty() {
-                break;
-            }
-
-            let value = eval_expr(&expr, context)?;
-            let value_str = match value {
-                Value::Bool(b) => b.to_string(),
-                Value::Number(n) => n.to_string(),
-                Value::String(s) => s.to_string(),
-                Value::Null => "null".to_string(),
-                _ => bail!(
-                    "Invalid value '{:?}' returned by expression '{}'",
-                    value,
-                    expr
-                ),
-            };
-            output = output[..start].to_string() + &value_str + &output[end + 2..];
-        }
-
-        return Ok(Some(Value::String(output)));
     }
 
-    return Ok(None);
+    // loop should be find, split, eval, replace, repeat\
+    let mut output = expr.to_string();
+    loop {
+        let start = output.find("${{").unwrap_or(0);
+        let end = output.find("}}").unwrap_or(0);
+
+        if start == 0 && end == 0 {
+            break;
+        }
+
+        let expr = output[start + 3..end - 1].trim();
+
+        if expr.is_empty() {
+            break;
+        }
+
+        let value = eval_expr(&expr, context)?;
+        let value_str = match value {
+            Value::Bool(b) => b.to_string(),
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => s.to_string(),
+            Value::Null => "null".to_string(),
+            _ => bail!(
+                "Invalid value '{:?}' returned by expression '{}'",
+                value,
+                expr
+            ),
+        };
+        output = output[..start].to_string() + &value_str + &output[end + 2..];
+    }
+
+    return Ok(Some(Value::String(output)));
 }
 
 async fn deploy_machine(_config: &Config, api_client: &ApiClient, machine: Machine) -> Result<()> {
