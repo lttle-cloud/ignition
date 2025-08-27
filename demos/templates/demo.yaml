@@ -1,0 +1,24 @@
+machine:
+  name: nginx-${{ var.name }}
+  image: nginx:latest
+  mode:
+    flash:
+      strategy:
+        listen-on-port: 80
+  environment:
+    COOL: ${{ env.COOL_VAR }}
+    COMMIT_SHA: ${{ git.commitSha.substring(0, 8) }}-${{ git.commitSha.last(8).upperAscii() }}
+  resources:
+    cpu: 1
+    memory: 128
+---
+service:
+  name: nginx-${{ var.name }}
+  target:
+    name: nginx-${{ var.name }}
+    port: 80
+    protocol: http
+  bind:
+    external:
+      host: nginx-${{ var.name }}.alpha1.ovh-rbx.lttle.host
+      protocol: https
