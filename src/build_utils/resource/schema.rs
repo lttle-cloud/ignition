@@ -274,7 +274,7 @@ async fn build_resources_json_schema(
     );
 
     schema["$defs"] =
-        transform_remove_default_null(transform_primitive_or_expr(schema["$defs"].clone()));
+        transform_primitive_or_expr(transform_remove_default_null(schema["$defs"].clone()));
 
     schema["$defs"]["expr"] = serde_json::json!({
         "type": "string",
@@ -350,7 +350,14 @@ fn transform_remove_default_null(original: Value) -> Value {
             }
             new_obj.insert(key.clone(), transform_remove_default_null(value.clone()));
         }
-        Value::Object(new_obj)
+
+        return Value::Object(new_obj);
+    } else if let Some(arr) = original.as_array() {
+        let mut new_arr = Vec::new();
+        for item in arr {
+            new_arr.push(transform_remove_default_null(item.clone()));
+        }
+        Value::Array(new_arr)
     } else {
         original
     }

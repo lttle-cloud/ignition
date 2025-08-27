@@ -108,7 +108,6 @@
             "auto": {
               "properties": {
                 "email": {
-                  "default": null,
                   "description": "Optional email override. If specified, takes precedence over provider's default-email.\nIf not specified, falls back to provider's default-email from config.\nValidation should error if neither this nor provider config has an email.",
                   "type": [
                     "string",
@@ -148,7 +147,6 @@
             "manual": {
               "properties": {
                 "ca-path": {
-                  "default": null,
                   "type": [
                     "string",
                     "null"
