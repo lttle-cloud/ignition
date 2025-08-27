@@ -2,6 +2,7 @@
 /data
 /certs
 /dist
+/debug
 
 ignition.toml
 .claude
