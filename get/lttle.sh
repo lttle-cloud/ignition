@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs lttle 0.1.0-rc4.
+# Installs lttle 0.1.0-rc5.
 # Repo: lttle-cloud/ignition
 # Assets (plain binaries):
 #   - macOS arm64: lttle_darwin_aarch64
@@ -7,9 +7,9 @@
 # Installs as: /usr/local/bin/lttle
 set -euo pipefail
 
-VERSION="0.1.0-rc4"
-DARWIN_URL="https://github.com/lttle-cloud/ignition/releases/download/v0.1.0-rc4/lttle_darwin_aarch64"
-LINUX_URL="https://github.com/lttle-cloud/ignition/releases/download/v0.1.0-rc4/lttle_linux_x86_64"
+VERSION="0.1.0-rc5"
+DARWIN_URL="https://github.com/lttle-cloud/ignition/releases/download/v0.1.0-rc5/lttle_darwin_aarch64"
+LINUX_URL="https://github.com/lttle-cloud/ignition/releases/download/v0.1.0-rc5/lttle_linux_x86_64"
 
 # RUNTIME OVERRIDES
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
@@ -47,7 +47,7 @@ need curl
 WORKDIR="$(mktemp -d)"; trap 'rm -rf "$WORKDIR"' EXIT
 FILE="$WORKDIR/lttle.tmp"
 
-say "• Downloading lttle v0.1.0-rc4 from: $TARGET_URL"
+say "• Downloading lttle v0.1.0-rc5 from: $TARGET_URL"
 curl -fL --retry 3 -o "$FILE" "$TARGET_URL"
 
 chmod +x "$FILE" || true
