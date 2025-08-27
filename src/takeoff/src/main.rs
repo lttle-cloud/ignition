@@ -13,7 +13,7 @@ use guest::GuestManager;
 use mount::mount;
 use nix::{
     libc,
-    unistd::{chdir, chroot},
+    unistd::{Group, User, chdir, chroot},
 };
 use oci_config::{EnvVar, OciConfig};
 use serial::SerialWriter;
@@ -30,7 +30,9 @@ use tokio::{
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
-use tracing::{error, info};
+use caps::{CapSet, Capability, CapsHashSet};
+use std::collections::HashSet;
+use tracing::{error, info, warn};
 
 use opentelemetry::KeyValue;
 use opentelemetry::logs::{AnyValue, LogRecord, Logger, LoggerProvider, Severity};
@@ -112,6 +114,8 @@ async fn takeoff() -> Result<()> {
         bail!("failed to unshare PID namespace: {}", errno);
     }
 
+    // Capabilities will be set properly in pre_exec hook for each process
+
     mount("proc", "/proc", Some("proc")).await;
 
     for (link, target) in [
@@ -155,18 +159,126 @@ async fn takeoff() -> Result<()> {
         return Ok(());
     }
 
-    let mut child = Command::new(cmd[0].clone())
+    // config.user is of the format "user:group", where either user or group can be string or number; group can be omitted
+    let user = config.user.unwrap_or("root".to_string());
+    let (specified_user, specified_group) = if let Some(pos) = user.find(':') {
+        (user[..pos].to_string(), Some(user[pos + 1..].to_string()))
+    } else {
+        (user.to_string(), None)
+    };
+    info!(
+        "specified_user: {:?}, specified_group: {:?}",
+        specified_user, specified_group
+    );
+
+    let (uid, primary_gid) = if let Some(uid) = specified_user.parse::<u32>().ok() {
+        // User specified as numeric UID - try to get primary group from passwd
+        if let Ok(Some(user)) = User::from_uid(nix::unistd::Uid::from_raw(uid)) {
+            (Some(uid), Some(user.gid.as_raw()))
+        } else {
+            (Some(uid), None)
+        }
+    } else {
+        if let Ok(Some(user)) = User::from_name(&specified_user) {
+            // User specified as name - get both UID and primary GID
+            (Some(user.uid.as_raw()), Some(user.gid.as_raw()))
+        } else {
+            (None, None)
+        }
+    };
+
+    let gid = if let Some(specified_group) = specified_group {
+        // Group explicitly specified
+        if let Some(gid) = specified_group.parse::<u32>().ok() {
+            Some(gid)
+        } else {
+            if let Ok(Some(group)) = Group::from_name(&specified_group) {
+                Some(group.gid.as_raw())
+            } else {
+                // Group name not found - this should typically be an error like Docker
+                warn!(
+                    "Group '{}' not found, falling back to primary group",
+                    specified_group
+                );
+                primary_gid
+            }
+        }
+    } else {
+        // No group specified - use primary group from user lookup, or default
+        info!("No group specified, using primary_gid: {:?}", primary_gid);
+        primary_gid
+    };
+
+    let uid = uid.unwrap_or(0);
+    let gid = gid.unwrap_or(0);
+
+    info!("uid: {:?}; gid: {:?}", uid, gid);
+
+    // Set HOME environment variable when running as non-root user (like Docker does)
+    let mut envs = envs.clone();
+    if uid != 0 && !envs.contains_key("HOME") {
+        // Try to get home directory from passwd entry, fallback to working_dir
+        let home_dir = if let Ok(Some(user)) = User::from_name(&specified_user) {
+            user.dir.to_string_lossy().to_string()
+        } else {
+            working_dir.clone()
+        };
+
+        info!("Setting HOME environment variable to: {}", home_dir);
+        envs.insert("HOME".to_string(), home_dir);
+    }
+
+    // Capabilities were already set after namespace creation
+    if uid != 0 {
+        info!("Non-root user - capabilities should have been set after unshare");
+    }
+
+    let mut command = Command::new(cmd[0].clone());
+    command
         .args(&cmd[1..])
         .envs(envs.clone())
         .current_dir(working_dir.clone())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            info!("failed to spawn command: {}", e);
-            e
-        })?;
+        .stderr(Stdio::piped());
+
+    // For non-root containers, set capabilities but don't drop privileges yet
+    // Let the entrypoint script handle user switching with `su` or similar
+    if uid != 0 {
+        info!("Setting up capabilities for non-root container (but staying as root for now)");
+
+        let mut caps = CapsHashSet::new();
+        caps.insert(Capability::CAP_NET_BIND_SERVICE);
+
+        // Set inheritable capabilities so child processes can get them
+        if let Err(e) = caps::set(None, CapSet::Inheritable, &caps) {
+            warn!("Failed to set inheritable capabilities: {}", e);
+        } else {
+            info!("Set CAP_NET_BIND_SERVICE as inheritable for child processes");
+        }
+
+        // Set the environment variables to tell the container about desired user
+        let mut envs_with_user = envs.clone();
+        envs_with_user.insert("TAKEOFF_TARGET_UID".to_string(), uid.to_string());
+        envs_with_user.insert("TAKEOFF_TARGET_GID".to_string(), gid.to_string());
+
+        command.envs(envs_with_user);
+        info!(
+            "Added TAKEOFF_TARGET_UID={} and TAKEOFF_TARGET_GID={} environment variables",
+            uid, gid
+        );
+    } else {
+        command.envs(envs.clone());
+    }
+
+    info!("About to spawn command: {:?}", cmd);
+    info!("Working directory: {:?}", working_dir);
+    info!("Environment variables: {:?}", envs);
+
+    let mut child = command.spawn().map_err(|e| {
+        info!("failed to spawn command: {}", e);
+        e
+    })?;
 
     tokio::spawn(run_exec_server(envs, working_dir));
 
@@ -205,6 +317,9 @@ async fn takeoff() -> Result<()> {
                 if line.is_empty() {
                     continue;
                 }
+
+                // Also log stderr to console for debugging
+                error!("STDERR: {}", line);
 
                 let mut rec = stderr_logger.create_log_record();
                 rec.set_severity_number(Severity::Error);
