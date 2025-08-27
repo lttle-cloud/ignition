@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use schemars::{Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tokio::fs::write;
 
 use crate::{
@@ -273,6 +273,15 @@ async fn build_resources_json_schema(
         schema_generator,
     );
 
+    schema["$defs"] =
+        transform_remove_default_null(transform_primitive_or_expr(schema["$defs"].clone()));
+
+    schema["$defs"]["expr"] = serde_json::json!({
+        "type": "string",
+        "pattern": "^\\s*\\$\\{\\{[\\s\\S]*\\}\\}\\s*$",
+        "description": "Expression evaluated at build/deploy time."
+    });
+
     schema["$defs"].sort_all_objects();
 
     let src = serde_json::to_string_pretty(&schema)?;
@@ -280,4 +289,69 @@ async fn build_resources_json_schema(
     write(&schema_out_path, src).await?;
 
     Ok(())
+}
+
+fn transform_primitive_or_expr(original: Value) -> Value {
+    if let Some(type_value) = original.get("type") {
+        match type_value {
+            Value::Array(arr) => {
+                if arr.len() == 2
+                    && (arr[0] == "integer" || arr[0] == "boolean")
+                    && arr[1] == "null"
+                {
+                    return serde_json::json!({
+                        "anyOf": [
+                            original,
+                            {
+                                "$ref": "#/$defs/expr"
+                            }
+                        ]
+                    });
+                }
+            }
+            Value::String(value) if value == "integer" || value == "boolean" => {
+                return serde_json::json!({
+                    "anyOf": [
+                        original,
+                        {
+                            "$ref": "#/$defs/expr"
+                        }
+                    ]
+                });
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(arr) = original.as_array() {
+        let mut new_arr = Vec::new();
+        for item in arr {
+            new_arr.push(transform_primitive_or_expr(item.clone()));
+        }
+        Value::Array(new_arr)
+    } else if let Some(obj) = original.as_object() {
+        let mut new_obj = Map::new();
+        for (key, value) in obj {
+            new_obj.insert(key.clone(), transform_primitive_or_expr(value.clone()));
+        }
+        Value::Object(new_obj)
+    } else {
+        original
+    }
+}
+
+// remove properties "default": null from all objects
+fn transform_remove_default_null(original: Value) -> Value {
+    if let Some(obj) = original.as_object() {
+        let mut new_obj = Map::new();
+        for (key, value) in obj {
+            if key == "default" && value == &Value::Null {
+                continue;
+            }
+            new_obj.insert(key.clone(), transform_remove_default_null(value.clone()));
+        }
+        Value::Object(new_obj)
+    } else {
+        original
+    }
 }
