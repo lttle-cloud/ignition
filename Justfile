@@ -23,8 +23,8 @@ release-takeoff: build-takeoff
 	cp target/takeoff.cpio dist/takeoff.cpio
 
 release-ignitiond-linux:
-	cargo build --bin ignitiond --features daemon
-	cp target/debug/ignitiond dist/ignitiond
+	cargo build --bin ignitiond --features daemon --release
+	cp target/release/ignitiond dist/ignitiond
 	strip dist/ignitiond
 
 release-cli-linux:

@@ -1,5 +1,10 @@
 use std::{
     cell::RefCell,
+    fs::File,
+    os::{
+        fd::{FromRawFd, IntoRawFd},
+        unix::io::AsRawFd,
+    },
     sync::{Arc, Barrier, Mutex},
     thread::JoinHandle,
     time::Duration,
@@ -7,7 +12,7 @@ use std::{
 
 use anyhow::{Result, bail};
 use kvm_bindings::{CpuId, Msrs, kvm_fpu, kvm_regs};
-use kvm_ioctls::{Kvm, VcpuExit, VcpuFd, VmFd};
+use kvm_ioctls::{Kvm, KvmRunWrapper, VcpuExit, VcpuFd, VmFd};
 use libc::{SIGRTMAX, c_int, siginfo_t};
 use tracing::warn;
 use vm_device::{
@@ -68,13 +73,22 @@ pub struct Vcpu {
     pub cpuid: CpuId,
     pub vcpu_fd: VcpuFd,
     pub supported_msrs: Msrs,
+    run_size: usize,
     barrier: Arc<Barrier>,
     io_manager: Arc<IoManager>,
     vcpu_event_tx: async_broadcast::Sender<VcpuEvent>,
     guest_manager: Arc<Mutex<GuestManagerDevice>>,
 }
 
-thread_local!(static THIS_VCPU_PTR: RefCell<Option<*mut Vcpu>> = RefCell::new(None));
+thread_local!(static THIS_VCPU_FD: RefCell<Option<(usize, i32)>> = RefCell::new(None));
+
+fn sig_stop() -> c_int {
+    SIGRTMAX() - 1
+}
+
+fn sig_suspend() -> c_int {
+    SIGRTMAX() - 2
+}
 
 pub enum VcpuRunResult {
     Ok(Vcpu),
@@ -85,8 +99,14 @@ pub enum VcpuRunResult {
 pub struct RunningVcpuHandle(JoinHandle<VcpuRunResult>);
 
 impl RunningVcpuHandle {
-    pub async fn signal_stop(&self) {
-        self.0.kill(SIGRTMAX() - 1).ok();
+    pub async fn signal_stop(&self, exit_reason: VcpuExitReason) {
+        self.0
+            .kill(if exit_reason == VcpuExitReason::Suspend {
+                sig_suspend()
+            } else {
+                sig_stop()
+            })
+            .ok();
     }
 
     pub async fn join(self) -> VcpuRunResult {
@@ -100,8 +120,8 @@ impl RunningVcpuHandle {
         }
     }
 
-    pub async fn signal_stop_and_join(self) -> VcpuRunResult {
-        self.signal_stop().await;
+    pub async fn signal_stop_and_join(self, exit_reason: VcpuExitReason) -> VcpuRunResult {
+        self.signal_stop(exit_reason).await;
         self.join().await
     }
 }
@@ -125,6 +145,7 @@ impl Vcpu {
         let mut cpuid = base_cpuid.clone();
         cpu_ref::cpuid::filter_cpuid(kvm, index, vcpu_count, &mut cpuid);
 
+        let run_size = vm_fd.run_size();
         let vcpu_fd = vm_fd.create_vcpu(index as u64)?;
 
         let vcpu = Self {
@@ -134,6 +155,7 @@ impl Vcpu {
             cpuid,
             vcpu_fd,
             supported_msrs,
+            run_size,
             io_manager,
             barrier,
             vcpu_event_tx,
@@ -251,27 +273,49 @@ impl Vcpu {
     }
 
     fn setup_thread_local(&self) -> Result<()> {
-        THIS_VCPU_PTR.with(|vcpu| {
-            if vcpu.borrow().is_none() {
-                let vcpu_ptr = (self as *const Self).cast_mut();
-                *vcpu.borrow_mut() = Some(vcpu_ptr);
-            }
+        THIS_VCPU_FD.with(|fd| {
+            *fd.borrow_mut() = Some((self.run_size, self.vcpu_fd.as_raw_fd()));
         });
 
         Ok(())
     }
 
     pub fn setup_signal_handler() -> Result<()> {
-        extern "C" fn handle_signal(_: c_int, _: *mut siginfo_t, _: *mut libc::c_void) {
-            THIS_VCPU_PTR.with(|vcpu| {
-                if let Some(vcpu_ptr) = *vcpu.borrow() {
-                    let vcpu = unsafe { &mut *vcpu_ptr };
-                    vcpu.vcpu_fd.set_kvm_immediate_exit(1);
+        extern "C" fn handle_signal(signal_num: c_int, _: *mut siginfo_t, _: *mut libc::c_void) {
+            // Primary: signal causes EINTR which is sufficient
+            // Secondary: set immediate exit via raw fd (100% crash-safe)
+            let _ = THIS_VCPU_FD.try_with(|fd| {
+                if let Ok(fd_ref) = fd.try_borrow() {
+                    if let Some((run_size, vcpu_fd)) = *fd_ref {
+                        let immediate_exit = if signal_num == sig_stop() {
+                            1
+                        } else if signal_num == sig_suspend() {
+                            2
+                        } else {
+                            warn!("unhandled signal: {:?}", signal_num);
+                            0
+                        };
+
+                        unsafe {
+                            let fd = File::from_raw_fd(vcpu_fd);
+                            let Ok(mut run_wrapper) = KvmRunWrapper::mmap_from_fd(&fd, run_size)
+                            else {
+                                warn!("Failed to mmap run wrapper");
+                                return;
+                            };
+
+                            run_wrapper.as_mut_ref().immediate_exit = immediate_exit;
+
+                            // drop the file; but don't close the fd
+                            let _ = fd.into_raw_fd();
+                        }
+                    }
                 }
             });
         }
 
-        register_signal_handler(SIGRTMAX() - 1, handle_signal)?;
+        register_signal_handler(sig_stop(), handle_signal)?;
+        register_signal_handler(sig_suspend(), handle_signal)?;
 
         Ok(())
     }
@@ -371,8 +415,20 @@ impl Vcpu {
                 Err(e) if e.errno() == libc::EINTR => {
                     warn!("Vcpu run interrupt: {}", e);
                     // Clear the immediate exit flag after handling the interrupt
+                    let k_run = self.vcpu_fd.get_kvm_run();
+
+                    let exit_reason = match k_run.immediate_exit {
+                        1 => VcpuExitReason::Normal,
+                        2 => VcpuExitReason::Suspend,
+                        _ => {
+                            warn!("unhandled immediate exit: {:?}", k_run.immediate_exit);
+                            VcpuExitReason::Normal
+                        }
+                    };
+
                     self.vcpu_fd.set_kvm_immediate_exit(0);
-                    break 'vcpu_loop;
+
+                    return Ok(exit_reason);
                 }
                 Err(e) => {
                     warn!("Vcpu run error: {}", e);
@@ -380,6 +436,10 @@ impl Vcpu {
                 }
             };
         }
+
+        THIS_VCPU_FD.with(|fd| {
+            *fd.borrow_mut() = None;
+        });
 
         Ok(VcpuExitReason::Normal)
     }

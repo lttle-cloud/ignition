@@ -1,10 +1,47 @@
 service:
   name: landing-page
+  namespace: landing
   target:
     name: landing-page
     port: 80
     protocol: http
   bind:
     external:
-      host: landing.alpha1.ovh-rbx.lttle.host
+      host: lttle.cloud
       protocol: https
+---
+service:
+  name: landing-page-www
+  namespace: landing
+  target:
+    name: landing-page
+    port: 80
+    protocol: http
+  bind:
+    external:
+      host: www.lttle.cloud
+      protocol: https
+---
+service:
+  name: landing-page-hello
+  namespace: landing
+  target:
+    name: landing-page
+    port: 80
+    protocol: http
+  bind:
+    external:
+      host: hello.lttle.cloud
+      protocol: https
+---
+certificate:
+  name: landing-page
+  namespace: landing
+  domains:
+    - lttle.cloud
+    - www.lttle.cloud
+    - hello.lttle.cloud
+  issuer:
+    auto:
+      provider: letsencrypt
+      email: laurentiu@lttle.cloud

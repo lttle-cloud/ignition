@@ -14,8 +14,8 @@ machine:
     - name: db
   restart-policy: always
   environment:
-    DATABASE_URL: "postgresql://lbl:lbl@db-internal.lbl.svc.lttle.local:5432/lbl" # change this to use a more secure password
-    API_KEY: "your_api_key" # change this to a more secure key
+    DATABASE_URL: "postgresql://lbl:L6NyLVNdwmpk@db-internal.lbl.svc.lttle.local:5432/lbl"
+    API_KEY: "eypadtJAckwZ"
 ---
 service:
   name: api-http
@@ -26,7 +26,7 @@ service:
     protocol: http
   bind:
     external:
-      host: lbl-api.alpha1.ovh-rbx.lttle.host
+      host: lbl-api.eu.lttle.host
       protocol: https
 ---
 service:
@@ -38,5 +38,5 @@ service:
     protocol: http
   bind:
     external:
-      host: lbl-api-device.alpha1.ovh-rbx.lttle.host
+      host: lbl-api-device.eu.lttle.host
       protocol: http

@@ -16,7 +16,7 @@ use crate::{
         MachineConfig,
         vm::{
             devices::VmDevices,
-            vcpu::{RunningVcpuHandle, Vcpu, VcpuRunResult},
+            vcpu::{RunningVcpuHandle, Vcpu, VcpuExitReason, VcpuRunResult},
         },
     },
     controller::{
@@ -100,11 +100,11 @@ impl VcpuManager {
         Ok(())
     }
 
-    pub async fn stop_all(&mut self) -> Result<()> {
+    pub async fn stop_all(&mut self, exit_reason: VcpuExitReason) -> Result<()> {
         let handles = self
             .running_vcpus
             .drain(..)
-            .map(|handle| handle.signal_stop_and_join());
+            .map(|handle| handle.signal_stop_and_join(exit_reason.clone()));
 
         let results = join_all(handles).await;
 
@@ -323,7 +323,12 @@ impl MachineStateMachine {
         match self.current_state {
             MachineState::Ready | MachineState::Booting => {
                 self.set_state(MachineState::Stopping).await?;
-                self.resources.vcpu_manager.lock().await.stop_all().await?;
+                self.resources
+                    .vcpu_manager
+                    .lock()
+                    .await
+                    .stop_all(VcpuExitReason::Normal)
+                    .await?;
                 self.set_state(MachineState::Stopped).await?;
                 Ok(())
             }
@@ -345,7 +350,7 @@ impl MachineStateMachine {
 
                 // For suspend, we're more tolerant of VCPU stop failures
                 // Log any errors but continue to Suspended state
-                if let Err(e) = vcpu_manager.stop_all().await {
+                if let Err(e) = vcpu_manager.stop_all(VcpuExitReason::Suspend).await {
                     warn!("Failed to stop VCPUs: {}", e);
                 };
 

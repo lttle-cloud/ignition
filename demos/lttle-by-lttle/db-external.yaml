@@ -9,5 +9,5 @@ service:
     protocol: tcp
   bind:
     external:
-      host: lbl-db.alpha1.ovh-rbx.lttle.host
+      host: lbl-db.eu.lttle.host
       protocol: tls
