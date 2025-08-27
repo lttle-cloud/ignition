@@ -1,0 +1,17 @@
+machine:
+  name: nginx
+  image: nginx:latest
+  resources:
+    cpu: 1
+    memory: 128
+---
+service:
+  name: nginx
+  target:
+    name: nginx
+    port: 80
+    protocol: http
+  bind:
+    external:
+      host: nginx-laurci.eu.lttle.host
+      protocol: https

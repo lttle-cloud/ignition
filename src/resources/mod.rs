@@ -197,6 +197,42 @@ where
     }
 }
 
+pub fn de_identifier<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = de_trim_non_empty_string(deserializer)?;
+    let mut chars = s.chars();
+    if !chars.next().unwrap().is_ascii_alphabetic()
+        || !chars.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(serde::de::Error::custom(
+            "identifier must start with a letter and contain only alphanumeric, hyphen or underscore",
+        ));
+    }
+    Ok(s)
+}
+
+pub fn de_opt_identifier<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = de_opt_trim_non_empty_string(deserializer)?;
+    if let Some(s) = s {
+        let mut chars = s.chars();
+        if !chars.next().unwrap().is_ascii_alphabetic()
+            || !chars.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(serde::de::Error::custom(
+                "identifier must start with a letter and contain only alphanumeric, hyphen or underscore",
+            ));
+        }
+        Ok(Some(s))
+    } else {
+        Ok(None)
+    }
+}
+
 pub fn de_vec_trim_non_empty_string<'de, D>(
     deserializer: D,
 ) -> std::result::Result<Vec<String>, D::Error>
