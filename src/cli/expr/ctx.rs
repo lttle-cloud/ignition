@@ -122,7 +122,7 @@ impl ExprEvalContext {
         // git info
         let git_info = match get_git_info(config.git_dir) {
             Ok(git_info) => Some(git_info),
-            Err(e) => {
+            Err(_e) => {
                 message_warn(format!("failed to load git info for current directory"));
                 None
             }
