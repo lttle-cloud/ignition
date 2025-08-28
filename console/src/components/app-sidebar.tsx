@@ -1,13 +1,6 @@
 "use client";
 
-import {
-	BadgeCheck,
-	Boxes,
-	Frame,
-	HardDrive,
-	Image,
-	Server,
-} from "lucide-react";
+import { BadgeCheck, Boxes, Frame, HardDrive, Server } from "lucide-react";
 import type * as React from "react";
 
 import { NavMain } from "@/components/nav-main";
