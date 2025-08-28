@@ -35,10 +35,21 @@ const data = {
 	],
 	navMain: [
 		{
+			title: "Machines",
+			url: "/machines",
+			icon: Server,
+			isActive: true,
+			items: [
+				{
+					title: "All Machines",
+					url: "/machines",
+				},
+			],
+		},
+		{
 			title: "Services",
 			url: "/services",
 			icon: Boxes,
-			isActive: true,
 			items: [
 				{
 					title: "All Services",
@@ -47,25 +58,6 @@ const data = {
 				{
 					title: "Create Service",
 					url: "/services/new",
-				},
-			],
-		},
-		{
-			title: "Machines",
-			url: "/machines",
-			icon: Server,
-			items: [
-				{
-					title: "All Machines",
-					url: "/machines",
-				},
-				{
-					title: "Create Machine",
-					url: "/machines/new",
-				},
-				{
-					title: "Snapshots",
-					url: "/machines/snapshots",
 				},
 			],
 		},

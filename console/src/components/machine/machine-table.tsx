@@ -23,7 +23,7 @@ type SortField = keyof Machine;
 type SortDirection = "asc" | "desc";
 
 export function MachineTable({ machines }: MachineTableProps) {
-	const _navigate = useNavigate();
+	const navigate = useNavigate();
 	const [searchTerm, setSearchTerm] = useState("");
 	const [sortField, setSortField] = useState<SortField>("name");
 	const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -64,8 +64,9 @@ export function MachineTable({ machines }: MachineTableProps) {
 			return (aValue < bValue ? -1 : aValue > bValue ? 1 : 0) * modifier;
 		});
 
-	const handleViewMachine = (_machineId: string) => {
-		// navigate(`/machine/${machineId}`);
+	const handleViewMachine = (machineId: string) => {
+		console.log("Navigating to machine detail page with ID:", machineId);
+		navigate({ to: "/machines/$machineId", params: { machineId } });
 	};
 
 	return (
