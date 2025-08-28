@@ -26,7 +26,7 @@ function Applications() {
 	const applications = [
 		{
 			id: "app-1",
-			name: "Nginx",
+			name: "nginx",
 			status: "running",
 			uptime: "42 days",
 			cpu: 24,
@@ -223,7 +223,7 @@ function Applications() {
 							{/* Mock data for each application with different colors */}
 							{[
 								{
-									name: "Nginx",
+									name: "nginx",
 									data: [45, 52, 48, 65, 78, 82, 95, 120, 145, 160, 180, 175],
 									colorClass: "bg-pink-2",
 								},
@@ -265,7 +265,7 @@ function Applications() {
 						<div className="flex flex-wrap gap-4 mt-4">
 							<div className="flex items-center gap-2">
 								<div className="w-3 h-3 rounded-full bg-pink-2"></div>
-								<span className="text-sm text-muted-foreground">Nginx</span>
+								<span className="text-sm text-muted-foreground">nginx</span>
 							</div>
 							<div className="flex items-center gap-2">
 								<div className="w-3 h-3 rounded-full bg-teal-2"></div>
