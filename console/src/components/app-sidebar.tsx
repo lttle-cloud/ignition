@@ -7,7 +7,7 @@ import {
 	Command,
 	Frame,
 	GalleryVerticalEnd,
-	Map,
+	Map as LucideMap,
 	PieChart,
 	Settings2,
 	SquareTerminal,
@@ -29,9 +29,9 @@ import {
 // This is sample data.
 const data = {
 	user: {
-		name: "shadcn",
-		email: "m@example.com",
-		avatar: "/avatars/shadcn.jpg",
+		name: "Stefan Ghegoiu",
+		email: "stefan@lttle.cloud",
+		avatar: "/public/avatar.png",
 	},
 	teams: [
 		{
@@ -151,7 +151,7 @@ const data = {
 		{
 			name: "Travel",
 			url: "#",
-			icon: Map,
+			icon: LucideMap,
 		},
 	],
 };
