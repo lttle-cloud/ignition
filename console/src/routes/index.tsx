@@ -33,7 +33,7 @@ function App() {
 						<Breadcrumb>
 							<BreadcrumbList>
 								<BreadcrumbItem className="hidden md:block">
-									<BreadcrumbLink href="#">Deployments</BreadcrumbLink>
+									<BreadcrumbLink href="#">Applications</BreadcrumbLink>
 								</BreadcrumbItem>
 							</BreadcrumbList>
 						</Breadcrumb>

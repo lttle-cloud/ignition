@@ -1,6 +1,13 @@
 "use client";
 
-import { BadgeCheck, Boxes, Frame, HardDrive, Server } from "lucide-react";
+import {
+	BadgeCheck,
+	Boxes,
+	Frame,
+	HardDrive,
+	Image,
+	Server,
+} from "lucide-react";
 import type * as React from "react";
 
 import { NavMain } from "@/components/nav-main";
@@ -15,7 +22,7 @@ import {
 	SidebarRail,
 } from "@/components/ui/sidebar";
 
-// This is sample data.
+// Platform navigation data
 const data = {
 	user: {
 		name: "Stefan Ghegoiu",
@@ -36,94 +43,74 @@ const data = {
 	navMain: [
 		{
 			title: "Services",
-			url: "#",
+			url: "/services",
 			icon: Boxes,
 			isActive: true,
 			items: [
 				{
-					title: "Introduction",
-					url: "#",
+					title: "All Services",
+					url: "/services",
 				},
 				{
-					title: "Get Started",
-					url: "#",
-				},
-				{
-					title: "Tutorials",
-					url: "#",
-				},
-				{
-					title: "Changelog",
-					url: "#",
+					title: "Create Service",
+					url: "/services/new",
 				},
 			],
 		},
 		{
 			title: "Machines",
-			url: "#",
+			url: "/machines",
 			icon: Server,
 			items: [
 				{
-					title: "History",
-					url: "#",
+					title: "All Machines",
+					url: "/machines",
 				},
 				{
-					title: "Starred",
-					url: "#",
+					title: "Create Machine",
+					url: "/machines/new",
 				},
 				{
-					title: "Settings",
-					url: "#",
+					title: "Snapshots",
+					url: "/machines/snapshots",
 				},
 			],
 		},
 		{
 			title: "Volumes",
-			url: "#",
+			url: "/volumes",
 			icon: HardDrive,
 			items: [
 				{
-					title: "Genesis",
-					url: "#",
+					title: "All Volumes",
+					url: "/volumes",
 				},
 				{
-					title: "Explorer",
-					url: "#",
-				},
-				{
-					title: "Quantum",
-					url: "#",
+					title: "Create Volume",
+					url: "/volumes/new",
 				},
 			],
 		},
 		{
-			title: "Certificates",
-			url: "#",
+			title: "Networking",
+			url: "/networking",
 			icon: BadgeCheck,
 			items: [
 				{
-					title: "General",
-					url: "#",
+					title: "Domains",
+					url: "/networking/domains",
 				},
 				{
-					title: "Team",
-					url: "#",
-				},
-				{
-					title: "Billing",
-					url: "#",
-				},
-				{
-					title: "Limits",
-					url: "#",
+					title: "Certificates",
+					url: "/networking/certificates",
 				},
 			],
 		},
 	],
 	projects: [
 		{
-			name: "Deployments",
-			url: "#",
+			name: "Applications",
+			url: "/applications",
 			icon: Frame,
 		},
 	],
