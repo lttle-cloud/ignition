@@ -9,3 +9,8 @@ ignition.toml
 claude-docs
 CLAUDE*
 QWEN*
+
+
+console/.vscode
+console/node_modules
+console/dist
