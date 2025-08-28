@@ -1,17 +1,6 @@
 "use client";
 
-import {
-	AudioWaveform,
-	BookOpen,
-	Bot,
-	Command,
-	Frame,
-	GalleryVerticalEnd,
-	Map as LucideMap,
-	PieChart,
-	Settings2,
-	SquareTerminal,
-} from "lucide-react";
+import { BadgeCheck, Boxes, Frame, HardDrive, Server } from "lucide-react";
 import type * as React from "react";
 
 import { NavMain } from "@/components/nav-main";
@@ -36,25 +25,19 @@ const data = {
 	tenants: [
 		{
 			name: "Acme Inc",
-			logo: GalleryVerticalEnd,
-			plan: "Enterprise",
 		},
 		{
 			name: "Acme Corp.",
-			logo: AudioWaveform,
-			plan: "Startup",
 		},
 		{
 			name: "Evil Corp.",
-			logo: Command,
-			plan: "Free",
 		},
 	],
 	navMain: [
 		{
-			title: "Playground",
+			title: "Machines",
 			url: "#",
-			icon: SquareTerminal,
+			icon: Server,
 			isActive: true,
 			items: [
 				{
@@ -72,9 +55,9 @@ const data = {
 			],
 		},
 		{
-			title: "Models",
+			title: "Volumes",
 			url: "#",
-			icon: Bot,
+			icon: HardDrive,
 			items: [
 				{
 					title: "Genesis",
@@ -91,9 +74,9 @@ const data = {
 			],
 		},
 		{
-			title: "Documentation",
+			title: "Services",
 			url: "#",
-			icon: BookOpen,
+			icon: Boxes,
 			items: [
 				{
 					title: "Introduction",
@@ -114,9 +97,9 @@ const data = {
 			],
 		},
 		{
-			title: "Settings",
+			title: "Certificates",
 			url: "#",
-			icon: Settings2,
+			icon: BadgeCheck,
 			items: [
 				{
 					title: "General",
@@ -139,19 +122,9 @@ const data = {
 	],
 	projects: [
 		{
-			name: "Design Engineering",
+			name: "Deployments",
 			url: "#",
 			icon: Frame,
-		},
-		{
-			name: "Sales & Marketing",
-			url: "#",
-			icon: PieChart,
-		},
-		{
-			name: "Travel",
-			url: "#",
-			icon: LucideMap,
 		},
 	],
 };
@@ -163,8 +136,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				<TenantSwitcher tenants={data.tenants} />
 			</SidebarHeader>
 			<SidebarContent>
-				<NavMain items={data.navMain} />
 				<NavProjects projects={data.projects} />
+				<NavMain items={data.navMain} />
 			</SidebarContent>
 			<SidebarFooter>
 				<NavUser user={data.user} />

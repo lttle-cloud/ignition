@@ -24,7 +24,6 @@ export function TenantSwitcher({
 }: {
 	tenants: {
 		name: string;
-		plan: string;
 	}[];
 }) {
 	const { isMobile } = useSidebar();
