@@ -26,7 +26,7 @@ function Applications() {
 	const applications = [
 		{
 			id: "app-1",
-			name: "API Gateway",
+			name: "Nginx",
 			status: "running",
 			uptime: "42 days",
 			cpu: 24,
@@ -36,7 +36,7 @@ function Applications() {
 		},
 		{
 			id: "app-2",
-			name: "User Service",
+			name: "Hono Backend",
 			status: "running",
 			uptime: "18 days",
 			cpu: 12,
@@ -46,7 +46,7 @@ function Applications() {
 		},
 		{
 			id: "app-3",
-			name: "Payment Processor",
+			name: "Notifications Queue",
 			status: "paused",
 			uptime: "5 days",
 			cpu: 0,
@@ -223,18 +223,18 @@ function Applications() {
 							{/* Mock data for each application with different colors */}
 							{[
 								{
-									name: "API Gateway",
+									name: "Nginx",
 									data: [45, 52, 48, 65, 78, 82, 95, 120, 145, 160, 180, 175],
 									colorClass: "bg-pink-2",
 								},
 								{
-									name: "User Service",
+									name: "Hono Backend",
 									data: [30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85],
 									colorClass: "bg-teal-2",
 								},
 								{
-									name: "Payment Processor",
-									data: [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
+									name: "Notifications Queue",
+									data: [15, 20, 25, 30, 35, 40, 45, 39, 22, 10, 5, 1],
 									colorClass: "bg-blue-2",
 								},
 							].map((app, appIndex) => (
@@ -265,20 +265,18 @@ function Applications() {
 						<div className="flex flex-wrap gap-4 mt-4">
 							<div className="flex items-center gap-2">
 								<div className="w-3 h-3 rounded-full bg-pink-2"></div>
-								<span className="text-sm text-muted-foreground">
-									API Gateway
-								</span>
+								<span className="text-sm text-muted-foreground">Nginx</span>
 							</div>
 							<div className="flex items-center gap-2">
 								<div className="w-3 h-3 rounded-full bg-teal-2"></div>
 								<span className="text-sm text-muted-foreground">
-									User Service
+									Hono Backend
 								</span>
 							</div>
 							<div className="flex items-center gap-2">
 								<div className="w-3 h-3 rounded-full bg-blue-2"></div>
 								<span className="text-sm text-muted-foreground">
-									Payment Processor
+									Notifications Queue
 								</span>
 							</div>
 						</div>
