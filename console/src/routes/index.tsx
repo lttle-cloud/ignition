@@ -1,6 +1,6 @@
 import { Separator } from "@radix-ui/react-separator";
 import { createFileRoute } from "@tanstack/react-router";
-import { Activity, Clock, Globe, Pause, Play, Users } from "lucide-react";
+import { Activity, Clock, Globe, Pause, Play } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
@@ -214,10 +214,6 @@ function Applications() {
 								<Button variant="outline" size="sm">
 									<Globe className="h-4 w-4 mr-2" />
 									All Services
-								</Button>
-								<Button variant="outline" size="sm">
-									<Users className="h-4 w-4 mr-2" />
-									Users
 								</Button>
 							</div>
 						</div>
