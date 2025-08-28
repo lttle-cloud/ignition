@@ -25,6 +25,32 @@ This project uses [Vitest](https://vitest.dev/) for testing. You can run the tes
 pnpm test
 ```
 
+## Docker Deployment
+
+This project includes Docker support for production deployment. To build and run the Docker container:
+
+1. Build the Docker image:
+   ```bash
+   docker build -t console .
+   ```
+
+2. Run the container:
+   ```bash
+   docker run -p 8080:80 console
+   ```
+
+3. Access the application at http://localhost:8080
+
+The Docker setup uses a multi-stage build process:
+- First stage builds the React application using Node.js
+- Second stage serves the built files using Nginx for optimal performance
+
+The Nginx configuration includes:
+- Proper caching headers for static assets
+- SPA routing support (sends index.html for all routes)
+- Security headers
+- Gzip compression
+
 ## Styling
 
 This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.

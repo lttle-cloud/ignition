@@ -20,7 +20,7 @@ const data = {
 	user: {
 		name: "Stefan Ghegoiu",
 		email: "stefan@lttle.cloud",
-		avatar: "/public/avatar.png",
+		avatar: "/avatar.png",
 	},
 	tenants: [
 		{
