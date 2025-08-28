@@ -103,7 +103,7 @@ const data = {
 	projects: [
 		{
 			name: "Applications",
-			url: "/applications",
+			url: "/",
 			icon: Frame,
 		},
 	],
