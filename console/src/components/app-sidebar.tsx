@@ -35,10 +35,33 @@ const data = {
 	],
 	navMain: [
 		{
+			title: "Services",
+			url: "#",
+			icon: Boxes,
+			isActive: true,
+			items: [
+				{
+					title: "Introduction",
+					url: "#",
+				},
+				{
+					title: "Get Started",
+					url: "#",
+				},
+				{
+					title: "Tutorials",
+					url: "#",
+				},
+				{
+					title: "Changelog",
+					url: "#",
+				},
+			],
+		},
+		{
 			title: "Machines",
 			url: "#",
 			icon: Server,
-			isActive: true,
 			items: [
 				{
 					title: "History",
@@ -69,29 +92,6 @@ const data = {
 				},
 				{
 					title: "Quantum",
-					url: "#",
-				},
-			],
-		},
-		{
-			title: "Services",
-			url: "#",
-			icon: Boxes,
-			items: [
-				{
-					title: "Introduction",
-					url: "#",
-				},
-				{
-					title: "Get Started",
-					url: "#",
-				},
-				{
-					title: "Tutorials",
-					url: "#",
-				},
-				{
-					title: "Changelog",
 					url: "#",
 				},
 			],
