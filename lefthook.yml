@@ -1,3 +1,5 @@
+# lefthook.yml must live in gitroot
+# https://github.com/evilmartians/lefthook/issues/443
 lefthook: |
   cd console
   pnpm lefthook
