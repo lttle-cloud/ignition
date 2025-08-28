@@ -17,7 +17,7 @@ import type * as React from "react";
 import { NavMain } from "@/components/nav-main";
 import { NavProjects } from "@/components/nav-projects";
 import { NavUser } from "@/components/nav-user";
-import { TeamSwitcher } from "@/components/team-switcher";
+import { TenantSwitcher } from "@/components/tenant-switcher";
 import {
 	Sidebar,
 	SidebarContent,
@@ -33,7 +33,7 @@ const data = {
 		email: "stefan@lttle.cloud",
 		avatar: "/public/avatar.png",
 	},
-	teams: [
+	tenants: [
 		{
 			name: "Acme Inc",
 			logo: GalleryVerticalEnd,
@@ -160,7 +160,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	return (
 		<Sidebar collapsible="icon" {...props}>
 			<SidebarHeader>
-				<TeamSwitcher teams={data.teams} />
+				<TenantSwitcher tenants={data.tenants} />
 			</SidebarHeader>
 			<SidebarContent>
 				<NavMain items={data.navMain} />
