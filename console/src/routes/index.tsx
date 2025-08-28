@@ -1,4 +1,3 @@
-/** biome-ignore-all lint/suspicious/noArrayIndexKey: <explanation> */
 import { Separator } from "@radix-ui/react-separator";
 import { createFileRoute } from "@tanstack/react-router";
 import { Activity, Clock, Globe, Pause, Play, Users } from "lucide-react";
@@ -91,8 +90,8 @@ function Applications() {
 				<div className="flex flex-1 flex-col gap-4 p-4 pt-0">
 					{/* Metrics Overview */}
 					<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-						{metrics.map((metric, index) => (
-							<div key={index} className="bg-muted/50 rounded-lg p-4">
+						{metrics.map((metric) => (
+							<div key={metric.name} className="bg-muted/50 rounded-lg p-4">
 								<p className="text-sm font-medium text-muted-foreground">
 									{metric.name}
 								</p>
@@ -248,9 +247,9 @@ function Applications() {
 										{app.name}
 									</div>
 									<div className="flex items-end justify-center gap-1 h-full">
-										{app.data.map((value, i) => (
+										{app.data.map((value) => (
 											<div
-												key={`${appIndex}-${i}`}
+												key={`${appIndex}-${value}`}
 												className={cn(
 													"w-full rounded-t transition-all hover:opacity-90",
 													app.colorClass,
