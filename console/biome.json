@@ -8,16 +8,17 @@
 	"files": {
 		"ignoreUnknown": false
 	},
-	"formatter": {
-		"enabled": true,
-		"indentStyle": "tab",
-		"includes": ["src/**/*.ts", "src/**/*.tsx", "!src/routeTree.gen.ts"]
-	},
 	"linter": {
 		"enabled": true,
 		"rules": {
 			"recommended": true
 		},
+		"includes": ["src/**/*.ts", "src/**/*.tsx", "!src/routeTree.gen.ts"]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"formatWithErrors": false,
 		"includes": ["src/**/*.ts", "src/**/*.tsx", "!src/routeTree.gen.ts"]
 	},
 	"javascript": {
@@ -29,7 +30,7 @@
 		"enabled": true,
 		"actions": {
 			"source": {
-				"organizeImports": "off"
+				"organizeImports": "on"
 			}
 		}
 	}
