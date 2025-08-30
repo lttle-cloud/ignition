@@ -1,0 +1,17 @@
+machine:
+  name: console
+  image: ghegoiu1/console:amd64
+  resources:
+    cpu: 1
+    memory: 128
+---
+service:
+  name: console
+  target:
+    name: console
+    port: 80
+    protocol: http
+  bind:
+    external:
+      host: console.eu.lttle.host
+      protocol: https

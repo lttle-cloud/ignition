@@ -1,0 +1,20 @@
+# lefthook.yml must live in gitroot
+# https://github.com/evilmartians/lefthook/issues/443
+lefthook: |
+  cd console
+  pnpm lefthook
+
+pre-commit:
+  commands:
+    check:
+      root: "console/"
+      glob: "**/*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,json,jsonc}"
+      run: pnpm biome check --write --no-errors-on-unmatched --files-ignore-unknown=true --colors=off {staged_files}
+      stage_fixed: true
+
+pre-push:
+  commands:
+    check:
+      root: "console/"
+      glob: "**/*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,json,jsonc}"
+      run: pnpm biome check --no-errors-on-unmatched --files-ignore-unknown=true --colors=off {push_files}
