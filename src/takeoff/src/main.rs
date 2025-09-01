@@ -12,8 +12,8 @@ use anyhow::{Result, bail};
 use guest::GuestManager;
 use mount::mount;
 use nix::{
-    libc,
-    unistd::{chdir, chroot},
+    libc::{self, c_int},
+    unistd::{Group, User, chdir, chroot},
 };
 use oci_config::{EnvVar, OciConfig};
 use serial::SerialWriter;
@@ -30,7 +30,8 @@ use tokio::{
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
-use tracing::{error, info};
+use caps::{CapSet, Capability, CapsHashSet};
+use tracing::{error, info, warn};
 
 use opentelemetry::KeyValue;
 use opentelemetry::logs::{AnyValue, LogRecord, Logger, LoggerProvider, Severity};
@@ -64,8 +65,28 @@ async fn takeoff() -> Result<()> {
     mount("tmpfs", "/tmp", Some("tmpfs")).await;
     mount("tmpfs", "/run", Some("tmpfs")).await;
 
-    // Set up PTY support for terminal functionality
+    use nix::mount::MsFlags;
+    mount::mount_with_options(
+        "tmpfs",
+        "/dev/shm",
+        Some("tmpfs"),
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+        Some("mode=1777,size=64m"),
+    )
+    .await;
+
+    mount::mount_with_options(
+        "mqueue",
+        "/dev/mqueue",
+        Some("mqueue"),
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+        None,
+    )
+    .await;
+
     setup_pty_devices().await?;
+
+    setup_additional_devices().await?;
 
     configure_dns(&cmdline).await?;
 
@@ -155,18 +176,223 @@ async fn takeoff() -> Result<()> {
         return Ok(());
     }
 
-    let mut child = Command::new(cmd[0].clone())
+    // config.user is of the format "user:group", where either user or group can be string or number; group can be omitted
+    let user = config.user.unwrap_or("root".to_string());
+    let (specified_user, specified_group) = if let Some(pos) = user.find(':') {
+        (user[..pos].to_string(), Some(user[pos + 1..].to_string()))
+    } else {
+        (user.to_string(), None)
+    };
+    info!(
+        "specified_user: {:?}, specified_group: {:?}",
+        specified_user, specified_group
+    );
+
+    let (uid, primary_gid) = if let Some(uid) = specified_user.parse::<u32>().ok() {
+        // User specified as numeric UID - try to get primary group from passwd
+        if let Ok(Some(user)) = User::from_uid(nix::unistd::Uid::from_raw(uid)) {
+            (Some(uid), Some(user.gid.as_raw()))
+        } else {
+            (Some(uid), None)
+        }
+    } else {
+        if let Ok(Some(user)) = User::from_name(&specified_user) {
+            // User specified as name - get both UID and primary GID
+            (Some(user.uid.as_raw()), Some(user.gid.as_raw()))
+        } else {
+            (None, None)
+        }
+    };
+
+    let gid = if let Some(specified_group) = specified_group {
+        // Group explicitly specified
+        if let Some(gid) = specified_group.parse::<u32>().ok() {
+            Some(gid)
+        } else {
+            if let Ok(Some(group)) = Group::from_name(&specified_group) {
+                Some(group.gid.as_raw())
+            } else {
+                // Group name not found - this should typically be an error like Docker
+                warn!(
+                    "Group '{}' not found, falling back to primary group",
+                    specified_group
+                );
+                primary_gid
+            }
+        }
+    } else {
+        // No group specified - use primary group from user lookup, or default
+        info!("No group specified, using primary_gid: {:?}", primary_gid);
+        primary_gid
+    };
+
+    let uid = uid.unwrap_or(0);
+    let gid = gid.unwrap_or(0);
+
+    info!("uid: {:?}; gid: {:?}", uid, gid);
+
+    // Set HOME environment variable when running as non-root user (like Docker does)
+    let mut envs = envs.clone();
+    if uid != 0 && !envs.contains_key("HOME") {
+        // Try to get home directory from passwd entry, fallback to working_dir
+        let home_dir = if let Ok(Some(user)) = User::from_name(&specified_user) {
+            user.dir.to_string_lossy().to_string()
+        } else {
+            working_dir.clone()
+        };
+
+        info!("Setting HOME environment variable to: {}", home_dir);
+        envs.insert("HOME".to_string(), home_dir);
+    }
+
+    // Capabilities were already set after namespace creation
+    if uid != 0 {
+        info!("Non-root user - capabilities should have been set after unshare");
+    }
+
+    let mut command = Command::new(cmd[0].clone());
+    command
         .args(&cmd[1..])
         .envs(envs.clone())
         .current_dir(working_dir.clone())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            info!("failed to spawn command: {}", e);
-            e
-        })?;
+        .stderr(Stdio::piped());
+
+    command.envs(envs.clone());
+
+    if uid != 0 {
+        unsafe {
+            command.pre_exec(move || {
+                use nix::unistd::{Gid, Uid, setgroups, setresgid, setresuid};
+
+                // 1. Set PR_SET_KEEPCAPS so capabilities survive UID change
+                let result = libc::prctl(libc::PR_SET_KEEPCAPS, 1, 0, 0, 0);
+                if result != 0 {
+                    eprintln!(
+                        "Failed to set PR_SET_KEEPCAPS: {}",
+                        std::io::Error::last_os_error()
+                    );
+                    return Err(std::io::Error::last_os_error());
+                }
+
+                // 2. Drop groups and switch UID/GID
+                if let Err(e) = setgroups(&[]) {
+                    eprintln!("Failed to setgroups: {}", e);
+                    return Err(e.into());
+                }
+                if let Err(e) =
+                    setresgid(Gid::from_raw(gid), Gid::from_raw(gid), Gid::from_raw(gid))
+                {
+                    eprintln!("Failed to setresgid: {}", e);
+                    return Err(e.into());
+                }
+                if let Err(e) =
+                    setresuid(Uid::from_raw(uid), Uid::from_raw(uid), Uid::from_raw(uid))
+                {
+                    eprintln!("Failed to setresuid: {}", e);
+                    return Err(e.into());
+                }
+
+                // 3. Set Docker default capability set
+                let mut caps = CapsHashSet::new();
+                caps.insert(Capability::CAP_CHOWN);
+                caps.insert(Capability::CAP_DAC_OVERRIDE);
+                caps.insert(Capability::CAP_FOWNER);
+                caps.insert(Capability::CAP_FSETID);
+                caps.insert(Capability::CAP_KILL);
+                caps.insert(Capability::CAP_SETGID);
+                caps.insert(Capability::CAP_SETUID);
+                caps.insert(Capability::CAP_SETPCAP);
+                caps.insert(Capability::CAP_NET_BIND_SERVICE);
+                caps.insert(Capability::CAP_NET_RAW);
+                caps.insert(Capability::CAP_SYS_CHROOT);
+                caps.insert(Capability::CAP_MKNOD);
+                caps.insert(Capability::CAP_AUDIT_WRITE);
+                caps.insert(Capability::CAP_SETFCAP);
+
+                // Set permitted and effective
+                if let Err(e) = caps::set(None, CapSet::Permitted, &caps) {
+                    eprintln!("Failed to set permitted caps: {}", e);
+                    return Err(std::io::Error::from_raw_os_error(1));
+                }
+                if let Err(e) = caps::set(None, CapSet::Effective, &caps) {
+                    eprintln!("Failed to set effective caps: {}", e);
+                    return Err(std::io::Error::from_raw_os_error(1));
+                }
+
+                // Set inheritable for execve
+                if let Err(e) = caps::set(None, CapSet::Inheritable, &caps) {
+                    eprintln!("Failed to set inheritable caps: {}", e);
+                    return Err(std::io::Error::from_raw_os_error(1));
+                }
+
+                // 4. Raise ambient capabilities for execve without file caps (Docker default set)
+                for &cap in &caps {
+                    let result = libc::prctl(
+                        libc::PR_CAP_AMBIENT,
+                        libc::PR_CAP_AMBIENT_RAISE,
+                        cap.index() as c_int,
+                        0,
+                        0,
+                    );
+                    if result != 0 {
+                        eprintln!(
+                            "Failed to raise ambient cap {}: {}",
+                            cap,
+                            std::io::Error::last_os_error()
+                        );
+                        return Err(std::io::Error::last_os_error());
+                    }
+                }
+
+                // 5. Clear PR_SET_KEEPCAPS
+                let result = libc::prctl(libc::PR_SET_KEEPCAPS, 0, 0, 0, 0);
+                if result != 0 {
+                    eprintln!(
+                        "Failed to clear PR_SET_KEEPCAPS: {}",
+                        std::io::Error::last_os_error()
+                    );
+                    return Err(std::io::Error::last_os_error());
+                }
+
+                // 6. Set PR_SET_NO_NEW_PRIVS for security
+                let result = libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+                if result != 0 {
+                    eprintln!(
+                        "Failed to set PR_SET_NO_NEW_PRIVS: {}",
+                        std::io::Error::last_os_error()
+                    );
+                    return Err(std::io::Error::last_os_error());
+                }
+
+                // 7. Set PR_SET_DUMPABLE for debugging
+                let result = libc::prctl(libc::PR_SET_DUMPABLE, 1, 0, 0, 0);
+                if result != 0 {
+                    eprintln!(
+                        "Failed to set PR_SET_DUMPABLE: {}",
+                        std::io::Error::last_os_error()
+                    );
+                    // Non-fatal, continue
+                }
+
+                eprintln!(
+                    "Successfully dropped privileges to uid={}, gid={} with Docker default capabilities",
+                    uid, gid
+                );
+                Ok(())
+            });
+        }
+    }
+
+    info!("About to spawn command: {:?}", cmd);
+    info!("Working directory: {:?}", working_dir);
+    info!("Environment variables: {:?}", envs);
+
+    let mut child = command.spawn().map_err(|e| {
+        info!("failed to spawn command: {}", e);
+        e
+    })?;
 
     tokio::spawn(run_exec_server(envs, working_dir));
 
@@ -205,6 +431,9 @@ async fn takeoff() -> Result<()> {
                 if line.is_empty() {
                     continue;
                 }
+
+                // Also log stderr to console for debugging
+                error!("STDERR: {}", line);
 
                 let mut rec = stderr_logger.create_log_record();
                 rec.set_severity_number(Severity::Error);
@@ -255,6 +484,38 @@ async fn takeoff() -> Result<()> {
     if !status.success() {
         info!("command failed: {}", status);
         bail!("command failed: {}", status);
+    }
+
+    Ok(())
+}
+
+async fn setup_additional_devices() -> Result<()> {
+    info!("Setting up additional devices for application compatibility");
+
+    // Create essential device files that Chrome and other applications need
+    let devices = [
+        ("/dev/random", 0o666, 1, 8),
+        ("/dev/urandom", 0o666, 1, 9),
+        ("/dev/zero", 0o666, 1, 5),
+        ("/dev/full", 0o666, 1, 7),
+    ];
+
+    for (device_path, mode, major, minor) in devices {
+        if !std::path::Path::new(device_path).exists() {
+            // Use libc mknod directly
+            let path_cstring = std::ffi::CString::new(device_path)
+                .map_err(|e| anyhow::anyhow!("Invalid path: {}", e))?;
+
+            let dev_t = libc::makedev(major, minor);
+            let result = unsafe { libc::mknod(path_cstring.as_ptr(), libc::S_IFCHR | mode, dev_t) };
+
+            if result == 0 {
+                info!("Created device file: {}", device_path);
+            } else {
+                let error = std::io::Error::last_os_error();
+                info!("Could not create {}: {}", device_path, error);
+            }
+        }
     }
 
     Ok(())
