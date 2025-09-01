@@ -4,6 +4,7 @@ pub mod tls;
 use std::{collections::HashSet, convert::Infallible, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Result, bail};
+use axum::http::HeaderValue;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::{Request, Uri, Version, service::service_fn};
@@ -113,6 +114,26 @@ impl ProxyBinding {
             } => (service_ip.clone(), *service_port),
             BindingMode::External { port, .. } => (config.external_bind_address.clone(), *port),
         }
+    }
+
+    pub fn public_host(&self) -> Option<String> {
+        let host = match &self.mode {
+            BindingMode::External { routing, port } => match routing {
+                ExternalBindingRouting::HttpHostHeader { host } => Some((host.clone(), *port)),
+                ExternalBindingRouting::TlsSni { host, .. } => Some((host.clone(), *port)),
+            },
+            _ => None,
+        };
+
+        if let Some((host, port)) = host {
+            if port == 443 || port == 80 {
+                return Some(host);
+            }
+
+            return Some(format!("{}:{}", host, port));
+        }
+
+        None
     }
 }
 
@@ -414,6 +435,8 @@ async fn handle_http_connection(
     machine_agent: Arc<MachineAgent>,
     certificate_agent: Arc<CertificateAgent>,
 ) -> Result<()> {
+    let client_ip = stream.peer_addr().ok();
+
     let io = TokioIo::new(stream);
 
     let svc = service_fn(move |mut req: Request<hyper::body::Incoming>| {
@@ -486,6 +509,27 @@ async fn handle_http_connection(
 
             let new_uri = format!("{}{}", upstream_uri, path_and_query);
             *req.uri_mut() = Uri::from_str(&new_uri).expect("failed to parse uri");
+
+            let headers = req.headers_mut();
+
+            headers.remove("x-forwarded-proto");
+            headers.append("x-forwarded-proto", HeaderValue::from_static("https"));
+
+            if let Some(host) = binding.public_host().and_then(|h| h.parse().ok()) {
+                headers.remove("host");
+                headers.append("host", host);
+            }
+
+            if let Some(client_ip) =
+                client_ip.and_then(|ip| ip.ip().to_string().parse::<HeaderValue>().ok())
+            {
+                headers.remove("x-forwarded-for");
+                headers.append("x-forwarded-for", client_ip.clone());
+
+                headers.remove("x-real-ip");
+                headers.append("x-real-ip", client_ip);
+            }
+
             *req.version_mut() = Version::HTTP_11;
 
             info!("Modified request URI: {:?}", req.uri());
@@ -530,6 +574,8 @@ async fn handle_https_connection(
     binding: &ProxyBinding,
     machine_agent: Arc<MachineAgent>,
 ) -> Result<()> {
+    let client_ip = tls_stream.get_ref().0.peer_addr().ok();
+
     let io = TokioIo::new(tls_stream);
 
     let svc = service_fn(move |mut req: Request<hyper::body::Incoming>| {
@@ -571,6 +617,26 @@ async fn handle_https_connection(
 
             let new_uri = format!("{}{}", upstream_uri, path_and_query);
             *req.uri_mut() = Uri::from_str(&new_uri).expect("failed to parse uri");
+            let headers = req.headers_mut();
+
+            headers.remove("x-forwarded-proto");
+            headers.append("x-forwarded-proto", HeaderValue::from_static("https"));
+
+            if let Some(host) = binding.public_host().and_then(|h| h.parse().ok()) {
+                headers.remove("host");
+                headers.append("host", host);
+            }
+
+            if let Some(client_ip) =
+                client_ip.and_then(|ip| ip.ip().to_string().parse::<HeaderValue>().ok())
+            {
+                headers.remove("x-forwarded-for");
+                headers.append("x-forwarded-for", client_ip.clone());
+
+                headers.remove("x-real-ip");
+                headers.append("x-real-ip", client_ip);
+            }
+
             *req.version_mut() = Version::HTTP_11;
 
             info!("Modified request URI: {:?}", req.uri());
