@@ -3,6 +3,9 @@ name = "takeoff"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+daemon = []
+
 [dependencies]
 takeoff-proto = { path = "../takeoff-proto" }
 tokio = { version = "1.47.0", features = ["full"] }

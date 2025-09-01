@@ -12,7 +12,7 @@ use anyhow::{Result, bail};
 use guest::GuestManager;
 use mount::mount;
 use nix::{
-    libc,
+    libc::{self, c_int},
     unistd::{Group, User, chdir, chroot},
 };
 use oci_config::{EnvVar, OciConfig};
@@ -31,7 +31,6 @@ use tokio::{
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 use caps::{CapSet, Capability, CapsHashSet};
-use std::collections::HashSet;
 use tracing::{error, info, warn};
 
 use opentelemetry::KeyValue;
@@ -66,8 +65,28 @@ async fn takeoff() -> Result<()> {
     mount("tmpfs", "/tmp", Some("tmpfs")).await;
     mount("tmpfs", "/run", Some("tmpfs")).await;
 
-    // Set up PTY support for terminal functionality
+    use nix::mount::MsFlags;
+    mount::mount_with_options(
+        "tmpfs",
+        "/dev/shm",
+        Some("tmpfs"),
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+        Some("mode=1777,size=64m"),
+    )
+    .await;
+
+    mount::mount_with_options(
+        "mqueue",
+        "/dev/mqueue",
+        Some("mqueue"),
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+        None,
+    )
+    .await;
+
     setup_pty_devices().await?;
+
+    setup_additional_devices().await?;
 
     configure_dns(&cmdline).await?;
 
@@ -113,8 +132,6 @@ async fn takeoff() -> Result<()> {
         info!("failed to unshare PID namespace: {}", errno);
         bail!("failed to unshare PID namespace: {}", errno);
     }
-
-    // Capabilities will be set properly in pre_exec hook for each process
 
     mount("proc", "/proc", Some("proc")).await;
 
@@ -242,33 +259,130 @@ async fn takeoff() -> Result<()> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    // For non-root containers, set capabilities but don't drop privileges yet
-    // Let the entrypoint script handle user switching with `su` or similar
+    command.envs(envs.clone());
+
     if uid != 0 {
-        info!("Setting up capabilities for non-root container (but staying as root for now)");
+        unsafe {
+            command.pre_exec(move || {
+                use nix::unistd::{Gid, Uid, setgroups, setresgid, setresuid};
 
-        let mut caps = CapsHashSet::new();
-        caps.insert(Capability::CAP_NET_BIND_SERVICE);
+                // 1. Set PR_SET_KEEPCAPS so capabilities survive UID change
+                let result = libc::prctl(libc::PR_SET_KEEPCAPS, 1, 0, 0, 0);
+                if result != 0 {
+                    eprintln!(
+                        "Failed to set PR_SET_KEEPCAPS: {}",
+                        std::io::Error::last_os_error()
+                    );
+                    return Err(std::io::Error::last_os_error());
+                }
 
-        // Set inheritable capabilities so child processes can get them
-        if let Err(e) = caps::set(None, CapSet::Inheritable, &caps) {
-            warn!("Failed to set inheritable capabilities: {}", e);
-        } else {
-            info!("Set CAP_NET_BIND_SERVICE as inheritable for child processes");
+                // 2. Drop groups and switch UID/GID
+                if let Err(e) = setgroups(&[]) {
+                    eprintln!("Failed to setgroups: {}", e);
+                    return Err(e.into());
+                }
+                if let Err(e) =
+                    setresgid(Gid::from_raw(gid), Gid::from_raw(gid), Gid::from_raw(gid))
+                {
+                    eprintln!("Failed to setresgid: {}", e);
+                    return Err(e.into());
+                }
+                if let Err(e) =
+                    setresuid(Uid::from_raw(uid), Uid::from_raw(uid), Uid::from_raw(uid))
+                {
+                    eprintln!("Failed to setresuid: {}", e);
+                    return Err(e.into());
+                }
+
+                // 3. Set Docker default capability set
+                let mut caps = CapsHashSet::new();
+                caps.insert(Capability::CAP_CHOWN);
+                caps.insert(Capability::CAP_DAC_OVERRIDE);
+                caps.insert(Capability::CAP_FOWNER);
+                caps.insert(Capability::CAP_FSETID);
+                caps.insert(Capability::CAP_KILL);
+                caps.insert(Capability::CAP_SETGID);
+                caps.insert(Capability::CAP_SETUID);
+                caps.insert(Capability::CAP_SETPCAP);
+                caps.insert(Capability::CAP_NET_BIND_SERVICE);
+                caps.insert(Capability::CAP_NET_RAW);
+                caps.insert(Capability::CAP_SYS_CHROOT);
+                caps.insert(Capability::CAP_MKNOD);
+                caps.insert(Capability::CAP_AUDIT_WRITE);
+                caps.insert(Capability::CAP_SETFCAP);
+
+                // Set permitted and effective
+                if let Err(e) = caps::set(None, CapSet::Permitted, &caps) {
+                    eprintln!("Failed to set permitted caps: {}", e);
+                    return Err(std::io::Error::from_raw_os_error(1));
+                }
+                if let Err(e) = caps::set(None, CapSet::Effective, &caps) {
+                    eprintln!("Failed to set effective caps: {}", e);
+                    return Err(std::io::Error::from_raw_os_error(1));
+                }
+
+                // Set inheritable for execve
+                if let Err(e) = caps::set(None, CapSet::Inheritable, &caps) {
+                    eprintln!("Failed to set inheritable caps: {}", e);
+                    return Err(std::io::Error::from_raw_os_error(1));
+                }
+
+                // 4. Raise ambient capabilities for execve without file caps (Docker default set)
+                for &cap in &caps {
+                    let result = libc::prctl(
+                        libc::PR_CAP_AMBIENT,
+                        libc::PR_CAP_AMBIENT_RAISE,
+                        cap.index() as c_int,
+                        0,
+                        0,
+                    );
+                    if result != 0 {
+                        eprintln!(
+                            "Failed to raise ambient cap {}: {}",
+                            cap,
+                            std::io::Error::last_os_error()
+                        );
+                        return Err(std::io::Error::last_os_error());
+                    }
+                }
+
+                // 5. Clear PR_SET_KEEPCAPS
+                let result = libc::prctl(libc::PR_SET_KEEPCAPS, 0, 0, 0, 0);
+                if result != 0 {
+                    eprintln!(
+                        "Failed to clear PR_SET_KEEPCAPS: {}",
+                        std::io::Error::last_os_error()
+                    );
+                    return Err(std::io::Error::last_os_error());
+                }
+
+                // 6. Set PR_SET_NO_NEW_PRIVS for security
+                let result = libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+                if result != 0 {
+                    eprintln!(
+                        "Failed to set PR_SET_NO_NEW_PRIVS: {}",
+                        std::io::Error::last_os_error()
+                    );
+                    return Err(std::io::Error::last_os_error());
+                }
+
+                // 7. Set PR_SET_DUMPABLE for debugging
+                let result = libc::prctl(libc::PR_SET_DUMPABLE, 1, 0, 0, 0);
+                if result != 0 {
+                    eprintln!(
+                        "Failed to set PR_SET_DUMPABLE: {}",
+                        std::io::Error::last_os_error()
+                    );
+                    // Non-fatal, continue
+                }
+
+                eprintln!(
+                    "Successfully dropped privileges to uid={}, gid={} with Docker default capabilities",
+                    uid, gid
+                );
+                Ok(())
+            });
         }
-
-        // Set the environment variables to tell the container about desired user
-        let mut envs_with_user = envs.clone();
-        envs_with_user.insert("TAKEOFF_TARGET_UID".to_string(), uid.to_string());
-        envs_with_user.insert("TAKEOFF_TARGET_GID".to_string(), gid.to_string());
-
-        command.envs(envs_with_user);
-        info!(
-            "Added TAKEOFF_TARGET_UID={} and TAKEOFF_TARGET_GID={} environment variables",
-            uid, gid
-        );
-    } else {
-        command.envs(envs.clone());
     }
 
     info!("About to spawn command: {:?}", cmd);
@@ -370,6 +484,38 @@ async fn takeoff() -> Result<()> {
     if !status.success() {
         info!("command failed: {}", status);
         bail!("command failed: {}", status);
+    }
+
+    Ok(())
+}
+
+async fn setup_additional_devices() -> Result<()> {
+    info!("Setting up additional devices for application compatibility");
+
+    // Create essential device files that Chrome and other applications need
+    let devices = [
+        ("/dev/random", 0o666, 1, 8),
+        ("/dev/urandom", 0o666, 1, 9),
+        ("/dev/zero", 0o666, 1, 5),
+        ("/dev/full", 0o666, 1, 7),
+    ];
+
+    for (device_path, mode, major, minor) in devices {
+        if !std::path::Path::new(device_path).exists() {
+            // Use libc mknod directly
+            let path_cstring = std::ffi::CString::new(device_path)
+                .map_err(|e| anyhow::anyhow!("Invalid path: {}", e))?;
+
+            let dev_t = libc::makedev(major, minor);
+            let result = unsafe { libc::mknod(path_cstring.as_ptr(), libc::S_IFCHR | mode, dev_t) };
+
+            if result == 0 {
+                info!("Created device file: {}", device_path);
+            } else {
+                let error = std::io::Error::last_os_error();
+                info!("Could not create {}: {}", device_path, error);
+            }
+        }
     }
 
     Ok(())
