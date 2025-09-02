@@ -42,7 +42,7 @@ At the moment we only provide pre-built binaries for the CLI on macOS ARM and Li
 To install the `lttle` CLI, you can run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lttle-cloud/ignition/refs/heads/master/get/lttle.sh | bash
+curl -fsSL https://install.lttle.sh | bash
 ```
 
 If you're on a different platform, you can build it from source:
