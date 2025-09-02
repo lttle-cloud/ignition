@@ -583,7 +583,7 @@ async fn handle_pg_ssl_connection(
 
 async fn handle_https_connection(
     tls_stream: tokio_rustls::server::TlsStream<TcpStream>,
-    binding: &ProxyBinding,
+    bindings: Arc<HashMap<String, ProxyBinding>>,
     machine_agent: Arc<MachineAgent>,
 ) -> Result<()> {
     let client_ip = tls_stream.get_ref().0.peer_addr().ok();
@@ -592,7 +592,7 @@ async fn handle_https_connection(
 
     let svc = service_fn(move |mut req: Request<hyper::body::Incoming>| {
         let machine_agent = machine_agent.clone();
-        let binding = binding.clone();
+        let bindings = bindings.clone();
 
         let mut base = HttpConnector::new();
         base.enforce_http(true);
@@ -600,6 +600,30 @@ async fn handle_https_connection(
         let client = Client::builder(TokioExecutor::new()).build(base);
 
         async move {
+            let original_host = req.uri().host();
+            let original_port = req.uri().port();
+
+            let target_host = match original_host {
+                Some(host) => match original_port {
+                    Some(port) => {
+                        if port == 80 || port == 443 {
+                            host.to_string()
+                        } else {
+                            format!("{}:{}", host, port)
+                        }
+                    }
+                    None => host.to_string(),
+                },
+                None => {
+                    warn!("No host in request URI");
+                    return Err("No host in request URI");
+                }
+            };
+
+            let Ok((binding, _)) = find_tls_binding(&bindings, &target_host) else {
+                return Err("failed to find binding for HTTPS host");
+            };
+
             let Ok(machine) = find_machine(&machine_agent, &binding.target_network_tag).await
             else {
                 return Err("failed to find machine");
@@ -638,11 +662,14 @@ async fn handle_https_connection(
             let new_uri = format!("{}{}", upstream_uri, path_and_query);
             *req.uri_mut() = Uri::from_str(&new_uri).expect("failed to parse uri");
             let headers = req.headers_mut();
+            let existing_host = headers.get("host");
+            info!("existing host: {:?}", existing_host);
+            info!("setting host to: {:?}", binding.public_host());
 
             headers.remove("x-forwarded-proto");
             headers.append("x-forwarded-proto", HeaderValue::from_static("https"));
 
-            if let Some(host) = binding.public_host().and_then(|h| h.parse().ok()) {
+            if let Ok(host) = HeaderValue::from_str(&target_host) {
                 headers.remove("host");
                 headers.append("host", host);
             }
@@ -696,7 +723,7 @@ async fn handle_tls_connection(
 
     if nested_protocol == ExternnalBindingRoutingTlsNestedProtocol::Http {
         info!("Handling HTTP connection over TLS");
-        return handle_https_connection(tls_stream, &binding, machine_agent).await;
+        return handle_https_connection(tls_stream, bindings, machine_agent).await;
     }
 
     let machine = find_machine(&machine_agent, &binding.target_network_tag).await?;
