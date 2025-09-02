@@ -165,10 +165,21 @@ impl TrafficAwareConnection {
         mode: TrafficAwareMode,
     ) -> Result<Self> {
         let machine_ip = machine.config.network.ip_address.clone();
-        let upstream_socket = TcpStream::connect(format!("{machine_ip}:{}", target_port)).await?;
+        let address = format!("{machine_ip}:{}", target_port);
 
-        // Connection starts as active, send FlashLock
+        // Send FlashLock immediately to keep machine awake during connection attempts
         machine.send_flash_lock().await?;
+
+        // Try connecting with timeout and retry logic
+        let upstream_socket =
+            match Self::connect_with_retry(&address, 3, Duration::from_secs(5)).await {
+                Ok(socket) => socket,
+                Err(e) => {
+                    // If connection fails, remove the flash lock we just added
+                    let _ = machine.send_flash_unlock().await;
+                    return Err(e);
+                }
+            };
 
         Ok(Self {
             machine,
@@ -177,6 +188,64 @@ impl TrafficAwareConnection {
             last_activity: Arc::new(RwLock::new(Instant::now())),
             mode,
         })
+    }
+
+    async fn connect_with_retry(
+        address: &str,
+        max_retries: u32,
+        timeout: Duration,
+    ) -> Result<TcpStream> {
+        let mut last_error = None;
+
+        for attempt in 0..max_retries {
+            match tokio::time::timeout(timeout, TcpStream::connect(address)).await {
+                Ok(Ok(stream)) => {
+                    if attempt > 0 {
+                        info!(
+                            "Successfully connected to {} on attempt {}",
+                            address,
+                            attempt + 1
+                        );
+                    }
+                    return Ok(stream);
+                }
+                Ok(Err(e)) => {
+                    warn!(
+                        "Connection attempt {} to {} failed: {}",
+                        attempt + 1,
+                        address,
+                        e
+                    );
+                    last_error = Some(e.into());
+                }
+                Err(_) => {
+                    warn!(
+                        "Connection attempt {} to {} timed out after {}s",
+                        attempt + 1,
+                        address,
+                        timeout.as_secs()
+                    );
+                    last_error = Some(anyhow!("Connection timeout"));
+                }
+            }
+
+            // Wait before retrying (except on last attempt)
+            if attempt < max_retries - 1 {
+                let delay = match attempt {
+                    0 => Duration::from_millis(100),
+                    1 => Duration::from_millis(500),
+                    _ => Duration::from_secs(1),
+                };
+                info!(
+                    "Retrying connection to {} in {}ms",
+                    address,
+                    delay.as_millis()
+                );
+                tokio::time::sleep(delay).await;
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| anyhow!("All connection attempts failed")))
     }
 
     pub fn ip_address(&self) -> String {

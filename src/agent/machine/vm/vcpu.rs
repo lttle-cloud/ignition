@@ -324,6 +324,9 @@ impl Vcpu {
         Self::setup_signal_handler()?;
         self.setup_thread_local()?;
 
+        // Clear any lingering immediate_exit flag from previous suspend
+        self.vcpu_fd.set_kvm_immediate_exit(0);
+
         // if the vcpu is stopped, and we're restarting, we need to send the restarted event
         let restart = self.status == VcpuStatus::Stopped;
 
@@ -413,9 +416,9 @@ impl Vcpu {
                 },
                 Err(e) if e.errno() == libc::EAGAIN => {}
                 Err(e) if e.errno() == libc::EINTR => {
-                    warn!("Vcpu run interrupt: {}", e);
                     // Clear the immediate exit flag after handling the interrupt
                     let k_run = self.vcpu_fd.get_kvm_run();
+                    warn!("Vcpu run interrupt: {} {}", e, k_run.immediate_exit);
 
                     let exit_reason = match k_run.immediate_exit {
                         1 => VcpuExitReason::Normal,

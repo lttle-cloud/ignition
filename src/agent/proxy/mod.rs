@@ -481,11 +481,23 @@ async fn handle_http_connection(
                 return Err("failed to find machine");
             };
 
-            let Ok(machine_connection) =
-                get_machine_connection(&machine, binding.target_port, binding.inactivity_timeout)
-                    .await
-            else {
-                return Err("failed to get machine connection");
+            let machine_connection = match get_machine_connection(
+                &machine,
+                binding.target_port,
+                binding.inactivity_timeout,
+            )
+            .await
+            {
+                Ok(conn) => conn,
+                Err(e) => {
+                    warn!(
+                        "Failed to establish connection to machine service {}:{}: {}",
+                        machine.config.network.ip_address, binding.target_port, e
+                    );
+                    return Err(
+                        "failed to connect to machine service - service may be starting up",
+                    );
+                }
             };
 
             let upstream_uri = format!(
@@ -593,11 +605,19 @@ async fn handle_https_connection(
                 return Err("failed to find machine");
             };
 
-            let Ok(machine_connection) =
-                get_machine_connection(&machine, binding.target_port, None).await
-            else {
-                return Err("failed to get machine connection");
-            };
+            let machine_connection =
+                match get_machine_connection(&machine, binding.target_port, None).await {
+                    Ok(conn) => conn,
+                    Err(e) => {
+                        warn!(
+                            "Failed to establish connection to machine service {}:{}: {}",
+                            machine.config.network.ip_address, binding.target_port, e
+                        );
+                        return Err(
+                            "failed to connect to machine service - service may be starting up",
+                        );
+                    }
+                };
 
             let upstream_uri = format!(
                 "http://{}:{}",
