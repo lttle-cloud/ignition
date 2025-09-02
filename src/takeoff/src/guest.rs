@@ -14,6 +14,7 @@ use nix::{
     },
 };
 use takeoff_proto::proto::TakeoffInitArgs;
+use tracing::info;
 
 const PAGE_SIZE: usize = 4096;
 const MAGIC_MMIO_ADDR: i64 = 0xd0000000;
@@ -74,16 +75,20 @@ impl GuestManager {
             ptr.read_volatile()
         };
 
-        let mut buffer = vec![0u8; len as usize];
-        let buff_slice = buffer.as_mut_slice();
-        let val = self.virt_to_phys(buff_slice.as_ptr() as u64)?;
+        info!("takeoff args len: {}", len);
 
+        let buffer = [0u8; 1024 * 10];
+        let val = self.virt_to_phys(buffer.as_ptr() as u64)?;
+
+        info!("alloc ptr: {:x}", val);
         unsafe {
             let ptr: *mut u64 = self.map_base.as_ptr().add(16) as *mut u64;
             ptr.write_volatile(val);
         }
 
-        let str = String::from_utf8_lossy(&buff_slice[0..len as usize]).to_string();
+        let str = String::from_utf8_lossy(&buffer[..len as usize]).to_string();
+
+        info!("takeoff args str: {}", str);
 
         TakeoffInitArgs::decode(&str)
     }

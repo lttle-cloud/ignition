@@ -45,8 +45,13 @@ async fn takeoff() -> Result<()> {
 
     let guest_manager = Arc::new(GuestManager::new().expect("create guest manager"));
 
-    let Ok(args) = guest_manager.read_takeoff_args() else {
-        bail!("failed to read takeoff init args");
+    let args = match guest_manager.read_takeoff_args() {
+        Ok(args) => args,
+        Err(e) => {
+            error!("failed to read takeoff init args: {}", e);
+            guest_manager.set_exit_code(1);
+            return Ok(());
+        }
     };
 
     let cmdline = fs::read_to_string("/proc/cmdline")
