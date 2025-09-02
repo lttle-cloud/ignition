@@ -14,6 +14,7 @@ use event_manager::{EventManager, MutEventSubscriber};
 use kvm_bindings::{KVM_PIT_SPEAKER_DUMMY, kvm_pit_config, kvm_userspace_memory_region};
 use kvm_ioctls::{Kvm, VmFd};
 use linux_loader::loader::Cmdline;
+use takeoff_proto::proto::TakeoffInitArgs;
 use vm_allocator::{AddressAllocator, AllocPolicy};
 use vm_device::{
     bus::{BusRange, MmioAddress, PioAddress, PioRange},
@@ -57,6 +58,7 @@ pub async fn setup_devices(
     machine_config: &MachineConfig,
     kvm: &Kvm,
     vm_fd: Arc<VmFd>,
+    takeoff_args: &TakeoffInitArgs,
     memory: &GuestMemoryMmap,
     irq_allocator: &mut IrqAllocator,
     mmio_allocator: &mut AddressAllocator,
@@ -79,7 +81,16 @@ pub async fn setup_devices(
             snapshot_strategy, ..
         } => Some(snapshot_strategy.clone()),
     };
-    let guest_manager = GuestManagerDevice::new(device_event_tx.clone(), snapshot_strategy);
+
+    let takeoff_args_str = takeoff_args.encode()?;
+    let takeoff_args_bytes = takeoff_args_str.as_bytes().to_vec();
+
+    let guest_manager = GuestManagerDevice::new(
+        memory.clone(),
+        takeoff_args_bytes,
+        device_event_tx.clone(),
+        snapshot_strategy,
+    );
 
     let net = setup_network_device(
         vm_fd.clone(),

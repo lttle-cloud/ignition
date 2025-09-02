@@ -17,7 +17,7 @@ use nix::{
 };
 use oci_config::{EnvVar, OciConfig};
 use serial::SerialWriter;
-use takeoff_proto::proto::{LogsTelemetryConfig, TakeoffInitArgs};
+use takeoff_proto::proto::LogsTelemetryConfig;
 
 use tokio::{
     fs,
@@ -45,10 +45,13 @@ async fn takeoff() -> Result<()> {
 
     let guest_manager = Arc::new(GuestManager::new().expect("create guest manager"));
 
+    let Ok(args) = guest_manager.read_takeoff_args() else {
+        bail!("failed to read takeoff init args");
+    };
+
     let cmdline = fs::read_to_string("/proc/cmdline")
         .await
         .expect("read cmdline");
-    let args = TakeoffInitArgs::try_parse_from_kernel_cmdline(&cmdline)?;
 
     configure_dns(&cmdline).await?;
 

@@ -5,6 +5,7 @@ use std::{
 };
 
 use tracing::warn;
+use vm_memory::{Bytes, GuestAddress, GuestMemoryMmap};
 
 use crate::agent::machine::{
     machine::SnapshotStrategy,
@@ -35,6 +36,11 @@ const CMD_FLASH_UNLOCK: u8 = CMD_OFFSET + 1;
 
 const READ_OFFSET_LAST_BOOT_TIME: u64 = 0;
 const READ_OFFSET_FIRST_BOOT_TIME: u64 = 8;
+const READ_OFFSET_TAKEOFF_ARGS_LEN: u64 = 16;
+
+const WRITE_OFFSET_TRIGGER: u64 = 0;
+const WRITE_OFFSET_CMD: u64 = 8;
+const WRITE_OFFSET_TAKEOFF_ARGS: u64 = 16;
 
 #[allow(unused)]
 #[derive(Debug, Clone, Copy)]
@@ -131,6 +137,8 @@ impl Cmd {
 }
 
 pub struct GuestManagerDevice {
+    memory: GuestMemoryMmap,
+    takeoff_args: Vec<u8>,
     listen_trigger_count: u32,
     device_event_tx: async_broadcast::Sender<DeviceEvent>,
     first_boot_duration: Option<Duration>,
@@ -148,10 +156,14 @@ impl GuestManagerDevice {
     }
 
     pub fn new(
+        memory: GuestMemoryMmap,
+        takeoff_args: Vec<u8>,
         device_event_tx: async_broadcast::Sender<DeviceEvent>,
         snapshot_strategy: Option<SnapshotStrategy>,
     ) -> Arc<Mutex<Self>> {
         let guest_manager = Self {
+            memory,
+            takeoff_args,
             snapshot_strategy,
             listen_trigger_count: 0,
             first_boot_duration: None,
@@ -185,7 +197,8 @@ impl GuestManagerDevice {
                 .map(|duration| duration.as_micros() as u64),
             READ_OFFSET_FIRST_BOOT_TIME => self
                 .first_boot_duration
-                .map(|duration| duration.as_micros() as u64),
+                .map(|duration: Duration| duration.as_micros() as u64),
+            READ_OFFSET_TAKEOFF_ARGS_LEN => self.process_args_read(),
             _ => {
                 warn!("unhandled read offset {}", offset);
                 return;
@@ -197,13 +210,15 @@ impl GuestManagerDevice {
     }
 
     pub fn mmio_write(&mut self, offset: vm_device::bus::MmioAddressOffset, data: &[u8]) -> bool {
-        if offset == 0 {
-            return self.process_trigger(data);
-        } else if offset == 8 {
-            return self.process_cmd(data);
+        match offset {
+            WRITE_OFFSET_TRIGGER => self.process_trigger(data),
+            WRITE_OFFSET_CMD => self.process_cmd(data),
+            WRITE_OFFSET_TAKEOFF_ARGS => self.process_args_write(data),
+            _ => {
+                warn!("unhandled write offset {}", offset);
+                false
+            }
         }
-
-        false
     }
 
     fn process_trigger(&mut self, data: &[u8]) -> bool {
@@ -272,6 +287,26 @@ impl GuestManagerDevice {
         };
 
         self.device_event_tx.try_broadcast(event).ok();
+
+        return false;
+    }
+
+    fn process_args_read(&mut self) -> Option<u64> {
+        let len = self.takeoff_args.len();
+        return Some(len as u64);
+    }
+
+    fn process_args_write(&mut self, data: &[u8]) -> bool {
+        let ptr = u64::from_le_bytes([
+            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+        ]);
+
+        if let Err(e) = self
+            .memory
+            .write_slice(&self.takeoff_args, GuestAddress(ptr))
+        {
+            warn!("Failed to write hello world! to ptr {}: {:?}", ptr, e);
+        }
 
         return false;
     }

@@ -15,7 +15,7 @@ use vm_memory::{
 use crate::agent::machine::{
     machine::MachineConfig,
     vm::constants::{
-        CMDLINE_CAPACITY, CMDLINE_START, E820_RAM, EBDA_START, HIGH_RAM_START,
+        CMDLINE_CAPACITY, CMDLINE_SAFE_LIMIT, CMDLINE_START, E820_RAM, EBDA_START, HIGH_RAM_START,
         KERNEL_BOOT_FLAG_MAGIC, KERNEL_HDR_MAGIC, KERNEL_LOADER_OTHER, KERNEL_MIN_ALIGNMENT_BYTES,
         PAGE_SIZE, ZERO_PAGE_START,
     },
@@ -64,7 +64,18 @@ pub async fn load_kernel(
     boot_params.hdr.ramdisk_size = initrd_size as u32;
 
     boot_params.hdr.cmd_line_ptr = CMDLINE_START as u32;
-    boot_params.hdr.cmdline_size = kernel_cmd.as_cstring()?.as_bytes().len() as u32;
+    let cmdline_cstring = kernel_cmd.as_cstring()?;
+    let cmdline_bytes = cmdline_cstring.as_bytes();
+    boot_params.hdr.cmdline_size = cmdline_bytes.len() as u32;
+
+    // Validate command line size against safe kernel limit
+    if cmdline_bytes.len() > CMDLINE_SAFE_LIMIT {
+        bail!(
+            "Command line too large: {} bytes exceeds safe kernel limit of {} bytes.",
+            cmdline_bytes.len(),
+            CMDLINE_SAFE_LIMIT
+        );
+    }
 
     linux_loader::loader::load_cmdline(memory, GuestAddress(CMDLINE_START), kernel_cmd)?;
 
