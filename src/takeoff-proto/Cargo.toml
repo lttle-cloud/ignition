@@ -3,6 +3,9 @@ name = "takeoff-proto"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+daemon = []
+
 [dependencies]
 anyhow = "1.0.98"
 hex = "0.4.3"

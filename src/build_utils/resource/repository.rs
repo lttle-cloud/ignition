@@ -1,7 +1,9 @@
 use anyhow::Result;
-use tokio::fs::write;
 
-use crate::{build_utils::cargo, resources::ResourceBuildInfo};
+use crate::{
+    build_utils::{cargo, fs::write_if_changed},
+    resources::ResourceBuildInfo,
+};
 
 pub async fn build_repository(resources: &[ResourceBuildInfo]) -> Result<()> {
     let repository_out_path = cargo::build_out_dir_path("repository.rs");
@@ -63,7 +65,7 @@ pub async fn build_repository(resources: &[ResourceBuildInfo]) -> Result<()> {
 
     src.push_str("}\n\n");
 
-    write(&repository_out_path, src).await?;
+    write_if_changed(&repository_out_path, src).await?;
 
     Ok(())
 }
