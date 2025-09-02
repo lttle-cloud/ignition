@@ -21,6 +21,7 @@ path = "src/cli/main.rs"
 [[bin]]
 name = "generate-token-tool"
 path = "src/tools/generate_token.rs"
+required-features = ["daemon"]
 
 [[bin]]
 name = "generate-cli-install-script"
