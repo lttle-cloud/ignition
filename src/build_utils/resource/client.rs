@@ -1,8 +1,7 @@
 use anyhow::Result;
-use tokio::fs::write;
 
 use crate::{
-    build_utils::cargo,
+    build_utils::{cargo, fs::write_if_changed},
     machinery::api_schema::{
         ApiMethod, ApiPathSegment, ApiRequest, ApiResponse, ApiSchema, ApiService, ApiVerb,
     },
@@ -118,7 +117,7 @@ pub async fn build_rust_api_client(api_schema: &ApiSchema) -> Result<()> {
 
     src.push_str("}\n\n");
 
-    write(&client_out_path, src).await?;
+    write_if_changed(&client_out_path, src).await?;
 
     Ok(())
 }

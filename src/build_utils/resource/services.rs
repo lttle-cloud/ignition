@@ -2,7 +2,7 @@ use anyhow::Result;
 use tokio::fs::write;
 
 use crate::{
-    build_utils::cargo,
+    build_utils::{cargo, fs::write_if_changed},
     resources::{AdmissionRule, ResourceBuildInfo},
 };
 
@@ -53,7 +53,7 @@ pub async fn build_services(resources: &[ResourceBuildInfo]) -> Result<()> {
 
     src.push_str("}\n\n");
 
-    write(&service_out_path, src).await?;
+    write_if_changed(&service_out_path, src).await?;
 
     Ok(())
 }

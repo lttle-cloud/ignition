@@ -4,10 +4,9 @@ use anyhow::Result;
 use schemars::{Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use tokio::fs::write;
 
 use crate::{
-    build_utils::cargo,
+    build_utils::{cargo, fs::write_if_changed},
     machinery::api_schema::{
         ApiMethod, ApiPathSegment, ApiRequest, ApiResponse, ApiSchema, ApiService, ApiVerb,
     },
@@ -254,7 +253,7 @@ async fn build_api_schema(
 
     let src = serde_json::to_string_pretty(&api_schema)?;
 
-    write(&schema_out_path, src).await?;
+    write_if_changed(&schema_out_path, src).await?;
 
     Ok(api_schema)
 }
@@ -286,7 +285,7 @@ async fn build_resources_json_schema(
 
     let src = serde_json::to_string_pretty(&schema)?;
 
-    write(&schema_out_path, src).await?;
+    write_if_changed(&schema_out_path, src).await?;
 
     Ok(())
 }
