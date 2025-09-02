@@ -1,0 +1,22 @@
+volume:
+  name: minio-data
+  mode: writeable
+  size: 100M
+---
+machine:
+  image: minio/minio:latest
+  name: minio
+  resources:
+    cpu: 1
+    memory: 256
+  command:
+    - server
+    - /data
+    - --console-address
+    - ":9001"
+  environment:
+    MINIO_ROOT_USER: minio
+    MINIO_ROOT_PASSWORD: minio123
+  volumes:
+    - name: minio-data
+      path: /data

@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Result, bail};
+use caps::{CapSet, Capability};
 use tokio::{fs::OpenOptions, process::Command};
 
 pub fn dir_size_in_bytes_recursive(dir_path: impl AsRef<Path>) -> Result<u64> {
@@ -55,6 +56,16 @@ pub async fn format_file_as_ext4_volume_from_dir(
 ) -> Result<()> {
     let file_path = file.as_ref();
     let source_dir_path = source_dir.as_ref();
+
+    let needed_caps = [
+        Capability::CAP_DAC_READ_SEARCH,
+        Capability::CAP_DAC_OVERRIDE,
+    ];
+
+    for cap in &needed_caps {
+        caps::raise(None, CapSet::Inheritable, *cap)?;
+        caps::raise(None, CapSet::Ambient, *cap)?;
+    }
 
     let output = Command::new("mkfs.ext4")
         .arg("-F")
