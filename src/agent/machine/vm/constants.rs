@@ -19,6 +19,7 @@ pub const BLK_SHIFT: u32 = 12;
 pub const BLK_SIZE: usize = 1 << BLK_SHIFT;
 
 pub const CMDLINE_CAPACITY: usize = 4096;
+pub const CMDLINE_SAFE_LIMIT: usize = 2048;
 
 pub const X86_CR0_PE: u64 = 0x1;
 pub const X86_CR0_PG: u64 = 0x8000_0000;

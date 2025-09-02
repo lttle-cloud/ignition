@@ -380,8 +380,6 @@ impl Machine {
                 .collect(),
             logs_telemetry_config: config.logs_telemetry_config.clone(),
         };
-        let takeoff_args_str = takeoff_args.encode()?;
-        kernel_cmd.insert_str(format!("takeoff={}", takeoff_args_str))?;
 
         let mut io_manager = IoManager::new();
         let mut irq_allocator = IrqAllocator::new(SERIAL_IRQ)?;
@@ -408,6 +406,7 @@ impl Machine {
             &config,
             &kvm,
             vm_fd.clone(),
+            &takeoff_args,
             &guest_memory,
             &mut irq_allocator,
             &mut mmio_allocator,

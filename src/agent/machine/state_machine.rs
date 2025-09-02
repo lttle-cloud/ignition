@@ -293,18 +293,18 @@ impl MachineStateMachine {
     async fn handle_user_start(&mut self) -> Result<()> {
         let is_first_start = self.current_state == MachineState::Idle;
 
+        // Reset guest manager for non-first starts
+        if !is_first_start {
+            self.resources
+                .devices
+                .guest_manager
+                .lock()
+                .expect("Failed to lock guest manager")
+                .set_snapshot_strategy(None);
+        }
+
         match self.current_state {
             MachineState::Idle | MachineState::Suspended => {
-                // Reset guest manager for non-first starts
-                if !is_first_start {
-                    self.resources
-                        .devices
-                        .guest_manager
-                        .lock()
-                        .expect("Failed to lock guest manager")
-                        .set_snapshot_strategy(None);
-                }
-
                 // Set state to Booting and start VCPUs
                 // For first start: SystemDeviceReady will transition to Ready
                 // For resume from suspend: SystemVcpuRestarted will transition to Ready

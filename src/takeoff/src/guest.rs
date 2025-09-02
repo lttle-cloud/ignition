@@ -1,6 +1,7 @@
 use std::{
     ffi::c_void,
     fs::File,
+    io::{Read, Seek, SeekFrom},
     os::fd::{AsRawFd, FromRawFd},
 };
 
@@ -12,6 +13,7 @@ use nix::{
         stat::Mode,
     },
 };
+use takeoff_proto::proto::TakeoffInitArgs;
 
 const PAGE_SIZE: usize = 4096;
 const MAGIC_MMIO_ADDR: i64 = 0xd0000000;
@@ -56,8 +58,6 @@ impl GuestManager {
     pub fn set_exit_code(&self, code: i32) {
         unsafe {
             let ptr = self.map_base.as_ptr() as *mut u64;
-            // first 4 bytes are the trigger code
-            // last byte is 0x04
 
             let mut cmd = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04];
             cmd[..4].copy_from_slice(&code.to_le_bytes());
@@ -66,6 +66,26 @@ impl GuestManager {
 
             ptr.write_volatile(cmd_u64);
         }
+    }
+
+    pub fn read_takeoff_args(&self) -> Result<TakeoffInitArgs> {
+        let len = unsafe {
+            let ptr = self.map_base.as_ptr().add(16) as *const u64;
+            ptr.read_volatile()
+        };
+
+        let mut buffer = vec![0u8; len as usize];
+        let buff_slice = buffer.as_mut_slice();
+        let val = self.virt_to_phys(buff_slice.as_ptr() as u64)?;
+
+        unsafe {
+            let ptr: *mut u64 = self.map_base.as_ptr().add(16) as *mut u64;
+            ptr.write_volatile(val);
+        }
+
+        let str = String::from_utf8_lossy(&buff_slice[0..len as usize]).to_string();
+
+        TakeoffInitArgs::decode(&str)
     }
 
     #[allow(dead_code)]
@@ -94,5 +114,26 @@ impl GuestManager {
 
             time_us
         }
+    }
+
+    pub fn virt_to_phys(&self, virt_addr: u64) -> Result<u64> {
+        let page_size = 4096;
+        let virt_pfn = virt_addr / page_size;
+
+        let mut pagemap = File::open("/proc/self/pagemap")?;
+        pagemap.seek(SeekFrom::Start((virt_pfn * 8) as u64))?;
+
+        let mut page_info = [0u8; 8];
+        pagemap.read_exact(&mut page_info)?;
+        let page_info = u64::from_le_bytes(page_info);
+
+        if (page_info & (1u64 << 63)) == 0 {
+            anyhow::bail!("Page not present");
+        }
+
+        let phys_pfn = page_info & ((1u64 << 55) - 1);
+        let phys_addr = (phys_pfn * page_size) + (virt_addr % page_size);
+
+        Ok(phys_addr)
     }
 }
