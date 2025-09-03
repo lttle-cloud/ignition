@@ -585,6 +585,7 @@ async fn handle_https_connection(
     tls_stream: tokio_rustls::server::TlsStream<TcpStream>,
     bindings: Arc<HashMap<String, ProxyBinding>>,
     machine_agent: Arc<MachineAgent>,
+    server_name: String,
 ) -> Result<()> {
     let client_ip = tls_stream.get_ref().0.peer_addr().ok();
 
@@ -593,6 +594,7 @@ async fn handle_https_connection(
     let svc = service_fn(move |mut req: Request<hyper::body::Incoming>| {
         let machine_agent = machine_agent.clone();
         let bindings = bindings.clone();
+        let server_name = server_name.clone();
 
         let mut base = HttpConnector::new();
         base.enforce_http(true);
@@ -615,8 +617,8 @@ async fn handle_https_connection(
                     None => host.to_string(),
                 },
                 None => {
-                    warn!("No host in request URI");
-                    return Err("No host in request URI");
+                    warn!("No host in request URI. Defaulting to {}", server_name);
+                    server_name
                 }
             };
 
@@ -714,16 +716,16 @@ async fn handle_tls_connection(
 ) -> Result<()> {
     let (_, server_conn) = tls_stream.get_ref();
 
-    let Some(server_name) = server_conn.server_name() else {
+    let Some(server_name) = server_conn.server_name().map(|s| s.to_string()) else {
         warn!("No server name in TLS connection");
         bail!("No server name in TLS connection");
     };
 
-    let (binding, nested_protocol) = find_tls_binding(&bindings, server_name)?;
+    let (binding, nested_protocol) = find_tls_binding(&bindings, &server_name)?;
 
     if nested_protocol == ExternnalBindingRoutingTlsNestedProtocol::Http {
         info!("Handling HTTP connection over TLS");
-        return handle_https_connection(tls_stream, bindings, machine_agent).await;
+        return handle_https_connection(tls_stream, bindings, machine_agent, server_name).await;
     }
 
     let machine = find_machine(&machine_agent, &binding.target_network_tag).await?;
