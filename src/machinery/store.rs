@@ -291,7 +291,11 @@ impl Store {
             create_dir_all(dir_path).await?;
         }
 
-        let env = unsafe { EnvOpenOptions::new().open(dir_path)? };
+        let env = unsafe {
+            EnvOpenOptions::new()
+                .map_size(100 * 1024 * 1024) // 100MB store
+                .open(dir_path)?
+        };
 
         let db = {
             let mut wtxn = env.write_txn()?;
