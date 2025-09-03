@@ -7,6 +7,7 @@ use anyhow::{Result, bail};
 use oci_client::Reference;
 use serde::{Deserialize, Serialize};
 use tokio::task::spawn_blocking;
+use tracing::{info, warn};
 
 use crate::{
     agent::{
@@ -155,7 +156,9 @@ impl ImageAgent {
                 .collection(Collections::ImageLayer)
                 .key(&layer.digest);
 
-            self.store.put(&key, &layer_entry)?;
+            if let Err(e) = self.store.put(&key, &layer_entry) {
+                warn!("failed to store layer entry: {}", e);
+            }
         }
 
         // 3. create temp dir
@@ -173,8 +176,10 @@ impl ImageAgent {
             oci::uncompress_layer(&layer_path, &temp_dir.path()).await?;
         }
 
+        info!("removing whiteouts");
         let whiteout_path = temp_dir.path().to_path_buf();
         spawn_blocking(move || oci::remove_whiteouts(whiteout_path)).await??;
+        info!("whiteouts removed");
 
         // 5. write config for takeoff
         if let Some(config) = config.config {
@@ -183,6 +188,7 @@ impl ImageAgent {
             tokio::fs::write(config_path, serde_json::to_string_pretty(&config)?).await?;
         }
 
+        info!("measuring size");
         // 6. create the volume from temp dir
         let dir_size_path = temp_dir.path().to_path_buf();
         let dir_size_bytes =
@@ -193,10 +199,21 @@ impl ImageAgent {
         let sparse_size_mb = (dir_size_mb as f64 * 1.15).ceil() as u64;
         let sparse_size = sparse_size_mb * 1024 * 1024;
 
-        let volume = self
+        info!("creating volume");
+
+        let volume = match self
             .volume_agent
             .volume_create_ext4_sparse(temp_dir.path().to_str().unwrap(), Some(sparse_size))
-            .await?;
+            .await
+        {
+            Ok(volume) => volume,
+            Err(e) => {
+                warn!("failed to create volume: {}", e);
+                bail!("failed to create volume: {}", e);
+            }
+        };
+
+        info!("volume created");
 
         // 7. create image
         let image_id = uuid::Uuid::new_v4().to_string();
@@ -204,6 +221,8 @@ impl ImageAgent {
             .tenant(DEFAULT_AGENT_TENANT)
             .collection(Collections::Image)
             .key(&image_id);
+
+        info!("creating image");
 
         let image = Image {
             id: image_id,
@@ -213,7 +232,11 @@ impl ImageAgent {
             volume_id: volume.id,
             layer_ids: manigest.layers.iter().map(|l| l.digest.clone()).collect(),
         };
-        self.store.put(&key, &image)?;
+        if let Err(e) = self.store.put(&key, &image) {
+            warn!("failed to store image entry: {}", e);
+        }
+
+        info!("image created");
 
         Ok(image)
     }
