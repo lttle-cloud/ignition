@@ -774,6 +774,28 @@ impl Controller for MachineController {
 
                     return Ok(ReconcileNext::after(Duration::from_secs(2)));
                 }
+
+                MachinePhase::Error { message } => {
+                    // Check if this is a VCPU timeout error requiring immediate cleanup
+                    if message.contains("VCPU timeout") || message.contains("timed out") {
+                        warn!(
+                            "Machine {} has VCPU timeout error, transitioning to restarting for cleanup: {}",
+                            machine_name, message
+                        );
+
+                        // Transition to Restarting state - this will trigger the existing cleanup logic
+                        ctx.repository
+                            .machine(ctx.tenant.clone())
+                            .patch_status(key.metadata(), |status| {
+                                status.phase = MachinePhase::Restarting;
+                                status.last_restarting_time_us =
+                                    Some(Utc::now().timestamp_millis() as u128);
+                            })
+                            .await?;
+
+                        return Ok(ReconcileNext::immediate());
+                    }
+                }
                 _ => {}
             }
         };
