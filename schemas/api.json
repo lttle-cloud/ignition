@@ -100,6 +100,116 @@
       ]
     },
     {
+      "name": "App",
+      "tag": "app",
+      "crate_path": "resources::app",
+      "namespaced": true,
+      "methods": [
+        {
+          "name": "get",
+          "namespaced": true,
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "app"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": false,
+            "optional": false,
+            "names": [
+              "AppV1",
+              "AppStatus"
+            ]
+          }
+        },
+        {
+          "name": "list",
+          "namespaced": true,
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "app"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "tuple",
+            "list": true,
+            "optional": false,
+            "names": [
+              "AppV1",
+              "AppStatus"
+            ]
+          }
+        },
+        {
+          "name": "delete",
+          "namespaced": true,
+          "verb": "DELETE",
+          "path": [
+            {
+              "type": "static",
+              "value": "app"
+            },
+            {
+              "type": "resource_name"
+            }
+          ],
+          "request": null,
+          "response": null
+        },
+        {
+          "name": "apply",
+          "namespaced": true,
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "app"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "App"
+          },
+          "response": null
+        },
+        {
+          "name": "get_status",
+          "namespaced": true,
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "app"
+            },
+            {
+              "type": "resource_name"
+            },
+            {
+              "type": "static",
+              "value": "status"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "AppStatus"
+          }
+        }
+      ]
+    },
+    {
       "name": "Machine",
       "tag": "machine",
       "crate_path": "resources::machine",
@@ -541,6 +651,213 @@
     }
   ],
   "defs": {
+    "App": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "app": {
+              "$ref": "#/$defs/AppV1"
+            }
+          },
+          "required": [
+            "app"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "app.v1": {
+              "$ref": "#/$defs/AppV1"
+            }
+          },
+          "required": [
+            "app.v1"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "AppBuild": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "type": "string"
+        },
+        "image-name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "context"
+      ]
+    },
+    "AppExpose": {
+      "type": "object",
+      "properties": {
+        "port": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "external-port": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "protocol": {
+          "$ref": "#/$defs/AppExposeProtocol"
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "port",
+        "protocol"
+      ]
+    },
+    "AppExposeProtocol": {
+      "type": "string",
+      "enum": [
+        "http",
+        "https",
+        "tls"
+      ]
+    },
+    "AppStatus": {
+      "type": "object"
+    },
+    "AppV1": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "name": {
+          "type": "string"
+        },
+        "build": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AppBuild"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/MachineResources"
+        },
+        "restart-policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineRestartPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "volumes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/MachineVolumeBinding"
+          }
+        },
+        "command": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "depends-on": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/MachineDependency"
+          }
+        },
+        "expose": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/AppExpose"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "resources"
+      ]
+    },
     "Certificate": {
       "oneOf": [
         {

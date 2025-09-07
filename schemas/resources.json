@@ -5,6 +5,30 @@
     {
       "type": "object",
       "properties": {
+        "app": {
+          "$ref": "#/$defs/AppV1"
+        }
+      },
+      "required": [
+        "app"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "app.v1": {
+          "$ref": "#/$defs/AppV1"
+        }
+      },
+      "required": [
+        "app.v1"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
         "machine": {
           "$ref": "#/$defs/MachineV1"
         }
@@ -100,6 +124,195 @@
     }
   ],
   "$defs": {
+    "AppBuild": {
+      "properties": {
+        "context": {
+          "type": "string"
+        },
+        "image-name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "context"
+      ],
+      "type": "object"
+    },
+    "AppExpose": {
+      "properties": {
+        "external-port": {
+          "anyOf": [
+            {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            {
+              "$ref": "#/$defs/expr"
+            }
+          ]
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
+          "anyOf": [
+            {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/expr"
+            }
+          ]
+        },
+        "protocol": {
+          "$ref": "#/$defs/AppExposeProtocol"
+        }
+      },
+      "required": [
+        "port",
+        "protocol"
+      ],
+      "type": "object"
+    },
+    "AppExposeProtocol": {
+      "enum": [
+        "http",
+        "https",
+        "tls"
+      ],
+      "type": "string"
+    },
+    "AppV1": {
+      "properties": {
+        "build": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AppBuild"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "depends-on": {
+          "items": {
+            "$ref": "#/$defs/MachineDependency"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "environment": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "expose": {
+          "items": {
+            "$ref": "#/$defs/AppExpose"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/MachineResources"
+        },
+        "restart-policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineRestartPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "volumes": {
+          "items": {
+            "$ref": "#/$defs/MachineVolumeBinding"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "resources"
+      ],
+      "type": "object"
+    },
     "CertificateIssuer": {
       "oneOf": [
         {

@@ -9,6 +9,7 @@ use crate::{
     resources::metadata::{Metadata, Namespace},
 };
 
+pub mod app;
 pub mod certificate;
 pub mod core;
 pub mod machine;
