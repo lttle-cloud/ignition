@@ -35,6 +35,10 @@ Depending on your configuration, Ignition can capture the snapshot:
 
 The modified Linux kernel detects these triggers automatically, so you don’t have to alter your application’s code. As a result, you can enjoy rapid startup times without any extra development overhead.
 
+Want to know more about how it works?
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lttle-cloud/ignition)
+
 ## Installation
 
 At the moment we only provide pre-built binaries for the CLI on macOS ARM and Linux x86_64.
