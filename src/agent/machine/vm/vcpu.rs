@@ -120,9 +120,41 @@ impl RunningVcpuHandle {
         }
     }
 
+    pub async fn join_with_timeout(self, timeout: Duration) -> Result<VcpuRunResult, ()> {
+        use std::time::Instant;
+
+        let start = Instant::now();
+
+        loop {
+            if self.0.is_finished() {
+                return Ok(self.0.join().unwrap());
+            }
+
+            if start.elapsed() > timeout {
+                warn!(
+                    "VCPU join timed out after {:?}, thread may be stuck",
+                    timeout
+                );
+                return Err(()); // Return error to indicate timeout
+            }
+
+            // check every 10ms if the thread is finished
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
     pub async fn signal_stop_and_join(self, exit_reason: VcpuExitReason) -> VcpuRunResult {
         self.signal_stop(exit_reason).await;
         self.join().await
+    }
+
+    pub async fn signal_stop_and_join_with_timeout(
+        self,
+        exit_reason: VcpuExitReason,
+        timeout: Duration,
+    ) -> Result<VcpuRunResult, ()> {
+        self.signal_stop(exit_reason).await;
+        self.join_with_timeout(timeout).await
     }
 }
 

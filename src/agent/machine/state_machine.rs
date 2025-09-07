@@ -101,30 +101,53 @@ impl VcpuManager {
     }
 
     pub async fn stop_all(&mut self, exit_reason: VcpuExitReason) -> Result<()> {
+        let timeout = Duration::from_secs(30);
         let handles = self
             .running_vcpus
             .drain(..)
-            .map(|handle| handle.signal_stop_and_join(exit_reason.clone()));
+            .map(|handle| handle.signal_stop_and_join_with_timeout(exit_reason.clone(), timeout));
 
         let results = join_all(handles).await;
 
         let mut failed_vcpu_index = vec![];
-        for result in results {
+        let mut timed_out_vcpus = vec![];
+
+        for (i, result) in results.into_iter().enumerate() {
             match result {
-                VcpuRunResult::Ok(vcpu) => self.idle_vcpus.push(vcpu),
-                VcpuRunResult::Error(e, vcpu) => {
+                Ok(VcpuRunResult::Ok(vcpu)) => self.idle_vcpus.push(vcpu),
+                Ok(VcpuRunResult::Error(e, vcpu)) => {
                     failed_vcpu_index.push((vcpu.index, e));
                     self.idle_vcpus.push(vcpu);
+                }
+                Err(()) => {
+                    // Timeout - VCPU is stuck, can't recover it
+                    timed_out_vcpus.push(i as u8);
+                    warn!("VCPU {} timed out during stop, may be permanently stuck", i);
                 }
             }
         }
 
+        let mut has_errors = false;
+        let mut fail_message = String::new();
+
         if !failed_vcpu_index.is_empty() {
-            let mut fail_message = String::from("Failed to stop vcpus: ");
+            has_errors = true;
+            fail_message.push_str("Failed to stop vcpus: ");
             for (index, e) in failed_vcpu_index {
-                fail_message.push_str(&format!("Vcpu {} failed to stop: {}", index, e));
-                fail_message.push_str("\n");
+                fail_message.push_str(&format!("Vcpu {} failed to stop: {}\n", index, e));
             }
+        }
+
+        if !timed_out_vcpus.is_empty() {
+            has_errors = true;
+            fail_message.push_str("Timed out vcpus: ");
+            for index in timed_out_vcpus {
+                fail_message.push_str(&format!("Vcpu {} timed out\n", index));
+            }
+            fail_message.push_str("VCPUs are stuck and machine needs force cleanup\n");
+        }
+
+        if has_errors {
             return Err(anyhow!("{}", fail_message));
         }
 
@@ -320,17 +343,33 @@ impl MachineStateMachine {
     }
 
     async fn handle_user_stop(&mut self) -> Result<()> {
-        match self.current_state {
+        let current_state = self.current_state.clone();
+        match current_state {
             MachineState::Ready | MachineState::Booting => {
                 self.set_state(MachineState::Stopping).await?;
-                self.resources
-                    .vcpu_manager
-                    .lock()
+
+                // Try to stop VCPUs, handle timeouts specially
+                match self
+                    .stop_vcpus_with_timeout_check(VcpuExitReason::Normal)
                     .await
-                    .stop_all(VcpuExitReason::Normal)
-                    .await?;
-                self.set_state(MachineState::Stopped).await?;
-                Ok(())
+                {
+                    Ok(()) => {
+                        self.set_state(MachineState::Stopped).await?;
+                        Ok(())
+                    }
+                    Err(e) => {
+                        let error_msg = e.to_string();
+                        if error_msg.contains("timed out") || error_msg.contains("stuck") {
+                            warn!(
+                                "VCPU timeout detected during stop - transitioning to error state for cleanup"
+                            );
+                            let error_message = format!("VCPU timeout during stop: {}", error_msg);
+                            self.transition_to_error(error_message).await
+                        } else {
+                            Err(e)
+                        }
+                    }
+                }
             }
             MachineState::Suspended => {
                 // Transition directly from Suspended to Stopped (VCPUs already stopped)
@@ -338,30 +377,57 @@ impl MachineStateMachine {
                 Ok(())
             }
             MachineState::Stopped => Ok(()),
-            _ => Err(anyhow!("Can't stop from {:?}", self.current_state)),
+            _ => Err(anyhow!("Can't stop from {:?}", current_state)),
         }
     }
 
+    async fn stop_vcpus_with_timeout_check(&mut self, exit_reason: VcpuExitReason) -> Result<()> {
+        self.resources
+            .vcpu_manager
+            .lock()
+            .await
+            .stop_all(exit_reason)
+            .await
+    }
+
     async fn handle_user_suspend(&mut self) -> Result<()> {
-        match self.current_state {
+        let current_state = self.current_state.clone();
+        match current_state {
             MachineState::Ready | MachineState::Booting => {
                 self.set_state(MachineState::Suspending).await?;
-                let mut vcpu_manager = self.resources.vcpu_manager.lock().await;
 
-                // For suspend, we're more tolerant of VCPU stop failures
-                // Log any errors but continue to Suspended state
-                if let Err(e) = vcpu_manager.stop_all(VcpuExitReason::Suspend).await {
-                    warn!("Failed to stop VCPUs: {}", e);
-                };
+                // For suspend, check if VCPUs timed out - this indicates serious issues
+                match self
+                    .stop_vcpus_with_timeout_check(VcpuExitReason::Suspend)
+                    .await
+                {
+                    Ok(()) => {
+                        self.set_state(MachineState::Suspended).await?;
+                        Ok(())
+                    }
+                    Err(e) => {
+                        let error_msg = e.to_string();
+                        warn!("Failed to stop VCPUs during suspend: {}", error_msg);
 
-                // Release the lock explicitly
-                drop(vcpu_manager);
-
-                self.set_state(MachineState::Suspended).await?;
-                Ok(())
+                        // If VCPUs timed out, this is a serious issue requiring cleanup
+                        if error_msg.contains("timed out") || error_msg.contains("stuck") {
+                            warn!(
+                                "VCPU timeout detected during suspend - transitioning to error state for cleanup"
+                            );
+                            self.transition_to_error(format!(
+                                "VCPU timeout during suspend: {}",
+                                error_msg
+                            ))
+                            .await
+                        } else {
+                            self.set_state(MachineState::Suspended).await?;
+                            Ok(())
+                        }
+                    }
+                }
             }
             MachineState::Suspended => Ok(()),
-            _ => Err(anyhow!("Can't suspend from {:?}", self.current_state)),
+            _ => Err(anyhow!("Can't suspend from {:?}", current_state)),
         }
     }
 
