@@ -105,7 +105,15 @@ impl ResourceService for CoreService {
 
             let user = claims.to_string();
 
-            (StatusCode::OK, Json(RegistryRobot { user, pass })).into_response()
+            (
+                StatusCode::OK,
+                Json(RegistryRobot {
+                    user,
+                    pass,
+                    registry: state.auth_handler.registry_service.clone(),
+                }),
+            )
+                .into_response()
         }
 
         async fn registry_auth(

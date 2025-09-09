@@ -57,7 +57,7 @@ impl RegistryRobotHmacClaims {
 pub struct AuthHandler {
     jwt_secret: String,
     registry_robot_hmac_secret: [u8; KEY_LEN],
-    registry_service: String,
+    pub registry_service: String,
     registry_token_key: Vec<u8>,
     registry_token_cert_der: String,
 }
