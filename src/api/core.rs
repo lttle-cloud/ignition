@@ -1,28 +1,82 @@
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use axum::{
     Json, Router,
-    extract::{Query, State, WebSocketUpgrade, ws::Message},
-    response::IntoResponse,
+    extract::{FromRequestParts, Query, State, WebSocketUpgrade, ws::Message},
+    http::request::Parts,
+    response::{IntoResponse, Response},
     routing::get,
 };
+use base64::{DecodeError, Engine, prelude::BASE64_STANDARD};
 use futures_util::{SinkExt, StreamExt};
+use hyper::HeaderMap;
 use reqwest::StatusCode;
+use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use url::form_urlencoded;
 
 use crate::{
     agent::logs::LogStreamOrigin,
     api::{
         ApiState,
+        auth::RegistryRobotHmacClaims,
         context::ServiceRequestContext,
         resource_service::{ResourceService, ResourceServiceRouter},
     },
     controller::{context::ControllerKey, machine::machine_name_from_key},
     resource_index::ResourceKind,
-    resources::core::{ExecParams, ListNamespaces, LogStreamParams, Me, Namespace},
+    resources::core::{ExecParams, ListNamespaces, LogStreamParams, Me, Namespace, RegistryRobot},
 };
 
 pub struct CoreService {}
+
+#[derive(Debug)]
+struct RegistryTokenQuery {
+    service: String,    // must equal registry config "service"
+    scope: Vec<String>, // may appear multiple times
+}
+
+impl FromRequestParts<Arc<ApiState>> for RegistryTokenQuery {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        _state: &Arc<ApiState>,
+    ) -> Result<Self, Self::Rejection> {
+        let mut service = Option::<String>::None;
+        let mut scope = vec![];
+
+        for (k, v) in form_urlencoded::parse(parts.uri.query().unwrap_or_default().as_bytes()) {
+            match &*k {
+                "service" => service = Some(v.into_owned()),
+                "scope" => scope.push(v.into_owned()),
+                // ignore other params (account, client_id, offline_token, etc.)
+                _ => {}
+            }
+        }
+
+        let Some(service) = service else {
+            return Err((StatusCode::BAD_REQUEST, "service is required").into_response());
+        };
+
+        Ok(Self { service, scope })
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct RegistryTokenResponse {
+    token: String,
+    access_token: String,
+}
+
+impl RegistryTokenResponse {
+    pub fn new(access_token: String) -> Self {
+        Self {
+            token: access_token.clone(),
+            access_token,
+        }
+    }
+}
 
 impl ResourceService for CoreService {
     fn create_router(_state: Arc<ApiState>) -> ResourceServiceRouter {
@@ -34,6 +88,72 @@ impl ResourceService for CoreService {
                     sub: ctx.sub,
                 }),
             )
+        }
+
+        async fn registry_robot(
+            state: State<Arc<ApiState>>,
+            ctx: ServiceRequestContext,
+        ) -> impl IntoResponse {
+            let claims = RegistryRobotHmacClaims::new(&ctx.tenant, &ctx.sub);
+            let Ok(pass) = state.auth_handler.generate_registry_hmac(&claims) else {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to generate registry robot hmac",
+                )
+                    .into_response();
+            };
+
+            let user = claims.to_string();
+
+            (StatusCode::OK, Json(RegistryRobot { user, pass })).into_response()
+        }
+
+        async fn registry_auth(
+            state: State<Arc<ApiState>>,
+            headers: HeaderMap,
+            query: RegistryTokenQuery,
+        ) -> impl IntoResponse {
+            let Some(auth) = headers
+                .get("Authorization")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.split_once("Basic ").map(|v| v.1))
+            else {
+                return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+            };
+
+            println!("query: {:?}", query);
+
+            let Ok((user, pass)) = BASE64_STANDARD.decode(auth).and_then(|x| {
+                let parts = String::from_utf8_lossy(&x);
+                let parts = parts.split_once(":");
+                if let Some((user, pass)) = parts {
+                    Ok((user.to_string(), pass.to_string()))
+                } else {
+                    Err(DecodeError::InvalidPadding)
+                }
+            }) else {
+                return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+            };
+
+            let Ok(claims) = RegistryRobotHmacClaims::from_str(&user) else {
+                return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+            };
+
+            let Ok(_) = state
+                .auth_handler
+                .verify_registry_hmac(pass, &claims, query.service)
+            else {
+                return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+            };
+
+            let Ok(token) = state
+                .auth_handler
+                .generate_registry_token(&claims, query.scope)
+            else {
+                return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+            };
+
+            (StatusCode::OK, Json(RegistryTokenResponse::new(token))).into_response()
         }
 
         async fn list_namespaces(
@@ -286,6 +406,8 @@ impl ResourceService for CoreService {
 
         let mut router = Router::new();
         router = router.route("/me", get(me));
+        router = router.route("/registry/robot", get(registry_robot));
+        router = router.route("/registry/auth", get(registry_auth));
         router = router.route("/namespaces", get(list_namespaces));
         router = router.route("/logs", get(stream_logs));
         router = router.route("/exec", get(exec));

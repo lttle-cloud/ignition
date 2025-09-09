@@ -164,7 +164,13 @@ async fn main() -> Result<()> {
 
     let repository = scheduler.repository.clone();
 
-    let auth_handler = Arc::new(AuthHandler::new(&config.api_server_config.jwt_secret));
+    let auth_handler = Arc::new(AuthHandler::new(
+        &config.api_server_config.jwt_secret,
+        &config.registry_config.registry_robot_hmac_secret,
+        &config.registry_config.service,
+        config.registry_config.registry_token_key_path.into(),
+        config.registry_config.registry_token_cert_path.into(),
+    )?);
 
     let api_server = ApiServer::new(
         store.clone(),
