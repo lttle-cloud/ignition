@@ -25,6 +25,12 @@ pub struct Namespace {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RegistryRobot {
+    pub user: String,
+    pub pass: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub enum LogStreamTarget {
     #[serde(rename = "stdout")]
     Stdout,
@@ -100,6 +106,30 @@ pub fn core_api_service() -> ApiService {
                         list: false,
                         optional: false,
                         name: "Me".to_string(),
+                    },
+                ),
+            },
+            ApiMethod {
+                name: "get_registry_robot".to_string(),
+                path: vec![
+                    ApiPathSegment::Static {
+                        value: "core".to_string(),
+                    },
+                    ApiPathSegment::Static {
+                        value: "registry".to_string(),
+                    },
+                    ApiPathSegment::Static {
+                        value: "robot".to_string(),
+                    },
+                ],
+                namespaced: false,
+                verb: ApiVerb::Get,
+                request: None,
+                response: Some(
+                    crate::machinery::api_schema::ApiResponse::SchemaDefinition {
+                        list: false,
+                        optional: false,
+                        name: "RegistryRobot".to_string(),
                     },
                 ),
             },

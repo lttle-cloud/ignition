@@ -29,6 +29,32 @@
           }
         },
         {
+          "name": "get_registry_robot",
+          "namespaced": false,
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "registry"
+            },
+            {
+              "type": "static",
+              "value": "robot"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "RegistryRobot"
+          }
+        },
+        {
           "name": "list_namespaces",
           "namespaced": false,
           "verb": "GET",

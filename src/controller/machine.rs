@@ -352,6 +352,7 @@ impl Controller for MachineController {
             })
             .await?;
 
+        let tenant = ctx.tenant.clone();
         'phase_match: {
             match status.phase {
                 MachinePhase::Idle => {
@@ -363,8 +364,11 @@ impl Controller for MachineController {
                             key.clone(),
                             pull_image_job_key(&reference),
                             async move {
-                                let image =
-                                    image_agent.image_pull(reference).await.map_err(|_| {
+                                let image = image_agent
+                                    .image_pull(tenant.clone(), reference)
+                                    .await
+                                    .map_err(|e| {
+                                        warn!("failed to pull image: {}", e);
                                         format!("failed to pull image: {}", &machine.image)
                                     })?;
 

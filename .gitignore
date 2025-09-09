@@ -1,15 +1,16 @@
 /target
 /data
-/certs
 /dist
 /debug
 
+.env
+certs/
 ignition.toml
+
 .claude
 claude-docs
 CLAUDE*
 QWEN*
-
 
 console/.vscode
 console/node_modules
