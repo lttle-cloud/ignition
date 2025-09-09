@@ -12,7 +12,7 @@ use oci_client::{
 use tar::Archive;
 use tracing::{error, info};
 
-use crate::agent::image::credentials::{DockerCredentialsProvider, OciCredentialsProvider};
+use crate::agent::image::credentials::OciCredentialsProvider;
 
 pub fn remove_whiteouts(dir: impl AsRef<Path>) -> Result<()> {
     let dir_path = dir.as_ref();

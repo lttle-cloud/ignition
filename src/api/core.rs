@@ -129,8 +129,6 @@ impl ResourceService for CoreService {
                 return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
             };
 
-            println!("query: {:?}", query);
-
             let Ok((user, pass)) = BASE64_STANDARD.decode(auth).and_then(|x| {
                 let parts = String::from_utf8_lossy(&x);
                 let parts = parts.split_once(":");

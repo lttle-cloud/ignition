@@ -178,9 +178,6 @@ impl AuthHandler {
         claims: &RegistryRobotHmacClaims,
         scopes: Vec<String>,
     ) -> Result<String> {
-        println!("claims: {:?}", claims);
-        println!("scopes: {:?}", scopes);
-
         #[derive(Serialize)]
         struct AccessEntry {
             #[serde(rename = "type")]
