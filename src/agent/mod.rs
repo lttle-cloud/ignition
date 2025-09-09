@@ -27,6 +27,7 @@ use crate::{
         tracker::TrackerAgent,
         volume::{VolumeAgent, VolumeAgentConfig},
     },
+    api::auth::AuthHandler,
     controller::scheduler::Scheduler,
     machinery::store::Store,
     repository::Repository,
@@ -63,6 +64,7 @@ impl Agent {
         config: AgentConfig,
         scheduler: Weak<Scheduler>,
         repository: Arc<Repository>,
+        auth_handler: Arc<AuthHandler>,
     ) -> Result<Self> {
         let store = Arc::new(Store::new(&config.store_path).await?);
 
@@ -70,7 +72,13 @@ impl Agent {
         let volume = Arc::new(VolumeAgent::new(config.volume_config.clone(), store.clone()).await?);
 
         let image = Arc::new(
-            ImageAgent::new(config.image_config.clone(), store.clone(), volume.clone()).await?,
+            ImageAgent::new(
+                config.image_config.clone(),
+                store.clone(),
+                volume.clone(),
+                auth_handler.clone(),
+            )
+            .await?,
         );
         let machine =
             Arc::new(MachineAgent::new(config.machine_config.clone(), scheduler.clone()).await?);

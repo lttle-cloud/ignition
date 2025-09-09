@@ -47,6 +47,23 @@ async fn main() -> Result<()> {
 
     let store = Arc::new(Store::new(&config.absolute_data_dir()).await?);
 
+    let auth_handler = Arc::new(AuthHandler::new(
+        &config.api_server_config.jwt_secret.clone(),
+        &config.registry_config.registry_robot_hmac_secret.clone(),
+        &config.registry_config.service.clone(),
+        config
+            .registry_config
+            .registry_token_key_path
+            .clone()
+            .into(),
+        config
+            .registry_config
+            .registry_token_cert_path
+            .clone()
+            .into(),
+    )?);
+
+    let agent_auth_handler = auth_handler.clone();
     let scheduler = Arc::new_cyclic(|scheduler_weak| {
         let repository = Arc::new(Repository::new(store.clone(), scheduler_weak.clone()));
 
@@ -79,6 +96,10 @@ async fn main() -> Result<()> {
                             },
                             image_config: ImageAgentConfig {
                                 base_path: agent_dir.join("images").to_string_lossy().to_string(),
+                                internal_registry_service: scheduler_config
+                                    .registry_config
+                                    .service
+                                    .clone(),
                             },
                             machine_config: MachineAgentConfig {
                                 transient_state_path: transient_dir.to_path_buf().join("machines"),
@@ -139,6 +160,7 @@ async fn main() -> Result<()> {
                         },
                         agent_scheduler,
                         repository_clone,
+                        agent_auth_handler,
                     )
                     .await
                     .expect("Failed to create agent"),
@@ -163,14 +185,6 @@ async fn main() -> Result<()> {
     });
 
     let repository = scheduler.repository.clone();
-
-    let auth_handler = Arc::new(AuthHandler::new(
-        &config.api_server_config.jwt_secret,
-        &config.registry_config.registry_robot_hmac_secret,
-        &config.registry_config.service,
-        config.registry_config.registry_token_key_path.into(),
-        config.registry_config.registry_token_cert_path.into(),
-    )?);
 
     let api_server = ApiServer::new(
         store.clone(),

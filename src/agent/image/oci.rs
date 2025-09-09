@@ -51,14 +51,22 @@ pub const SUPPORTED_LAYER_MEDIA_TYPES: &[&str] = &[
     "application/vnd.oci.image.layer.v1.tar+gzip",
 ];
 
-pub async fn create_default_oci_client(reference: &Reference) -> Result<(Client, RegistryAuth)> {
-    let credentials_provider = DockerCredentialsProvider {};
+pub async fn create_default_oci_client(
+    credentials_provider: &impl OciCredentialsProvider,
+    reference: &Reference,
+) -> Result<(Client, RegistryAuth)> {
     let auth = credentials_provider.get_credentials_for_reference(reference)?;
 
     let client = Client::new(ClientConfig {
         protocol: ClientProtocol::Https,
         ..Default::default()
     });
+
+    println!(
+        "store auth if needed {} {:?}",
+        reference.resolve_registry(),
+        auth
+    );
 
     client
         .store_auth_if_needed(reference.resolve_registry(), &auth)
@@ -72,9 +80,10 @@ pub async fn is_layer_supported(layer: &OciDescriptor) -> Result<bool> {
 }
 
 pub async fn fetch_manifest(
+    credentials_provider: &impl OciCredentialsProvider,
     reference: &Reference,
 ) -> Result<(OciImageManifest, String, ConfigFile)> {
-    let (client, auth) = create_default_oci_client(reference).await?;
+    let (client, auth) = create_default_oci_client(credentials_provider, reference).await?;
 
     let (manifest, digest, config) = client.pull_manifest_and_config(reference, &auth).await?;
 
@@ -84,11 +93,12 @@ pub async fn fetch_manifest(
 }
 
 pub async fn pull_layer(
+    credentials_provider: &impl OciCredentialsProvider,
     reference: &Reference,
     layer: &OciDescriptor,
     file_path: impl AsRef<Path>,
 ) -> Result<()> {
-    let (client, _) = create_default_oci_client(reference).await?;
+    let (client, _) = create_default_oci_client(credentials_provider, reference).await?;
 
     let mut data: Vec<u8> = Vec::new();
 
