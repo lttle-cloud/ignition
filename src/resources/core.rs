@@ -26,6 +26,7 @@ pub struct Namespace {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RegistryRobot {
+    pub registry: String,
     pub user: String,
     pub pass: String,
 }
