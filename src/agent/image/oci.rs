@@ -28,12 +28,6 @@ pub async fn create_default_oci_client(
         ..Default::default()
     });
 
-    println!(
-        "store auth if needed {} {:?}",
-        reference.resolve_registry(),
-        auth
-    );
-
     client
         .store_auth_if_needed(reference.resolve_registry(), &auth)
         .await;
@@ -67,8 +61,6 @@ pub async fn pull_layer(
     let (client, _) = create_default_oci_client(credentials_provider, reference).await?;
 
     let mut data: Vec<u8> = Vec::new();
-
-    println!("pulling layer {} {}", layer.digest, layer.media_type);
 
     let pull_result = client.pull_blob(reference, layer, &mut data).await;
     match pull_result {
