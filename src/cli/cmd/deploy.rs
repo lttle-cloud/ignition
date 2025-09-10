@@ -15,6 +15,7 @@ use serde_yaml::{Mapping, Sequence, Value};
 use tokio::fs::{read_dir, read_to_string};
 
 use crate::{
+    build::{build_image, docker_auth::DockerAuthConfig, push_image},
     client::get_api_client,
     cmd::{
         certificate::CertificateSummary, machine::MachineSummary, service::ServiceSummary,
@@ -25,7 +26,7 @@ use crate::{
         ctx::{EnvAmbientOverrideBehavior, ExprEvalContext, ExprEvalContextConfig},
         eval::eval_expr,
     },
-    ui::message::{message_info, message_warn},
+    ui::message::{message_detail, message_info, message_warn},
 };
 
 #[derive(Args)]
@@ -49,6 +50,10 @@ pub struct DeployArgs {
     /// Recursively parse all files in the directory
     #[arg(short = 'r', long = "recursive")]
     recursive: bool,
+
+    /// Debug the build process
+    #[arg(long = "debug-build")]
+    debug_build: bool,
 
     /// Debug the expression evaluation context
     #[arg(long = "debug-context")]
@@ -135,14 +140,56 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
     let mut resources = Vec::new();
     if path.is_file() {
         let contents = read_to_string(&path).await?;
-        parse_all_resources(&contents, &mut resources, &context).await?;
+        parse_all_resources(path, &contents, &mut resources, &context).await?;
     } else if path.is_dir() {
         parse_all_resources_in_dir(&path, &mut resources, &context, args.recursive).await?;
     } else {
         bail!("Invalid path: {:?}", path);
     }
 
-    for resource in resources {
+    let me = api_client.core().me().await?;
+
+    let registry_robot = api_client.core().get_registry_robot().await?;
+    let auth = DockerAuthConfig::internal(
+        &registry_robot.registry,
+        &registry_robot.user,
+        &registry_robot.pass,
+    );
+
+    for (path, resource) in resources.iter_mut() {
+        let machine = match resource {
+            Resources::Machine(machine) => machine,
+            Resources::MachineV1(machine) => machine,
+            _ => continue,
+        };
+
+        let Some(build) = machine.build.clone() else {
+            continue;
+        };
+
+        let Some(dir) = path.parent() else {
+            bail!("No parent directory for path: {:?}", path);
+        };
+
+        let machine_name = machine.metadata().to_string();
+
+        message_detail(format!("Building image for machine: {}", machine_name));
+        let image = build_image(dir, &me.tenant, build, auth.clone(), args.debug_build).await?;
+        message_detail(format!(
+            "Pushing image for machine {} → {}",
+            machine_name, image
+        ));
+        push_image(image.clone(), auth.clone()).await?;
+        message_info(format!(
+            "Successfully built and pushed image for machine: {}",
+            machine_name
+        ));
+
+        machine.build = None;
+        machine.image = Some(image);
+    }
+
+    for (_path, resource) in resources {
         if let Ok(certificate) = resource.clone().try_into() {
             deploy_certificate(config, &api_client, certificate).await?;
             continue;
@@ -171,7 +218,7 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
 
 fn parse_all_resources_in_dir<'a>(
     path: &'a PathBuf,
-    resources: &'a mut Vec<Resources>,
+    resources: &'a mut Vec<(PathBuf, Resources)>,
     context: &'a ExprEvalContext,
     recursive: bool,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + 'a>> {
@@ -188,9 +235,8 @@ fn parse_all_resources_in_dir<'a>(
                     continue;
                 }
 
-                message_info(format!("Deploying file: {:?}", file.path()));
                 let contents = read_to_string(file.path()).await?;
-                parse_all_resources(&contents, resources, &context).await?;
+                parse_all_resources(file.path(), &contents, resources, &context).await?;
             }
 
             if file.path().is_dir() && recursive {
@@ -203,15 +249,16 @@ fn parse_all_resources_in_dir<'a>(
 }
 
 async fn parse_all_resources(
+    path: PathBuf,
     contents: &str,
-    resources: &mut Vec<Resources>,
+    resources: &mut Vec<(PathBuf, Resources)>,
     expr_eval_context: &ExprEvalContext,
 ) -> Result<()> {
     let de = serde_yaml::Deserializer::from_str(contents);
     for doc in de {
         let value: Value = Value::deserialize(doc)?;
         let value = eval_and_validate_resource(&value, expr_eval_context)?;
-        resources.push(value);
+        resources.push((path.clone(), value));
     }
 
     Ok(())

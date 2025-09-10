@@ -122,6 +122,7 @@ git2 = { version = "0.20.2", default-features = false }
 dotenvy = "0.15.7"
 caps = { version = "0.5.5", optional = true }
 blake3 = "1.8.2"
+nixpacks = { git = "https://github.com/lttle-cloud/nixpacks", branch = "lttle" }
 
 [features]
 default = []

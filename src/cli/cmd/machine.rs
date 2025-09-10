@@ -291,7 +291,10 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
             restart_policy: machine.restart_policy.map(|r| r.to_string()),
             internal_ip: status.machine_ip.clone(),
             status: status.phase.to_string(),
-            image: status.image_resolved_reference.unwrap_or(machine.image),
+            image: status
+                .image_resolved_reference
+                .or(machine.image)
+                .unwrap_or_default(),
             cpu: machine.resources.cpu.to_string(),
             memory: format!("{} MiB", machine.resources.memory),
             env,
@@ -336,7 +339,10 @@ impl From<(MachineLatest, MachineStatus)> for MachineTableRow {
             namespace: machine.namespace,
             mode,
             status: status_str,
-            image: status.image_resolved_reference.unwrap_or(machine.image),
+            image: status
+                .image_resolved_reference
+                .or(machine.image)
+                .unwrap_or_default(),
             cpu: machine.resources.cpu.to_string(),
             memory: format!("{} MiB", machine.resources.memory),
             last_boot_time: status.last_boot_time_us.map(|t| {

@@ -1,5 +1,6 @@
 pub mod credentials;
 pub mod oci;
+mod unpacker;
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -190,11 +191,6 @@ impl ImageAgent {
 
             oci::uncompress_layer(&layer_path, &temp_dir.path()).await?;
         }
-
-        info!("removing whiteouts");
-        let whiteout_path = temp_dir.path().to_path_buf();
-        spawn_blocking(move || oci::remove_whiteouts(whiteout_path)).await??;
-        info!("whiteouts removed");
 
         // 5. write config for takeoff
         if let Some(config) = config.config {

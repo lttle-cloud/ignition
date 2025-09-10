@@ -9,6 +9,7 @@
     "yaml.schemas": {
         "schemas/resources.json": [
             "demos/**/*.yaml",
+            "debug/**/*.yaml",
             "!demos/**/_*.yaml"
         ]
     },
