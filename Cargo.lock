@@ -2813,7 +2813,7 @@ dependencies = [
 [[package]]
 name = "nixpacks"
 version = "1.40.0"
-source = "git+https://github.com/lttle-cloud/nixpacks?branch=lttle#8556099603559f2c296d992fdd61db2fde6fb900"
+source = "git+https://github.com/lttle-cloud/nixpacks?branch=lttle#3831df965d2103eb92deab3b4e90136f41f904bb"
 dependencies = [
  "actix-web",
  "anyhow",

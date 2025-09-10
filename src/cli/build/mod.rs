@@ -9,7 +9,13 @@ use nixpacks::nixpacks::{
 };
 use tokio::process::Command;
 
-use crate::{build::docker_auth::DockerAuthConfig, ui::message::message_detail};
+use crate::{
+    build::docker_auth::DockerAuthConfig,
+    ui::{
+        message::message_detail,
+        summary::{Summary, SummaryCellStyle, SummaryRow},
+    },
+};
 
 pub async fn build_image(
     dir: impl AsRef<Path>,
@@ -93,6 +99,42 @@ async fn build_image_nixpacks(
     }
 
     let plan_options = GeneratePlanOptions::default();
+
+    let providers = nixpacks::get_plan_providers(&path, envs.clone(), &plan_options)?;
+    if providers.is_empty() {
+        bail!(
+            "No compatible providers found for auto-build. Check the documentation for auto-build supported targets: https://docs.lttle.cloud/build/auto-build#supported-targets"
+        );
+    }
+
+    message_detail(format!(
+        "Auto-build using providers: {}",
+        providers.join(", ")
+    ));
+
+    let plan = nixpacks::generate_build_plan(&path, envs.clone(), &plan_options)?;
+    let phase_info_desc = plan.get_phase_info_desc()?;
+
+    if debug {
+        message_detail("Build summary: ");
+        let mut build_summary = Summary {
+            rows: phase_info_desc
+                .phases
+                .iter()
+                .map(|(name, content)| SummaryRow {
+                    name: name.clone(),
+                    cell_style: SummaryCellStyle::Default,
+                    value: content.clone(),
+                })
+                .collect(),
+        };
+        build_summary.rows.push(SummaryRow {
+            name: "start".to_string(),
+            cell_style: SummaryCellStyle::Default,
+            value: vec![phase_info_desc.start],
+        });
+        build_summary.print();
+    }
 
     let mut build_options = DockerBuilderOptions::default();
     build_options.platform = vec!["linux/amd64".to_string()];
