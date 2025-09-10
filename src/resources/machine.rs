@@ -9,7 +9,8 @@ mod machine {
 
     #[version(stored + served + latest)]
     struct V1 {
-        image: String,
+        image: Option<String>,
+        build: Option<MachineBuild>,
         resources: MachineResources,
         #[serde(rename = "restart-policy")]
         restart_policy: Option<MachineRestartPolicy>,
@@ -19,6 +20,33 @@ mod machine {
         environment: Option<BTreeMap<String, String>>,
         #[serde(rename = "depends-on")]
         depends_on: Option<Vec<MachineDependency>>,
+    }
+
+    #[schema]
+    enum MachineBuild {
+        #[serde(rename = "auto")]
+        NixpacksAuto,
+        #[serde(rename = "options")]
+        Nixpacks(MachineBuildOptions),
+        #[serde(rename = "docker")]
+        Docker(MachineDockerOptions),
+    }
+
+    #[schema]
+    struct MachineBuildOptions {
+        name: String,
+        tag: Option<String>,
+        image: Option<String>,
+        dir: Option<String>,
+    }
+
+    #[schema]
+    struct MachineDockerOptions {
+        name: String,
+        tag: Option<String>,
+        image: Option<String>,
+        context: Option<String>,
+        dockerfile: Option<String>,
     }
 
     #[schema]
