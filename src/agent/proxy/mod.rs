@@ -7,7 +7,7 @@ use anyhow::{Result, bail};
 use axum::http::HeaderValue;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
-use hyper::{Request, Uri, Version, service::service_fn};
+use hyper::{Method, Request, StatusCode, Uri, Version, service::service_fn};
 use hyper_util::{
     client::legacy::{Client, connect::HttpConnector},
     rt::{TokioExecutor, TokioIo},
@@ -496,6 +496,39 @@ async fn handle_http_connection(
             }
 
             let Ok(binding) = find_http_binding(&bindings, &target_host) else {
+                if let Ok((binding, _)) = find_tls_binding(&bindings, &target_host) {
+                    if req.method() != Method::GET {
+                        return Err("only GET requests are allowed to be redirected to HTTPS");
+                    }
+
+                    let Some(public_host) = binding.public_host() else {
+                        return Err("no public host found for binding");
+                    };
+
+                    let path = req.uri().path();
+                    let query = req
+                        .uri()
+                        .query()
+                        .and_then(|q| Some(format!("?{}", q)))
+                        .unwrap_or_default();
+
+                    let new_uri = format!("https://{}{}{}", public_host, path, query);
+
+                    let Ok(location) = HeaderValue::from_str(&new_uri) else {
+                        return Err("failed to parse location");
+                    };
+
+                    let mut response = hyper::Response::new(
+                        Full::new(Bytes::from(vec![]))
+                            .map_err(|never| match never {})
+                            .boxed(),
+                    );
+                    *response.status_mut() = StatusCode::TEMPORARY_REDIRECT;
+                    response.headers_mut().insert("location", location);
+
+                    return Ok(response);
+                }
+
                 return Err("failed to find binding for HTTP host");
             };
 
@@ -726,6 +759,13 @@ async fn handle_https_connection(
             let Ok(mut response) = client.request(req).await else {
                 return Err("failed to get response from origin");
             };
+
+            // TODO: Uncomment this when we have a stable HTTP -> HTTPS redirect
+            // response.headers_mut().append("Strict-Transport-Security", HeaderValue::from_static("max-age=31536000; includeSubDomains; preload"));
+            response.headers_mut().append(
+                "Strict-Transport-Security",
+                HeaderValue::from_static("max-age=86400"),
+            );
 
             if target_host.ends_with(&blacklisted_seo_domain) {
                 response.headers_mut().append(
