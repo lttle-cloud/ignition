@@ -55,6 +55,10 @@ pub struct DeployArgs {
     #[arg(long = "debug-build")]
     debug_build: bool,
 
+    /// Disable the build cache
+    #[arg(long = "no-build-cache")]
+    disable_build_cache: bool,
+
     /// Debug the expression evaluation context
     #[arg(long = "debug-context")]
     debug_context: bool,
@@ -174,7 +178,15 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
         let machine_name = machine.metadata().to_string();
 
         message_detail(format!("Building image for machine: {}", machine_name));
-        let image = build_image(dir, &me.tenant, build, auth.clone(), args.debug_build).await?;
+        let image = build_image(
+            dir,
+            &me.tenant,
+            build,
+            auth.clone(),
+            args.debug_build,
+            args.disable_build_cache,
+        )
+        .await?;
         message_detail(format!(
             "Pushing image for machine {} → {}",
             machine_name, image

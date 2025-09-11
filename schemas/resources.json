@@ -397,6 +397,15 @@
     },
     "MachineDockerOptions": {
       "properties": {
+        "args": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "context": {
           "type": [
             "string",

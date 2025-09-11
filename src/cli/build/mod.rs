@@ -23,13 +23,14 @@ pub async fn build_image(
     build: MachineBuild,
     auth: DockerAuthConfig,
     debug: bool,
+    disable_build_cache: bool,
 ) -> Result<String> {
     let image = match build {
         MachineBuild::Nixpacks(options) => {
-            build_image_nixpacks(dir, tenant, options, auth, debug).await
+            build_image_nixpacks(dir, tenant, options, auth, debug, disable_build_cache).await
         }
         MachineBuild::Docker(options) => {
-            build_image_docker(dir, tenant, auth, options, debug).await
+            build_image_docker(dir, tenant, auth, options, debug, disable_build_cache).await
         }
         MachineBuild::NixpacksAuto => {
             let id = uuid::Uuid::new_v4().to_string();
@@ -44,6 +45,7 @@ pub async fn build_image(
                 },
                 auth,
                 debug,
+                disable_build_cache,
             )
             .await
         }
@@ -58,6 +60,7 @@ async fn build_image_nixpacks(
     options: MachineBuildOptions,
     auth: DockerAuthConfig,
     debug: bool,
+    disable_build_cache: bool,
 ) -> Result<String> {
     let Some(registry) = auth.get_registry() else {
         bail!("No registry found in auth");
@@ -98,7 +101,26 @@ async fn build_image_nixpacks(
         message_detail(format!("Building image for path: {}", path));
     }
 
-    let plan_options = GeneratePlanOptions::default();
+    let mut plan_options = GeneratePlanOptions::default();
+    // check if dir or pwd contains a nixpacks.toml
+    let dir_nixpacks_toml = dir.as_ref().join("nixpacks.toml");
+    let pwd_nixpacks_toml = std::env::current_dir().unwrap().join("nixpacks.toml");
+
+    let nixpacks_toml = if dir_nixpacks_toml.exists() {
+        Some(dir_nixpacks_toml)
+    } else if pwd_nixpacks_toml.exists() {
+        Some(pwd_nixpacks_toml)
+    } else {
+        None
+    };
+
+    if let Some(nixpacks_toml) = nixpacks_toml {
+        message_detail(format!(
+            "Using nixpacks options from: {}",
+            nixpacks_toml.to_str().unwrap()
+        ));
+        plan_options.config_file = Some(nixpacks_toml.to_str().unwrap().to_string());
+    };
 
     let providers = nixpacks::get_plan_providers(&path, envs.clone(), &plan_options)?;
     if providers.is_empty() {
@@ -139,6 +161,9 @@ async fn build_image_nixpacks(
     let mut build_options = DockerBuilderOptions::default();
     build_options.platform = vec!["linux/amd64".to_string()];
     build_options.quiet = true;
+    if disable_build_cache {
+        build_options.no_cache = true;
+    }
     build_options.name = Some(image.clone());
 
     if debug {
@@ -178,6 +203,7 @@ async fn build_image_docker(
     auth: DockerAuthConfig,
     options: MachineDockerOptions,
     debug: bool,
+    disable_build_cache: bool,
 ) -> Result<String> {
     let Some(registry) = auth.get_registry() else {
         bail!("No registry found in auth");
@@ -210,20 +236,31 @@ async fn build_image_docker(
         bail!("Dockerfile not found");
     }
 
-    let output = Command::new("docker")
-        .env("DOCKER_AUTH_CONFIG", auth.to_json()?)
-        .args(&[
-            "build",
-            "--platform",
-            "linux/amd64",
-            "-t",
-            &image,
-            "-f",
-            dockerfile_path.to_str().unwrap(),
-            context.to_str().unwrap(),
-        ])
-        .output()
-        .await?;
+    let mut cmd = Command::new("docker");
+    cmd.env("DOCKER_AUTH_CONFIG", auth.to_json()?);
+    cmd.args(&[
+        "build",
+        "--platform",
+        "linux/amd64",
+        "-t",
+        &image,
+        "-f",
+        dockerfile_path.to_str().unwrap(),
+        context.to_str().unwrap(),
+    ]);
+
+    if disable_build_cache {
+        cmd.arg("--no-cache");
+    }
+
+    if let Some(args) = options.args {
+        for (key, value) in args {
+            cmd.arg("--build-arg");
+            cmd.arg(format!("{}={}", key, value));
+        }
+    }
+
+    let output = cmd.output().await?;
 
     if !output.status.success() {
         std::io::stdout().write_all(&output.stdout)?;

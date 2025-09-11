@@ -47,6 +47,8 @@ mod machine {
         image: Option<String>,
         context: Option<String>,
         dockerfile: Option<String>,
+        #[serde(rename = "args")]
+        args: Option<BTreeMap<String, String>>,
     }
 
     #[schema]
