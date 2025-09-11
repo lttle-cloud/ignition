@@ -1,3 +1,4 @@
+pub mod app;
 pub mod certificate;
 pub mod completion;
 pub mod deploy;
@@ -48,6 +49,10 @@ pub enum Command {
     /// Deploy resources from a file
     Deploy(deploy::DeployArgs),
 
+    /// App management
+    #[command(subcommand)]
+    App(AppCommand),
+
     /// Machine management
     #[command(subcommand)]
     Machine(MachineCommand),
@@ -73,6 +78,20 @@ pub enum Command {
         #[arg(value_enum)]
         shell: Shell,
     },
+}
+
+#[derive(Subcommand)]
+pub enum AppCommand {
+    /// List certificates (short: ls)
+    #[command(alias = "ls")]
+    List(ListNamespacedArgs),
+
+    /// Get a certificate
+    Get(GetNamespacedArgs),
+
+    /// Delete a certificate (short: rm)
+    #[command(alias = "rm")]
+    Delete(DeleteNamespacedArgs),
 }
 
 #[derive(Subcommand)]
@@ -193,6 +212,11 @@ pub async fn run_cli() -> Result<()> {
             NamespaceCommand::List => namespace::run_namespace_list(&config).await,
         },
         Command::Deploy(args) => deploy::run_deploy(&config, args).await,
+        Command::App(cmd) => match cmd {
+            AppCommand::List(args) => app::run_app_list(&config, args).await,
+            AppCommand::Get(args) => app::run_app_get(&config, args).await,
+            AppCommand::Delete(args) => app::run_app_delete(&config, args).await,
+        },
         Command::Machine(cmd) => match cmd {
             MachineCommand::List(args) => machine::run_machine_list(&config, args).await,
             MachineCommand::Get(args) => machine::run_machine_get(&config, args).await,

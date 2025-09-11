@@ -6,4 +6,6 @@ pub struct DnsAgentConfig {
     pub default_ttl: u32,
     /// Upstream DNS servers for passthrough (e.g., ["8.8.8.8:53", "8.8.4.4:53"])
     pub upstream_dns_servers: Vec<String>,
+    /// Region root domain (e.g., "eu.lttle.host")
+    pub region_root_domain: String,
 }

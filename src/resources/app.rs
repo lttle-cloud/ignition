@@ -5,18 +5,18 @@ use std::collections::BTreeMap;
 use crate::resources::{
     Convert, FromResource,
     machine::{
-        MachineDependency, MachineMode, MachineResources, MachineRestartPolicy,
+        MachineBuild, MachineDependency, MachineMode, MachineResources, MachineRestartPolicy,
         MachineVolumeBinding,
     },
+    service::{ServiceBindExternalProtocol, ServiceTargetConnectionTracking},
 };
 
 #[resource(name = "App", tag = "app")]
 mod app {
-
     #[version(stored + served + latest)]
     struct V1 {
-        build: Option<AppBuild>,
         image: Option<String>,
+        build: Option<MachineBuild>,
         resources: MachineResources,
         #[serde(rename = "restart-policy")]
         restart_policy: Option<MachineRestartPolicy>,
@@ -26,44 +26,53 @@ mod app {
         environment: Option<BTreeMap<String, String>>,
         #[serde(rename = "depends-on")]
         depends_on: Option<Vec<MachineDependency>>,
-        expose: Option<Vec<AppExpose>>,
-    }
-
-    #[schema]
-    struct AppBuild {
-        context: String,
-        #[serde(rename = "image-name")]
-        image_name: Option<String>,
-        tag: Option<String>,
+        expose: Option<BTreeMap<String, AppExpose>>,
     }
 
     #[schema]
     struct AppExpose {
         port: u16,
-        #[serde(rename = "external-port")]
-        external_port: Option<u16>,
-        protocol: AppExposeProtocol,
-        host: Option<String>,
+        #[serde(rename = "connection-tracking")]
+        connection_tracking: Option<ServiceTargetConnectionTracking>,
+        external: Option<AppExposeExternal>,
+        internal: Option<AppExposeInternal>,
     }
 
     #[schema]
-    enum AppExposeProtocol {
-        #[serde(rename = "http")]
-        Http,
-        #[serde(rename = "https")]
-        Https,
-        #[serde(rename = "tls")]
-        Tls,
+    struct AppExposeInternal {
+        port: Option<u16>,
+    }
+
+    #[schema]
+    struct AppExposeExternal {
+        host: Option<String>,
+        port: Option<u16>,
+        protocol: ServiceBindExternalProtocol,
     }
 
     #[status]
-    struct Status {}
+    struct Status {
+        machine_hash: u64,
+        machine_name: Option<String>,
+        allocated_services: BTreeMap<String, AppAllocatedService>,
+    }
+
+    #[schema]
+    struct AppAllocatedService {
+        name: String,
+        hash: u64,
+        domain: Option<String>,
+    }
 }
 
 impl FromResource<App> for AppStatus {
     fn from_resource(app: App) -> Result<Self> {
         let _app = app.latest();
 
-        Ok(AppStatus {})
+        Ok(AppStatus {
+            machine_hash: 0,
+            machine_name: None,
+            allocated_services: BTreeMap::new(),
+        })
     }
 }

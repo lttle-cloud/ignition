@@ -37,6 +37,9 @@ pub struct CertificateSummary {
     #[field(name = "namespace")]
     namespace: Option<String>,
 
+    #[field(name = "tags")]
+    tags: Vec<String>,
+
     #[field(name = "state", cell_style = important)]
     state: String,
 
@@ -110,6 +113,7 @@ impl From<(CertificateLatest, CertificateStatus)> for CertificateSummary {
         Self {
             name: certificate.name,
             namespace: certificate.namespace,
+            tags: certificate.tags.unwrap_or_default(),
             state,
             domains,
             issuer,

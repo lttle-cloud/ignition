@@ -15,6 +15,7 @@ use ignition::{
     api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
     constants::DEFAULT_KERNEL_CMD_LINE_INIT,
     controller::{
+        app::AppController,
         certificate::CertificateController,
         machine::MachineController,
         scheduler::{Scheduler, SchedulerConfig},
@@ -143,6 +144,7 @@ async fn main() -> Result<()> {
                                 upstream_dns_servers: scheduler_config
                                     .dns_config
                                     .upstream_dns_servers,
+                                region_root_domain: scheduler_config.dns_config.region_root_domain,
                             },
                             cert_config: CertificateAgentConfig {
                                 providers: scheduler_config.cert_providers,
@@ -178,6 +180,7 @@ async fn main() -> Result<()> {
                 MachineController::new_boxed(),
                 ServiceController::new_boxed(),
                 VolumeController::new_boxed(),
+                AppController::new_boxed(),
             ],
         );
 
@@ -200,7 +203,8 @@ async fn main() -> Result<()> {
     .add_service::<services::CertificateService>()
     .add_service::<services::MachineService>()
     .add_service::<services::ServiceService>()
-    .add_service::<services::VolumeService>();
+    .add_service::<services::VolumeService>()
+    .add_service::<services::AppService>();
 
     scheduler.start_workers();
     scheduler.schedule_bringup().await?;

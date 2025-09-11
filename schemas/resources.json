@@ -124,32 +124,96 @@
     }
   ],
   "$defs": {
-    "AppBuild": {
+    "AppAllocatedService": {
       "properties": {
-        "context": {
+        "domain": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/expr"
+            }
+          ]
+        },
+        "name": {
           "type": "string"
-        },
-        "image-name": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "tag": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
-        "context"
+        "name",
+        "hash"
       ],
       "type": "object"
     },
     "AppExpose": {
       "properties": {
-        "external-port": {
+        "connection-tracking": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServiceTargetConnectionTracking"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "external": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AppExposeExternal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "internal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AppExposeInternal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "port": {
+          "anyOf": [
+            {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/expr"
+            }
+          ]
+        }
+      },
+      "required": [
+        "port"
+      ],
+      "type": "object"
+    },
+    "AppExposeExternal": {
+      "properties": {
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
           "anyOf": [
             {
               "format": "uint16",
@@ -165,49 +229,42 @@
             }
           ]
         },
-        "host": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
+        "protocol": {
+          "$ref": "#/$defs/ServiceBindExternalProtocol"
+        }
+      },
+      "required": [
+        "protocol"
+      ],
+      "type": "object"
+    },
+    "AppExposeInternal": {
+      "properties": {
         "port": {
           "anyOf": [
             {
               "format": "uint16",
               "maximum": 65535,
               "minimum": 0,
-              "type": "integer"
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             {
               "$ref": "#/$defs/expr"
             }
           ]
-        },
-        "protocol": {
-          "$ref": "#/$defs/AppExposeProtocol"
         }
       },
-      "required": [
-        "port",
-        "protocol"
-      ],
       "type": "object"
-    },
-    "AppExposeProtocol": {
-      "enum": [
-        "http",
-        "https",
-        "tls"
-      ],
-      "type": "string"
     },
     "AppV1": {
       "properties": {
         "build": {
           "anyOf": [
             {
-              "$ref": "#/$defs/AppBuild"
+              "$ref": "#/$defs/MachineBuild"
             },
             {
               "type": "null"
@@ -242,11 +299,11 @@
           ]
         },
         "expose": {
-          "items": {
+          "additionalProperties": {
             "$ref": "#/$defs/AppExpose"
           },
           "type": [
-            "array",
+            "object",
             "null"
           ]
         },

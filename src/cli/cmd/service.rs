@@ -44,6 +44,9 @@ pub struct ServiceSummary {
     #[field(name = "namespace")]
     namespace: Option<String>,
 
+    #[field(name = "tags")]
+    tags: Vec<String>,
+
     #[field(name = "mode", cell_style = important)]
     mode: String,
 
@@ -172,6 +175,7 @@ impl From<(ServiceLatest, ServiceStatus)> for ServiceSummary {
         Self {
             name: service.name,
             namespace: service.namespace,
+            tags: service.tags.clone().unwrap_or_default(),
             target,
             target_port: service.target.port.to_string(),
             host,

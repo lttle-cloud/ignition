@@ -6,7 +6,7 @@ use ignition::{
     api_client::ApiClient,
     resource_index::Resources,
     resources::{
-        ProvideMetadata, certificate::Certificate, machine::Machine, metadata::Namespace,
+        ProvideMetadata, app::App, certificate::Certificate, machine::Machine, metadata::Namespace,
         service::Service, volume::Volume,
     },
 };
@@ -17,10 +17,6 @@ use tokio::fs::{read_dir, read_to_string};
 use crate::{
     build::{build_image, docker_auth::DockerAuthConfig, push_image},
     client::get_api_client,
-    cmd::{
-        certificate::CertificateSummary, machine::MachineSummary, service::ServiceSummary,
-        volume::VolumeSummary,
-    },
     config::Config,
     expr::{
         ctx::{EnvAmbientOverrideBehavior, ExprEvalContext, ExprEvalContextConfig},
@@ -161,13 +157,23 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
     );
 
     for (path, resource) in resources.iter_mut() {
-        let machine = match resource {
-            Resources::Machine(machine) => machine,
-            Resources::MachineV1(machine) => machine,
+        let (resource_name, mut_image, mut_build) = match resource {
+            Resources::Machine(machine) => (
+                machine.metadata().to_string(),
+                &mut machine.image,
+                &mut machine.build,
+            ),
+            Resources::MachineV1(machine) => (
+                machine.metadata().to_string(),
+                &mut machine.image,
+                &mut machine.build,
+            ),
+            Resources::App(app) => (app.metadata().to_string(), &mut app.image, &mut app.build),
+            Resources::AppV1(app) => (app.metadata().to_string(), &mut app.image, &mut app.build),
             _ => continue,
         };
 
-        let Some(build) = machine.build.clone() else {
+        let Some(build) = mut_build.clone() else {
             continue;
         };
 
@@ -175,9 +181,7 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
             bail!("No parent directory for path: {:?}", path);
         };
 
-        let machine_name = machine.metadata().to_string();
-
-        message_detail(format!("Building image for machine: {}", machine_name));
+        message_detail(format!("Building image for {}", resource_name));
         let image = build_image(
             dir,
             &me.tenant,
@@ -187,18 +191,15 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
             args.disable_build_cache,
         )
         .await?;
-        message_detail(format!(
-            "Pushing image for machine {} → {}",
-            machine_name, image
-        ));
+        message_detail(format!("Pushing image for {} → {}", resource_name, image));
         push_image(image.clone(), auth.clone()).await?;
         message_info(format!(
-            "Successfully built and pushed image for machine: {}",
-            machine_name
+            "Successfully built and pushed image for {}",
+            resource_name
         ));
 
-        machine.build = None;
-        machine.image = Some(image);
+        *mut_build = None;
+        *mut_image = Some(image);
     }
 
     for (_path, resource) in resources {
@@ -219,6 +220,11 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
 
         if let Ok(volume) = resource.clone().try_into() {
             deploy_volume(config, &api_client, volume).await?;
+            continue;
+        }
+
+        if let Ok(app) = resource.clone().try_into() {
+            deploy_app(config, &api_client, app).await?;
             continue;
         }
 
@@ -376,7 +382,7 @@ async fn deploy_machine(_config: &Config, api_client: &ApiClient, machine: Machi
     let metadata = machine.metadata();
     api_client.machine().apply(machine).await?;
 
-    let (machine, status) = api_client
+    let (machine, _status) = api_client
         .machine()
         .get(
             Namespace::from_value_or_default(metadata.namespace),
@@ -389,9 +395,6 @@ async fn deploy_machine(_config: &Config, api_client: &ApiClient, machine: Machi
         machine.metadata().to_string()
     ));
 
-    let summary = MachineSummary::from((machine, status));
-    summary.print();
-
     Ok(())
 }
 
@@ -403,7 +406,7 @@ async fn deploy_certificate(
     let metadata = certificate.metadata();
     api_client.certificate().apply(certificate).await?;
 
-    let (certificate, status) = api_client
+    let (certificate, _status) = api_client
         .certificate()
         .get(
             Namespace::from_value_or_default(metadata.namespace),
@@ -416,9 +419,6 @@ async fn deploy_certificate(
         certificate.metadata().to_string()
     ));
 
-    let summary = CertificateSummary::from((certificate, status));
-    summary.print();
-
     Ok(())
 }
 
@@ -426,7 +426,7 @@ async fn deploy_service(_config: &Config, api_client: &ApiClient, service: Servi
     let metadata = service.metadata();
     api_client.service().apply(service).await?;
 
-    let (service, status) = api_client
+    let (service, _status) = api_client
         .service()
         .get(
             Namespace::from_value_or_default(metadata.namespace),
@@ -439,9 +439,6 @@ async fn deploy_service(_config: &Config, api_client: &ApiClient, service: Servi
         service.metadata().to_string()
     ));
 
-    let summary = ServiceSummary::from((service, status));
-    summary.print();
-
     Ok(())
 }
 
@@ -449,7 +446,7 @@ async fn deploy_volume(_config: &Config, api_client: &ApiClient, volume: Volume)
     let metadata = volume.metadata();
     api_client.volume().apply(volume).await?;
 
-    let (volume, status) = api_client
+    let (volume, _status) = api_client
         .volume()
         .get(
             Namespace::from_value_or_default(metadata.namespace),
@@ -462,8 +459,25 @@ async fn deploy_volume(_config: &Config, api_client: &ApiClient, volume: Volume)
         volume.metadata().to_string()
     ));
 
-    let summary = VolumeSummary::from((volume, status));
-    summary.print();
+    Ok(())
+}
+
+async fn deploy_app(_config: &Config, api_client: &ApiClient, app: App) -> Result<()> {
+    let metadata = app.metadata();
+    api_client.app().apply(app).await?;
+
+    let (app, _status) = api_client
+        .app()
+        .get(
+            Namespace::from_value_or_default(metadata.namespace),
+            metadata.name,
+        )
+        .await?;
+
+    message_info(format!(
+        "Successfully deployed app: {}",
+        app.metadata().to_string()
+    ));
 
     Ok(())
 }

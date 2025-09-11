@@ -206,9 +206,10 @@ where
     let mut chars = s.chars();
     if !chars.next().unwrap().is_ascii_alphabetic()
         || !chars.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        || s.contains("--")
     {
         return Err(serde::de::Error::custom(
-            "identifier must start with a letter and contain only alphanumeric, hyphen or underscore",
+            "identifier must start with a letter and contain only alphanumeric, single hyphen or underscore",
         ));
     }
     Ok(s)
@@ -223,9 +224,10 @@ where
         let mut chars = s.chars();
         if !chars.next().unwrap().is_ascii_alphabetic()
             || !chars.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            || s.contains("--")
         {
             return Err(serde::de::Error::custom(
-                "identifier must start with a letter and contain only alphanumeric, hyphen or underscore",
+                "identifier must start with a letter and contain only alphanumeric, single hyphen or underscore",
             ));
         }
         Ok(Some(s))

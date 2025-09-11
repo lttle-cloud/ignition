@@ -35,6 +35,9 @@ pub struct VolumeSummary {
     #[field(name = "namespace")]
     namespace: Option<String>,
 
+    #[field(name = "tags")]
+    tags: Vec<String>,
+
     #[field(name = "mode", cell_style = important)]
     mode: String,
 
@@ -80,6 +83,7 @@ impl From<(VolumeLatest, VolumeStatus)> for VolumeSummary {
         Self {
             name: volume.name,
             namespace: volume.namespace,
+            tags: volume.tags.unwrap_or_default(),
             mode,
             size,
             volume_id,

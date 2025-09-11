@@ -10,6 +10,7 @@ use tracing::{error, info};
 
 use crate::{
     agent::{dns::config::DnsAgentConfig, net::NetAgent},
+    constants::DEFAULT_NAMESPACE,
     repository::Repository,
 };
 
@@ -90,6 +91,30 @@ impl DnsAgent {
             task.abort();
         }
         Ok(())
+    }
+
+    pub fn region_domain_for_service(
+        &self,
+        tenant: &str,
+        name: &str,
+        namespace: &str,
+        port_name: &str,
+    ) -> String {
+        if namespace == DEFAULT_NAMESPACE {
+            return format!(
+                "{}--{}--{}.{}",
+                name, port_name, tenant, self.config.region_root_domain
+            );
+        }
+
+        format!(
+            "{}--{}--{}--{}.{}",
+            name, namespace, port_name, tenant, self.config.region_root_domain
+        )
+    }
+
+    pub fn is_region_domain(&self, domain: &str) -> bool {
+        domain.ends_with(&self.config.region_root_domain)
     }
 
     pub fn config(&self) -> &DnsAgentConfig {

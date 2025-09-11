@@ -1,7 +1,7 @@
 use anyhow::Result;
 use meta::resource;
 
-use crate::resources::FromResource;
+use crate::resources::{Convert, FromResource, ProvideMetadata};
 
 #[resource(name = "Service", tag = "service")]
 mod service {
@@ -121,5 +121,20 @@ impl ToString for ServiceBind {
             ServiceBind::Internal { .. } => "internal".to_string(),
             ServiceBind::External { .. } => "external".to_string(),
         }
+    }
+}
+
+impl Service {
+    pub fn hash_with_updated_metadata(&self) -> u64 {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+
+        let metadata = self.metadata();
+        let mut service = self.stored();
+        service.namespace = metadata.namespace;
+        let service: Service = service.into();
+
+        let mut hasher = DefaultHasher::new();
+        service.hash(&mut hasher);
+        hasher.finish()
     }
 }

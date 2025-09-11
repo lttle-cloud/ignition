@@ -102,6 +102,8 @@ pub struct DnsConfig {
     pub default_ttl: u32,
     #[serde(rename = "upstream-dns-servers", default)]
     pub upstream_dns_servers: Vec<String>,
+    #[serde(rename = "region-root-domain")]
+    pub region_root_domain: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

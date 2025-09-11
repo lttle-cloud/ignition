@@ -1,6 +1,7 @@
 pub mod context;
 pub mod scheduler;
 
+pub mod app;
 pub mod certificate;
 pub mod machine;
 pub mod service;

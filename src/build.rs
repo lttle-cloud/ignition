@@ -11,7 +11,9 @@ use crate::resources::AdmissionRule;
 #[tokio::main]
 pub async fn main() {
     resource::ResourcesBuilder::new()
-        .resource::<resources::app::App>()
+        .resource_with_config::<resources::app::App>(|cfg| {
+            cfg.add_admission_rule(AdmissionRule::BeforeSet)
+        })
         .resource_with_config::<resources::machine::Machine>(|cfg| {
             cfg.add_admission_rule(AdmissionRule::BeforeSet)
         })
