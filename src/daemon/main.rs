@@ -137,6 +137,10 @@ async fn main() -> Result<()> {
                                     .default_tls_key_path,
                                 evergreen_external_ports: vec![80, 443],
                                 blacklisted_external_ports: vec![21, 22, 51, 5100, 9898],
+                                blacklisted_seo_domain: scheduler_config
+                                    .dns_config
+                                    .region_root_domain
+                                    .clone(),
                             },
                             dns_config: DnsAgentConfig {
                                 zone_suffix: scheduler_config.dns_config.zone_suffix,
