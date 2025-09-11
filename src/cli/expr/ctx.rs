@@ -149,7 +149,24 @@ fn get_git_info(git_dir: PathBuf) -> Result<GitInfo> {
     let branch = if head.is_branch() {
         head.shorthand().map(|s| s.to_string())
     } else {
-        None
+        // maybe we are in github actions
+        if let Ok(github_head_ref) = std::env::var("GITHUB_HEAD_REF") {
+            // PRs: source branch
+            Some(github_head_ref)
+        } else if let Ok(github_ref_name) = std::env::var("GITHUB_REF_NAME") {
+            // Pushes/manual triggers with a branch name
+            if let Ok(github_ref_type) = std::env::var("GITHUB_REF_TYPE") {
+                if github_ref_type == "branch" {
+                    Some(github_ref_name)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     };
 
     // Get tag if current commit is directly tagged
