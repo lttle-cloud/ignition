@@ -1,19 +1,13 @@
-machine:
-  name: static-site
+app:
+  name: static-site-docker
   build:
     docker:
       name: static-site-docker
   resources:
     cpu: 1
     memory: 128
----
-service:
-  name: static-site
-  target:
-    name: static-site
-    port: 80
-    protocol: http
-  bind:
-    external:
-      host: static-site.alpha1.ovh-rbx.lttle.host
-      protocol: https
+  expose:
+    public:
+      port: 80
+      external:
+        protocol: https
