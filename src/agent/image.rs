@@ -1,5 +1,6 @@
 pub mod credentials;
 pub mod oci;
+mod unpacker;
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -12,8 +13,10 @@ use tracing::{info, warn};
 use crate::{
     agent::{
         data::Collections,
+        image::credentials::InternalCredentialsProvider,
         volume::{VolumeAgent, fs},
     },
+    api::auth::AuthHandler,
     constants::DEFAULT_AGENT_TENANT,
     machinery::store::{Key, PartialKey, Store},
     utils::time::now_millis,
@@ -22,6 +25,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct ImageAgentConfig {
     pub base_path: String,
+    pub internal_registry_service: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,6 +49,8 @@ pub struct ImageAgent {
     store: Arc<Store>,
     volume_agent: Arc<VolumeAgent>,
     base_layers_path: PathBuf,
+    auth_handler: Arc<AuthHandler>,
+    internal_registry_service: String,
 }
 
 impl ImageAgent {
@@ -52,6 +58,7 @@ impl ImageAgent {
         config: ImageAgentConfig,
         store: Arc<Store>,
         volume_agent: Arc<VolumeAgent>,
+        auth_handler: Arc<AuthHandler>,
     ) -> Result<Self> {
         let base_path = PathBuf::from(&config.base_path);
         if !base_path.exists() {
@@ -67,6 +74,8 @@ impl ImageAgent {
             store,
             volume_agent,
             base_layers_path,
+            auth_handler,
+            internal_registry_service: config.internal_registry_service,
         })
     }
 
@@ -118,8 +127,15 @@ impl ImageAgent {
         Ok(images)
     }
 
-    pub async fn image_pull(&self, reference: Reference) -> Result<Image> {
-        let (manigest, digest, config) = oci::fetch_manifest(&reference).await?;
+    pub async fn image_pull(&self, tenant: String, reference: Reference) -> Result<Image> {
+        let credentials_provider = InternalCredentialsProvider::new(
+            self.auth_handler.clone(),
+            self.internal_registry_service.clone(),
+            tenant,
+        );
+
+        let (manifest, digest, config) =
+            oci::fetch_manifest(&credentials_provider, &reference).await?;
 
         if let Some(existing_image) = self.image_by_reference(&reference.to_string())? {
             if existing_image.digest == digest {
@@ -130,7 +146,7 @@ impl ImageAgent {
         // we are noew ready to pull the image
         // 1. see what layers we already have, and what we need to pull
         let mut layers_to_pull = Vec::new();
-        for layer in manigest.layers.iter() {
+        for layer in manifest.layers.iter() {
             if let Some(_) = self.layer(&layer.digest)? {
                 continue;
             }
@@ -143,7 +159,7 @@ impl ImageAgent {
             let layer_path = self.base_layers_path.join(&layer.digest);
             let layer_path = layer_path.to_str().unwrap();
 
-            oci::pull_layer(&reference, &layer, layer_path).await?;
+            oci::pull_layer(&credentials_provider, &reference, &layer, layer_path).await?;
 
             let layer_entry = ImageLayer {
                 timestamp: now_millis(),
@@ -165,7 +181,7 @@ impl ImageAgent {
         let temp_dir = tempfile::tempdir()?;
 
         // 4. unpack the layers
-        for layer in manigest.layers.iter() {
+        for layer in manifest.layers.iter() {
             let layer_entry = self.layer(&layer.digest)?;
             let Some(layer_entry) = layer_entry else {
                 bail!("Layer not found: {}", layer.digest);
@@ -175,11 +191,6 @@ impl ImageAgent {
 
             oci::uncompress_layer(&layer_path, &temp_dir.path()).await?;
         }
-
-        info!("removing whiteouts");
-        let whiteout_path = temp_dir.path().to_path_buf();
-        spawn_blocking(move || oci::remove_whiteouts(whiteout_path)).await??;
-        info!("whiteouts removed");
 
         // 5. write config for takeoff
         if let Some(config) = config.config {
@@ -230,7 +241,7 @@ impl ImageAgent {
             digest,
             timestamp: now_millis(),
             volume_id: volume.id,
-            layer_ids: manigest.layers.iter().map(|l| l.digest.clone()).collect(),
+            layer_ids: manifest.layers.iter().map(|l| l.digest.clone()).collect(),
         };
         if let Err(e) = self.store.put(&key, &image) {
             warn!("failed to store image entry: {}", e);
@@ -268,18 +279,34 @@ mod tests {
             .unwrap(),
         );
 
+        let auth_handler = Arc::new(
+            AuthHandler::new(
+                "test",
+                "test",
+                "test",
+                Option::<String>::None,
+                Option::<String>::None,
+            )
+            .unwrap(),
+        );
+
         let image_agent = ImageAgent::new(
             ImageAgentConfig {
                 base_path: images_base_dir.path().to_str().unwrap().to_string(),
+                internal_registry_service: "test".to_string(),
             },
             store,
             volume_agent,
+            auth_handler,
         )
         .await
         .unwrap();
 
         let image = image_agent
-            .image_pull(Reference::from_str("alpine:latest").unwrap())
+            .image_pull(
+                "test".to_string(),
+                Reference::from_str("alpine:latest").unwrap(),
+            )
             .await
             .expect("Failed to pull image");
 
@@ -297,7 +324,10 @@ mod tests {
 
         // pulling again should not pull anything
         let new_image = image_agent
-            .image_pull(Reference::from_str("alpine:latest").unwrap())
+            .image_pull(
+                "test".to_string(),
+                Reference::from_str("alpine:latest").unwrap(),
+            )
             .await
             .expect("Failed to pull image");
 

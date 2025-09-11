@@ -528,12 +528,119 @@
       ],
       "type": "object"
     },
+    "MachineBuild": {
+      "oneOf": [
+        {
+          "enum": [
+            "auto"
+          ],
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "options": {
+              "$ref": "#/$defs/MachineBuildOptions"
+            }
+          },
+          "required": [
+            "options"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "docker": {
+              "$ref": "#/$defs/MachineDockerOptions"
+            }
+          },
+          "required": [
+            "docker"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "MachineBuildOptions": {
+      "properties": {
+        "dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "MachineDependency": {
       "properties": {
         "name": {
           "type": "string"
         },
         "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "MachineDockerOptions": {
+      "properties": {
+        "args": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "context": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dockerfile": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "tag": {
           "type": [
             "string",
             "null"
@@ -729,6 +836,16 @@
     },
     "MachineV1": {
       "properties": {
+        "build": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineBuild"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "command": {
           "items": {
             "type": "string"
@@ -757,7 +874,10 @@
           ]
         },
         "image": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "mode": {
           "anyOf": [
@@ -812,7 +932,6 @@
       },
       "required": [
         "name",
-        "image",
         "resources"
       ],
       "type": "object"

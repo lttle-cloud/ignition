@@ -1,0 +1,67 @@
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    networks: [private]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/ready"]
+      interval: 2s
+      timeout: 1s
+      retries: 30
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    entrypoint: []
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        set -eu
+        # wait until MinIO is reachable and authentication works
+        until mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+          sleep 1
+        done
+        # (optional) double-check
+        mc ls local >/dev/null 2>&1 || true
+        # create bucket idempotently
+        mc mb -p local/registry || true
+        mc ls local/registry
+    networks: [private]
+
+  registry:
+    image: registry:2.8.3
+    depends_on:
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      REGISTRY_LOG_LEVEL: info
+      REGISTRY_HTTP_ADDR: :5000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./config/registry.yml:/etc/docker/registry/config.yml:ro
+      - ./certs/token-root.pem:/etc/registry/token-root.pem:ro
+      - registry-data:/var/lib/registry
+    ports:
+      - "0.0.0.0:5000:5000"
+    networks: [private]
+
+networks:
+  private: {}
+
+volumes:
+  minio-data: {}
+  registry-data: {}

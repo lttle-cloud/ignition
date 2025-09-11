@@ -29,6 +29,32 @@
           }
         },
         {
+          "name": "get_registry_robot",
+          "namespaced": false,
+          "verb": "GET",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "registry"
+            },
+            {
+              "type": "static",
+              "value": "robot"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "RegistryRobot"
+          }
+        },
+        {
           "name": "list_namespaces",
           "namespaced": false,
           "verb": "GET",
@@ -1314,6 +1340,69 @@
         }
       ]
     },
+    "MachineBuild": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "auto"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "options": {
+              "$ref": "#/$defs/MachineBuildOptions"
+            }
+          },
+          "required": [
+            "options"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "docker": {
+              "$ref": "#/$defs/MachineDockerOptions"
+            }
+          },
+          "required": [
+            "docker"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "MachineBuildOptions": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
     "MachineDependency": {
       "type": "object",
       "properties": {
@@ -1326,6 +1415,50 @@
             "null"
           ],
           "default": null
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "MachineDockerOptions": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dockerfile": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "args": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       },
       "required": [
@@ -1586,7 +1719,20 @@
           "type": "string"
         },
         "image": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "build": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineBuild"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "resources": {
           "$ref": "#/$defs/MachineResources"
@@ -1650,7 +1796,6 @@
       },
       "required": [
         "name",
-        "image",
         "resources"
       ]
     },

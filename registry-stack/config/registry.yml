@@ -1,0 +1,32 @@
+version: 0.1
+log:
+  level: info
+
+http:
+  addr: :5000
+  headers:
+    X-Content-Type-Options: [nosniff]
+
+storage:
+  s3:
+    bucket: registry
+    region: us-east-1
+    regionendpoint: http://minio:9000
+    secure: false
+    v4auth: true
+    forcepathstyle: true
+  redirect:
+    disable: true
+  delete:
+    enabled: true
+
+auth:
+  token:
+    realm: https://alpha1.registry.lttle.cloud/core/registry/auth
+    service: alpha1.registry.lttle.cloud
+    issuer: lttle.cloud
+    rootcertbundle: /etc/registry/token-root.pem
+
+compatibility:
+  schema1:
+    enabled: false

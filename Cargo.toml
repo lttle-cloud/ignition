@@ -19,6 +19,10 @@ name = "lttle"
 path = "src/cli/main.rs"
 
 [[bin]]
+name = "generate-hmac-secret-tool"
+path = "src/tools/generate_hmac_secret.rs"
+
+[[bin]]
 name = "generate-token-tool"
 path = "src/tools/generate_token.rs"
 required-features = ["daemon"]
@@ -117,6 +121,8 @@ cel = "0.11.0"
 git2 = { version = "0.20.2", default-features = false }
 dotenvy = "0.15.7"
 caps = { version = "0.5.5", optional = true }
+blake3 = "1.8.2"
+nixpacks = { git = "https://github.com/lttle-cloud/nixpacks", branch = "lttle" }
 
 [features]
 default = []

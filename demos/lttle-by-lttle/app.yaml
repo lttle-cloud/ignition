@@ -1,5 +1,5 @@
 machine:
-  image: ghcr.io/lttle-cloud/lttle-by-lttle-api:latest
+  image: eu.registry.lttle.cloud/laurci/lttle-by-lttle-api:latest
   name: api
   namespace: lbl
   resources:

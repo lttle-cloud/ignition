@@ -1,6 +1,7 @@
 pub mod certificate;
 pub mod completion;
 pub mod deploy;
+pub mod docker;
 pub mod login;
 pub mod machine;
 pub mod namespace;
@@ -62,6 +63,10 @@ pub enum Command {
     /// Certificate management (short: cert)
     #[command(subcommand, alias = "cert")]
     Certificate(CertificateCommand),
+
+    /// Docker management
+    #[command(subcommand)]
+    Docker(DockerCommand),
 
     /// Install completions for your shell (run with root permissions)
     Completions {
@@ -153,6 +158,12 @@ pub enum ProfileCommand {
 }
 
 #[derive(Subcommand)]
+pub enum DockerCommand {
+    /// Login to a docker registry
+    Login(docker::DockerLoginArgs),
+}
+
+#[derive(Subcommand)]
 pub enum NamespaceCommand {
     /// List namespaces (short: ls)
     #[command(alias = "ls")]
@@ -208,6 +219,9 @@ pub async fn run_cli() -> Result<()> {
             CertificateCommand::Delete(args) => {
                 certificate::run_certificate_delete(&config, args).await
             }
+        },
+        Command::Docker(cmd) => match cmd {
+            DockerCommand::Login(args) => docker::run_docker_login(&config, args).await,
         },
         Command::Completions { .. } => unreachable!(),
     }

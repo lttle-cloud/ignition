@@ -419,6 +419,9 @@ async fn takeoff() -> Result<()> {
                     continue;
                 }
 
+                // Also log stdout to console for debugging
+                error!("STDOUT: {}", line);
+
                 let mut rec = stdout_logger.create_log_record();
                 rec.set_severity_number(Severity::Info);
                 rec.set_severity_text("INFO");

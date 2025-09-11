@@ -43,7 +43,6 @@ impl MachineAgent {
 
     pub fn transient_dir(&self, rel: impl AsRef<Path>) -> String {
         let path = self.config.transient_state_path.clone().join(rel);
-        println!("transient_dir: {:?}", path);
         path.to_string_lossy().to_string()
     }
 

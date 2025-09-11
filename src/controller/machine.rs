@@ -301,8 +301,13 @@ impl Controller for MachineController {
         let hash = machine.hash_with_updated_metadata();
 
         let mut machine = machine.latest();
-        let reference = Reference::from_str(&machine.image)
-            .map_err(|_| anyhow!("invalid image reference: {}", machine.image))?;
+
+        let Some(image) = machine.image.clone() else {
+            bail!("image is not set for machine: {}", machine_name);
+        };
+
+        let reference = Reference::from_str(&image)
+            .map_err(|_| anyhow!("invalid image reference: {}", image))?;
         let resolved_reference_str = reference.to_string();
 
         let tags = machine.tags.clone().unwrap_or_default();
@@ -352,6 +357,7 @@ impl Controller for MachineController {
             })
             .await?;
 
+        let tenant = ctx.tenant.clone();
         'phase_match: {
             match status.phase {
                 MachinePhase::Idle => {
@@ -363,9 +369,12 @@ impl Controller for MachineController {
                             key.clone(),
                             pull_image_job_key(&reference),
                             async move {
-                                let image =
-                                    image_agent.image_pull(reference).await.map_err(|_| {
-                                        format!("failed to pull image: {}", &machine.image)
+                                let image = image_agent
+                                    .image_pull(tenant.clone(), reference)
+                                    .await
+                                    .map_err(|e| {
+                                        warn!("failed to pull image: {}", e);
+                                        format!("failed to pull image: {}", &image)
                                     })?;
 
                                 let reference = format!("{}@{}", image.reference, image.digest);
@@ -841,6 +850,14 @@ impl AdmissionCheckBeforeSet for Machine {
     ) -> Result<()> {
         let resource = self.latest();
         let resource_namespace = Namespace::from_value_or_default(resource.namespace.clone());
+
+        if resource.build.is_some() {
+            bail!("machine builds must be resolved by client");
+        }
+
+        if resource.image.is_none() {
+            bail!("image is not set for machine: {}", resource.name);
+        }
 
         // see if the volumes are being used by other machines
         let volumes = resource.volumes.unwrap_or_default();

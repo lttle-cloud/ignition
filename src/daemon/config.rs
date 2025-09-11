@@ -29,6 +29,9 @@ pub struct Config {
     #[serde(rename = "api")]
     pub api_server_config: ApiServerConfig,
 
+    #[serde(rename = "registry")]
+    pub registry_config: RegistryConfig,
+
     #[serde(rename = "dns")]
     pub dns_config: DnsConfig,
 
@@ -77,6 +80,18 @@ pub struct ApiServerConfig {
     pub port: u16,
     #[serde(rename = "jwt-secret")]
     pub jwt_secret: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RegistryConfig {
+    #[serde(rename = "service")]
+    pub service: String,
+    #[serde(rename = "registry-robot-hmac-secret")]
+    pub registry_robot_hmac_secret: String,
+    #[serde(rename = "registry-token-key-path")]
+    pub registry_token_key_path: String,
+    #[serde(rename = "registry-token-cert-path")]
+    pub registry_token_cert_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
