@@ -7,7 +7,7 @@ use anyhow::{Result, bail};
 use axum::http::HeaderValue;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
-use hyper::{Request, Uri, Version, service::service_fn};
+use hyper::{Method, Request, StatusCode, Uri, Version, service::service_fn};
 use hyper_util::{
     client::legacy::{Client, connect::HttpConnector},
     rt::{TokioExecutor, TokioIo},
@@ -40,6 +40,7 @@ pub struct ProxyAgentConfig {
     pub blacklisted_external_ports: Vec<u16>,
     pub default_tls_cert_path: String,
     pub default_tls_key_path: String,
+    pub blacklisted_seo_domain: String,
 }
 
 #[allow(unused)]
@@ -332,6 +333,7 @@ impl ProxyAgent {
         let task_tls_acceptor = self.tls_acceptor.clone();
         let task_binding = binding.clone();
         let task_certificate_agent = self.certificate_agent.clone();
+        let task_blacklisted_seo_domain = self.config.blacklisted_seo_domain.clone();
 
         let task = match proxy_mode {
             ProxyServerMode::Internal => spawn(async move {
@@ -349,6 +351,7 @@ impl ProxyAgent {
                     format!("{}:{}", task_server_key.0, task_server_key.1),
                     task_machine_agent,
                     task_bindings,
+                    task_blacklisted_seo_domain,
                     task_tls_acceptor,
                     task_certificate_agent,
                 )
@@ -373,6 +376,7 @@ async fn external_listener(
     addr: String,
     machine_agent: Arc<MachineAgent>,
     bindings: Arc<HashMap<String, ProxyBinding>>,
+    blacklisted_seo_domain: String,
     tls_acceptor: Arc<TlsAcceptor>,
     certificate_agent: Arc<CertificateAgent>,
 ) -> Result<Infallible> {
@@ -385,12 +389,14 @@ async fn external_listener(
         let machine_agent = machine_agent.clone();
         let tls_acceptor = tls_acceptor.clone();
         let certificate_agent = certificate_agent.clone();
+        let blacklisted_seo_domain = blacklisted_seo_domain.clone();
 
         spawn(async move {
             handle_external_connection(
                 stream,
                 bindings,
                 machine_agent,
+                blacklisted_seo_domain,
                 tls_acceptor,
                 certificate_agent,
             )
@@ -403,6 +409,7 @@ async fn handle_external_connection(
     mut stream: TcpStream,
     bindings: Arc<HashMap<String, ProxyBinding>>,
     machine_agent: Arc<MachineAgent>,
+    blacklisted_seo_domain: String,
     tls_acceptor: Arc<TlsAcceptor>,
     certificate_agent: Arc<CertificateAgent>,
 ) -> Result<()> {
@@ -415,16 +422,30 @@ async fn handle_external_connection(
         }
         SniffedProtocol::Http => {
             info!("Handling HTTP connection");
-            handle_http_connection(stream, bindings, machine_agent, certificate_agent).await
+            handle_http_connection(
+                stream,
+                bindings,
+                blacklisted_seo_domain,
+                machine_agent,
+                certificate_agent,
+            )
+            .await
         }
         SniffedProtocol::PgSsl => {
             info!("Handling PostgreSQL SSL connection");
-            handle_pg_ssl_connection(tls_acceptor.clone(), stream, bindings, machine_agent).await
+            handle_pg_ssl_connection(
+                tls_acceptor.clone(),
+                stream,
+                bindings,
+                blacklisted_seo_domain,
+                machine_agent,
+            )
+            .await
         }
         SniffedProtocol::Tls => {
             info!("Handling TLS connection");
             let tls_stream = tls_acceptor.accept(stream).await?;
-            handle_tls_connection(tls_stream, bindings, machine_agent).await
+            handle_tls_connection(tls_stream, bindings, blacklisted_seo_domain, machine_agent).await
         }
     }
 }
@@ -432,6 +453,7 @@ async fn handle_external_connection(
 async fn handle_http_connection(
     stream: TcpStream,
     bindings: Arc<HashMap<String, ProxyBinding>>,
+    blacklisted_seo_domain: String,
     machine_agent: Arc<MachineAgent>,
     certificate_agent: Arc<CertificateAgent>,
 ) -> Result<()> {
@@ -442,6 +464,7 @@ async fn handle_http_connection(
     let svc = service_fn(move |mut req: Request<hyper::body::Incoming>| {
         let machine_agent = machine_agent.clone();
         let bindings = bindings.clone();
+        let blacklisted_seo_domain = blacklisted_seo_domain.clone();
         let certificate_agent = certificate_agent.clone();
 
         let mut base = HttpConnector::new();
@@ -473,6 +496,39 @@ async fn handle_http_connection(
             }
 
             let Ok(binding) = find_http_binding(&bindings, &target_host) else {
+                if let Ok((binding, _)) = find_tls_binding(&bindings, &target_host) {
+                    if req.method() != Method::GET {
+                        return Err("only GET requests are allowed to be redirected to HTTPS");
+                    }
+
+                    let Some(public_host) = binding.public_host() else {
+                        return Err("no public host found for binding");
+                    };
+
+                    let path = req.uri().path();
+                    let query = req
+                        .uri()
+                        .query()
+                        .and_then(|q| Some(format!("?{}", q)))
+                        .unwrap_or_default();
+
+                    let new_uri = format!("https://{}{}{}", public_host, path, query);
+
+                    let Ok(location) = HeaderValue::from_str(&new_uri) else {
+                        return Err("failed to parse location");
+                    };
+
+                    let mut response = hyper::Response::new(
+                        Full::new(Bytes::from(vec![]))
+                            .map_err(|never| match never {})
+                            .boxed(),
+                    );
+                    *response.status_mut() = StatusCode::TEMPORARY_REDIRECT;
+                    response.headers_mut().insert("location", location);
+
+                    return Ok(response);
+                }
+
                 return Err("failed to find binding for HTTP host");
             };
 
@@ -546,9 +602,16 @@ async fn handle_http_connection(
 
             info!("Modified request URI: {:?}", req.uri());
 
-            let Ok(response) = client.request(req).await else {
+            let Ok(mut response) = client.request(req).await else {
                 return Err("failed to get response from origin");
             };
+
+            if target_host.ends_with(&blacklisted_seo_domain) {
+                response.headers_mut().append(
+                    "X-Robots-Tag",
+                    HeaderValue::from_static("noindex, nofollow"),
+                );
+            }
 
             Ok(response.map(|b| b.boxed()))
         }
@@ -569,6 +632,7 @@ async fn handle_pg_ssl_connection(
     tls_acceptor: Arc<TlsAcceptor>,
     mut stream: TcpStream,
     bindings: Arc<HashMap<String, ProxyBinding>>,
+    blacklisted_seo_domain: String,
     machine_agent: Arc<MachineAgent>,
 ) -> Result<()> {
     // read the SSLRequest message and accept the connection with handle_tls_connection
@@ -578,12 +642,13 @@ async fn handle_pg_ssl_connection(
     stream.write_all(b"S").await?;
 
     let tls_stream = tls_acceptor.accept(stream).await?;
-    handle_tls_connection(tls_stream, bindings, machine_agent).await
+    handle_tls_connection(tls_stream, bindings, blacklisted_seo_domain, machine_agent).await
 }
 
 async fn handle_https_connection(
     tls_stream: tokio_rustls::server::TlsStream<TcpStream>,
     bindings: Arc<HashMap<String, ProxyBinding>>,
+    blacklisted_seo_domain: String,
     machine_agent: Arc<MachineAgent>,
     server_name: String,
 ) -> Result<()> {
@@ -594,6 +659,7 @@ async fn handle_https_connection(
     let svc = service_fn(move |mut req: Request<hyper::body::Incoming>| {
         let machine_agent = machine_agent.clone();
         let bindings = bindings.clone();
+        let blacklisted_seo_domain = blacklisted_seo_domain.clone();
         let server_name = server_name.clone();
 
         let mut base = HttpConnector::new();
@@ -690,9 +756,23 @@ async fn handle_https_connection(
 
             info!("Modified request URI: {:?}", req.uri());
 
-            let Ok(response) = client.request(req).await else {
+            let Ok(mut response) = client.request(req).await else {
                 return Err("failed to get response from origin");
             };
+
+            // TODO: Uncomment this when we have a stable HTTP -> HTTPS redirect
+            // response.headers_mut().append("Strict-Transport-Security", HeaderValue::from_static("max-age=31536000; includeSubDomains; preload"));
+            response.headers_mut().append(
+                "Strict-Transport-Security",
+                HeaderValue::from_static("max-age=86400"),
+            );
+
+            if target_host.ends_with(&blacklisted_seo_domain) {
+                response.headers_mut().append(
+                    "X-Robots-Tag",
+                    HeaderValue::from_static("noindex, nofollow"),
+                );
+            }
 
             Ok(response)
         }
@@ -712,6 +792,7 @@ async fn handle_https_connection(
 async fn handle_tls_connection(
     mut tls_stream: tokio_rustls::server::TlsStream<TcpStream>,
     bindings: Arc<HashMap<String, ProxyBinding>>,
+    blacklisted_seo_domain: String,
     machine_agent: Arc<MachineAgent>,
 ) -> Result<()> {
     let (_, server_conn) = tls_stream.get_ref();
@@ -725,7 +806,14 @@ async fn handle_tls_connection(
 
     if nested_protocol == ExternnalBindingRoutingTlsNestedProtocol::Http {
         info!("Handling HTTP connection over TLS");
-        return handle_https_connection(tls_stream, bindings, machine_agent, server_name).await;
+        return handle_https_connection(
+            tls_stream,
+            bindings,
+            blacklisted_seo_domain,
+            machine_agent,
+            server_name,
+        )
+        .await;
     }
 
     let machine = find_machine(&machine_agent, &binding.target_network_tag).await?;
