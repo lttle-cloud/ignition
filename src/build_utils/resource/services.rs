@@ -1,5 +1,4 @@
 use anyhow::Result;
-use tokio::fs::write;
 
 use crate::{
     build_utils::{cargo, fs::write_if_changed},
