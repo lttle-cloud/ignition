@@ -104,18 +104,19 @@ impl ImageAgent {
             .tenant(DEFAULT_AGENT_TENANT)
             .collection(Collections::Image);
 
-        let mut images = self.store.list(&key)?;
+        let images = self.store.list(&key)?;
+        let mut images = images
+            .iter()
+            .filter(|i| i.reference == reference)
+            .collect::<Vec<_>>();
+
         images.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
         let Some(image) = images.first().cloned() else {
             return Ok(None);
         };
 
-        if image.reference != reference {
-            return Ok(None);
-        }
-
-        Ok(Some(image))
+        Ok(Some(image.clone()))
     }
 
     pub fn image_list(&self) -> Result<Vec<Image>> {
@@ -138,6 +139,11 @@ impl ImageAgent {
             oci::fetch_manifest(&credentials_provider, &reference).await?;
 
         if let Some(existing_image) = self.image_by_reference(&reference.to_string())? {
+            info!(
+                "existing image found for reference {}: {}",
+                reference.to_string(),
+                existing_image.id
+            );
             if existing_image.digest == digest {
                 return Ok(existing_image);
             }
