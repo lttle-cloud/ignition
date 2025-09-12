@@ -5,6 +5,7 @@ pub mod api;
 pub mod constants;
 #[cfg(feature = "daemon")]
 pub mod controller;
+pub mod eval;
 pub mod machinery;
 pub mod resources;
 pub mod utils;
@@ -14,4 +15,6 @@ meta::include_build_mod!("repository");
 #[cfg(feature = "daemon")]
 meta::include_build_mod!("services");
 meta::include_build_mod!("resource_index");
+#[cfg(feature = "daemon")]
+meta::include_build_mod!("cel_functions");
 meta::include_build_mod!("api_client");

@@ -30,7 +30,7 @@ pub struct ImageAgentConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImageLayer {
-    pub timestamp: u128,
+    pub timestamp: u64,
     pub digest: String,
     pub path: String,
 }
@@ -40,7 +40,7 @@ pub struct Image {
     pub id: String,
     pub reference: String,
     pub digest: String,
-    pub timestamp: u128,
+    pub timestamp: u64,
     pub volume_id: String,
     pub layer_ids: Vec<String>,
 }

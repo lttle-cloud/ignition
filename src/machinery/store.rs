@@ -270,13 +270,13 @@ impl TrackedNamespaces {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackedNamespace {
     pub namespace: String,
-    pub created_at: u128,
+    pub created_at: u64,
 }
 
-pub fn now_millis() -> u128 {
+pub fn now_millis() -> u64 {
     let now = SystemTime::now();
     let since_the_epoch = now.duration_since(UNIX_EPOCH).unwrap();
-    since_the_epoch.as_millis() as u128
+    since_the_epoch.as_millis() as u64
 }
 
 pub struct Store {

@@ -273,7 +273,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
             let now_ms = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_millis();
+                .as_millis() as u64;
 
             let duration = (now_ms - t) / 1_000;
             let duration = Duration::from_secs(duration as u64);
@@ -397,11 +397,11 @@ pub async fn run_machine_get_logs(config: &Config, args: MachineLogsArgs) -> Res
         return Ok(());
     }
 
-    let now_ns = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let now_ns = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos() as u64;
 
     let since = args.since.unwrap_or("1d".to_string());
     let since = humantime::parse_duration(&since)?;
-    let since_ns = since.as_nanos();
+    let since_ns = since.as_nanos() as u64;
 
     let start_ts = if args.follow {
         None

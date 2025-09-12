@@ -1,4 +1,5 @@
 mod builder;
+mod cel;
 mod client;
 mod index;
 mod repository;

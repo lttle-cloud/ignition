@@ -122,6 +122,31 @@
           "response": {
             "type": "RawSocket"
           }
+        },
+        {
+          "name": "query",
+          "namespaced": false,
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "query"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "QueryParams"
+          },
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "QueryResponse"
+          }
         }
       ]
     },
@@ -1283,7 +1308,7 @@
             },
             "created_at": {
               "type": "integer",
-              "format": "uint128",
+              "format": "uint64",
               "minimum": 0
             }
           },
@@ -1299,7 +1324,7 @@
       "properties": {
         "timestamp": {
           "type": "integer",
-          "format": "uint128",
+          "format": "uint64",
           "minimum": 0
         },
         "message": {
@@ -1730,7 +1755,7 @@
             "integer",
             "null"
           ],
-          "format": "uint128",
+          "format": "uint64",
           "minimum": 0
         },
         "first_boot_time_us": {
@@ -1738,7 +1763,7 @@
             "integer",
             "null"
           ],
-          "format": "uint128",
+          "format": "uint64",
           "minimum": 0
         },
         "last_restarting_time_us": {
@@ -1746,7 +1771,7 @@
             "integer",
             "null"
           ],
-          "format": "uint128",
+          "format": "uint64",
           "minimum": 0
         },
         "last_exit_code": {
@@ -1912,7 +1937,7 @@
         },
         "created_at": {
           "type": "integer",
-          "format": "uint128",
+          "format": "uint64",
           "minimum": 0
         }
       },
@@ -1921,6 +1946,95 @@
         "created_at"
       ],
       "title": "Namespace",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "QueryParams": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "var": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "git": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QueryGitInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lttle_profile": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query",
+        "env",
+        "var",
+        "lttle_profile"
+      ],
+      "title": "QueryParams",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "QueryGitInfo": {
+          "type": "object",
+          "properties": {
+            "branch": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "commit_sha": {
+              "type": "string"
+            },
+            "commit_message": {
+              "type": "string"
+            },
+            "tag": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "latest_tag": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "ref": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "commit_sha",
+            "commit_message",
+            "ref"
+          ]
+        }
+      }
+    },
+    "QueryResponse": {
+      "type": "object",
+      "properties": {
+        "query_result": true
+      },
+      "required": [
+        "query_result"
+      ],
+      "title": "QueryResponse",
       "$schema": "https://json-schema.org/draft/2020-12/schema"
     },
     "Service": {

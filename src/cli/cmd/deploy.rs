@@ -5,6 +5,7 @@ use anyhow::{Result, bail};
 use clap::{ArgAction, Args};
 use ignition::{
     api_client::ApiClient,
+    eval::ctx::LttleInfo,
     resource_index::Resources,
     resources::{
         ProvideMetadata,
@@ -25,7 +26,7 @@ use crate::{
     client::get_api_client,
     config::Config,
     expr::{
-        ctx::{EnvAmbientOverrideBehavior, ExprEvalContext, ExprEvalContextConfig, LttleInfo},
+        ctx::{EnvAmbientOverrideBehavior, ExprEvalContext, ExprEvalContextConfig},
         eval::{eval_expr, transform_eval_expressions_root},
     },
     ui::message::{message_detail, message_info, message_warn},
