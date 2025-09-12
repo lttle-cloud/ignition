@@ -6,18 +6,24 @@ use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use tokio::fs::read_to_string;
 
-use crate::{expr::std_lib, ui::message::message_warn};
+use crate::{
+    expr::{eval::transform_eval_expressions, std_lib},
+    ui::message::message_warn,
+};
 
+#[derive(Clone)]
 pub struct ExprEvalContextConfig {
     pub env_file: Option<PathBuf>,
     pub var_file: Option<PathBuf>,
     // needs parsing
+    pub initial_vars: Option<BTreeMap<String, Value>>,
     pub aditional_vars: Option<BTreeMap<String, String>>,
     pub git_dir: PathBuf,
     pub env_ambient_override_behavior: EnvAmbientOverrideBehavior,
+    pub lttle_info: LttleInfo,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 pub enum EnvAmbientOverrideBehavior {
     /// If the environment variable is already set, it will be overridden by the value from the file
     Override,
@@ -27,29 +33,38 @@ pub enum EnvAmbientOverrideBehavior {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ExprEvalContext {
-    env: BTreeMap<String, String>,
-    var: BTreeMap<String, Value>,
-    git: Option<GitInfo>,
+    pub env: BTreeMap<String, String>,
+    pub var: BTreeMap<String, Value>,
+    pub git: Option<GitInfo>,
+    pub lttle: LttleInfo,
+    pub namespace: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GitInfo {
-    branch: Option<String>,
+    pub branch: Option<String>,
 
     #[serde(rename = "commitSha")]
-    commit_sha: String, // 8 chars
+    pub commit_sha: String, // 8 chars
 
     #[serde(rename = "commitMessage")]
-    commit_message: String,
+    pub commit_message: String,
 
     #[serde(rename = "tag")]
-    tag: Option<String>,
+    pub tag: Option<String>,
 
     #[serde(rename = "latestTag")]
-    latest_tag: Option<String>,
+    pub latest_tag: Option<String>,
 
     #[serde(rename = "ref")]
-    r#ref: String,
+    pub r#ref: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LttleInfo {
+    pub tenant: String,
+    pub user: String,
+    pub profile: String,
 }
 
 impl Debug for GitInfo {
@@ -78,7 +93,7 @@ impl Debug for ExprEvalContext {
 impl ExprEvalContext {
     pub async fn new(config: ExprEvalContextConfig) -> Result<Self> {
         let mut envs = BTreeMap::new();
-        if let Some(env_file) = config.env_file {
+        if let Some(env_file) = config.env_file.clone() {
             let mut iter = dotenvy::from_filename_iter(env_file)?;
             while let Some(line) = iter.next() {
                 let Ok((key, val)) = line else {
@@ -102,10 +117,20 @@ impl ExprEvalContext {
             envs.insert(key, val);
         }
 
-        let mut vars: BTreeMap<String, Value> = BTreeMap::new();
-        if let Some(var_file) = config.var_file {
+        let mut vars: BTreeMap<String, Value> = config.initial_vars.clone().unwrap_or_default();
+        if let Some(var_file) = config.var_file.clone() {
             let contents = read_to_string(var_file).await?;
-            vars = serde_yaml::from_str(&contents)?;
+            let value = serde_yaml::from_str(&contents)?;
+
+            let mut vars_eval_ctx_config = config.clone();
+            vars_eval_ctx_config.var_file = None;
+            vars_eval_ctx_config.initial_vars =
+                Some(extract_top_level_vars_without_expressions(&value)?);
+
+            let vars_eval_ctx = Box::pin(ExprEvalContext::new(vars_eval_ctx_config)).await?;
+
+            let value = transform_eval_expressions(&value, &vars_eval_ctx)?;
+            vars = serde_yaml::from_value(value)?;
         }
 
         for (key, val) in config.aditional_vars.unwrap_or_default() {
@@ -132,6 +157,8 @@ impl ExprEvalContext {
             env: envs,
             var: vars,
             git: git_info,
+            lttle: config.lttle_info,
+            namespace: None,
         })
     }
 }
@@ -242,6 +269,8 @@ impl TryFrom<&ExprEvalContext> for cel::Context<'_> {
         ctx.add_variable("var", context.var.clone())?;
         ctx.add_variable("env", context.env.clone())?;
         ctx.add_variable("git", context.git.clone())?;
+        ctx.add_variable("lttle", context.lttle.clone())?;
+        ctx.add_variable("namespace", context.namespace.clone())?;
 
         // custom string functions
         ctx.add_function("last", std_lib::str::last);
@@ -264,4 +293,25 @@ impl TryFrom<&ExprEvalContext> for cel::Context<'_> {
 
         Ok(ctx)
     }
+}
+
+fn extract_top_level_vars_without_expressions(value: &Value) -> Result<BTreeMap<String, Value>> {
+    let mut vars = BTreeMap::new();
+    if let Some(map) = value.as_mapping() {
+        for (key, value) in map {
+            let Value::String(key_str) = key else {
+                continue;
+            };
+
+            if let Some(str) = value.as_str() {
+                if str.contains("${{") && str.contains("}}") {
+                    continue;
+                }
+            }
+
+            vars.insert(key_str.clone(), value.clone());
+        }
+    }
+
+    Ok(vars)
 }

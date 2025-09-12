@@ -1,17 +1,23 @@
 use std::path::PathBuf;
 
+use ansi_term::{Color, Style};
 use anyhow::{Result, bail};
 use clap::{ArgAction, Args};
 use ignition::{
     api_client::ApiClient,
     resource_index::Resources,
     resources::{
-        ProvideMetadata, app::App, certificate::Certificate, machine::Machine, metadata::Namespace,
-        service::Service, volume::Volume,
+        ProvideMetadata,
+        app::App,
+        certificate::Certificate,
+        machine::Machine,
+        metadata::{Metadata, Namespace},
+        service::Service,
+        volume::Volume,
     },
 };
-use serde::Deserialize;
-use serde_yaml::{Mapping, Sequence, Value};
+use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
 use tokio::fs::{read_dir, read_to_string};
 
 use crate::{
@@ -19,8 +25,8 @@ use crate::{
     client::get_api_client,
     config::Config,
     expr::{
-        ctx::{EnvAmbientOverrideBehavior, ExprEvalContext, ExprEvalContextConfig},
-        eval::eval_expr,
+        ctx::{EnvAmbientOverrideBehavior, ExprEvalContext, ExprEvalContextConfig, LttleInfo},
+        eval::{eval_expr, transform_eval_expressions_root},
     },
     ui::message::{message_detail, message_info, message_warn},
 };
@@ -59,6 +65,10 @@ pub struct DeployArgs {
     #[arg(long = "debug-context")]
     debug_context: bool,
 
+    /// Print the changes that would be committed without applying them
+    #[arg(long = "dry-run")]
+    dry_run: bool,
+
     /// Dump the context to stdout as JSON
     #[arg(long = "dump-context-json")]
     dump_context_json: bool,
@@ -74,6 +84,9 @@ pub struct DeployArgs {
 pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
     let api_client = get_api_client(config.try_into()?);
 
+    let me = api_client.core().me().await?;
+    let profile = config.current_profile.clone();
+
     let additional_vars = args
         .additional_vars
         .iter()
@@ -87,15 +100,21 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
         })
         .collect();
 
-    let context = ExprEvalContext::new(ExprEvalContextConfig {
+    let mut context = ExprEvalContext::new(ExprEvalContextConfig {
         env_file: args.env_file,
         var_file: args.var_file,
+        initial_vars: None,
         aditional_vars: Some(additional_vars),
         git_dir: std::env::current_dir()?,
         env_ambient_override_behavior: if args.ignore_env_ambient_override {
             EnvAmbientOverrideBehavior::Ignore
         } else {
             EnvAmbientOverrideBehavior::Override
+        },
+        lttle_info: LttleInfo {
+            tenant: me.tenant,
+            user: me.sub,
+            profile: profile,
         },
     })
     .await?;
@@ -137,12 +156,16 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
         bail!("Path does not exist: {:?}", path);
     }
 
+    if args.dry_run {
+        message_info("Dry run mode enabled. No changes will be committed.");
+    }
+
     let mut resources = Vec::new();
     if path.is_file() {
         let contents = read_to_string(&path).await?;
-        parse_all_resources(path, &contents, &mut resources, &context).await?;
+        parse_all_resources(path, &contents, &mut resources, &mut context).await?;
     } else if path.is_dir() {
-        parse_all_resources_in_dir(&path, &mut resources, &context, args.recursive).await?;
+        parse_all_resources_in_dir(&path, &mut resources, &mut context, args.recursive).await?;
     } else {
         bail!("Invalid path: {:?}", path);
     }
@@ -203,32 +226,68 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
     }
 
     for (_path, resource) in resources {
-        if let Ok(certificate) = resource.clone().try_into() {
-            deploy_certificate(config, &api_client, certificate).await?;
-            continue;
-        }
+        match resource {
+            Resources::Certificate(certificate) | Resources::CertificateV1(certificate) => {
+                if args.dry_run {
+                    deploy_dry_run::<Certificate>(
+                        config,
+                        &api_client,
+                        "certificate",
+                        certificate.metadata(),
+                        certificate.into(),
+                    )?;
+                    continue;
+                }
+                deploy_certificate(config, &api_client, certificate.into()).await?;
+            }
+            Resources::App(app) | Resources::AppV1(app) => {
+                if args.dry_run {
+                    deploy_dry_run::<App>(config, &api_client, "app", app.metadata(), app.into())?;
+                    continue;
+                }
+                deploy_app(config, &api_client, app.into()).await?;
+            }
+            Resources::Machine(machine) | Resources::MachineV1(machine) => {
+                if args.dry_run {
+                    deploy_dry_run::<Machine>(
+                        config,
+                        &api_client,
+                        "machine",
+                        machine.metadata(),
+                        machine.into(),
+                    )?;
+                    continue;
+                }
 
-        if let Ok(machine) = resource.clone().try_into() {
-            deploy_machine(config, &api_client, machine).await?;
-            continue;
-        }
-
-        if let Ok(service) = resource.clone().try_into() {
-            deploy_service(config, &api_client, service).await?;
-            continue;
-        }
-
-        if let Ok(volume) = resource.clone().try_into() {
-            deploy_volume(config, &api_client, volume).await?;
-            continue;
-        }
-
-        if let Ok(app) = resource.clone().try_into() {
-            deploy_app(config, &api_client, app).await?;
-            continue;
-        }
-
-        unreachable!("Unknown resource type: {:?}", resource);
+                deploy_machine(config, &api_client, machine.into()).await?;
+            }
+            Resources::Service(service) | Resources::ServiceV1(service) => {
+                if args.dry_run {
+                    deploy_dry_run::<Service>(
+                        config,
+                        &api_client,
+                        "service",
+                        service.metadata(),
+                        service.into(),
+                    )?;
+                    continue;
+                }
+                deploy_service(config, &api_client, service.into()).await?;
+            }
+            Resources::Volume(volume) | Resources::VolumeV1(volume) => {
+                if args.dry_run {
+                    deploy_dry_run::<Volume>(
+                        config,
+                        &api_client,
+                        "volume",
+                        volume.metadata(),
+                        volume.into(),
+                    )?;
+                    continue;
+                }
+                deploy_volume(config, &api_client, volume.into()).await?;
+            }
+        };
     }
 
     Ok(())
@@ -237,7 +296,7 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
 fn parse_all_resources_in_dir<'a>(
     path: &'a PathBuf,
     resources: &'a mut Vec<(PathBuf, Resources)>,
-    context: &'a ExprEvalContext,
+    context: &'a mut ExprEvalContext,
     recursive: bool,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + 'a>> {
     Box::pin(async move {
@@ -254,7 +313,7 @@ fn parse_all_resources_in_dir<'a>(
                 }
 
                 let contents = read_to_string(file.path()).await?;
-                parse_all_resources(file.path(), &contents, resources, &context).await?;
+                parse_all_resources(file.path(), &contents, resources, context).await?;
             }
 
             if file.path().is_dir() && recursive {
@@ -270,7 +329,7 @@ async fn parse_all_resources(
     path: PathBuf,
     contents: &str,
     resources: &mut Vec<(PathBuf, Resources)>,
-    expr_eval_context: &ExprEvalContext,
+    expr_eval_context: &mut ExprEvalContext,
 ) -> Result<()> {
     let de = serde_yaml::Deserializer::from_str(contents);
     for doc in de {
@@ -284,98 +343,12 @@ async fn parse_all_resources(
 
 fn eval_and_validate_resource(
     resource_src: &Value,
-    context: &ExprEvalContext,
+    context: &mut ExprEvalContext,
 ) -> Result<Resources> {
-    fn transform_eval_expressions(value: &Value, context: &ExprEvalContext) -> Result<Value> {
-        if let Some(str) = value.as_str() {
-            let new_value = parse_and_eval_expr(str, context)?;
-            return Ok(new_value.unwrap_or(value.clone()));
-        }
-
-        if let Some(map) = value.as_mapping() {
-            let mut new_map = Mapping::new();
-            for (key, value) in map {
-                new_map.insert(key.clone(), transform_eval_expressions(value, context)?);
-            }
-            Ok(Value::Mapping(new_map))
-        } else if let Some(seq) = value.as_sequence() {
-            let mut new_seq = Sequence::new();
-            for value in seq {
-                new_seq.push(transform_eval_expressions(value, context)?);
-            }
-            Ok(Value::Sequence(new_seq))
-        } else {
-            Ok(value.clone())
-        }
-    }
-
-    let value = transform_eval_expressions(resource_src, context)?;
+    let value = transform_eval_expressions_root(resource_src, context)?;
     let resource: Resources = serde_yaml::with::singleton_map_recursive::deserialize(value)?;
 
     Ok(resource)
-}
-
-fn parse_and_eval_expr(expr: &str, context: &ExprEvalContext) -> Result<Option<Value>> {
-    // either
-    // 1. it starts with ${{ and ends with }} => we eval the expression and return the result as a value
-    // 2. or it contains ${{ and }} => we eval the expression/s, convert the result to a string and replace in the original string
-    // 3. or is just a regular string => we return the original string
-
-    let expr = expr.trim();
-
-    let expr_start_marker_count = expr.matches("${{").count();
-    let expr_end_marker_count = expr.matches("}}").count();
-
-    if expr_start_marker_count == 0 && expr_end_marker_count == 0 {
-        return Ok(None);
-    }
-
-    if expr.starts_with("${{")
-        && expr.ends_with("}}")
-        && expr_start_marker_count == 1
-        && expr_end_marker_count == 1
-    {
-        let expr = expr
-            .trim_start_matches("${{")
-            .trim_end_matches("}}")
-            .trim()
-            .to_string();
-
-        return eval_expr(&expr, context).map(|v| Some(v));
-    }
-
-    // loop should be find, split, eval, replace, repeat\
-    let mut output = expr.to_string();
-    loop {
-        let start = output.find("${{").unwrap_or(0);
-        let end = output.find("}}").unwrap_or(0);
-
-        if start == 0 && end == 0 {
-            break;
-        }
-
-        let expr = output[start + 3..end - 1].trim();
-
-        if expr.is_empty() {
-            break;
-        }
-
-        let value = eval_expr(&expr, context)?;
-        let value_str = match value {
-            Value::Bool(b) => b.to_string(),
-            Value::Number(n) => n.to_string(),
-            Value::String(s) => s.to_string(),
-            Value::Null => "null".to_string(),
-            _ => bail!(
-                "Invalid value '{:?}' returned by expression '{}'",
-                value,
-                expr
-            ),
-        };
-        output = output[..start].to_string() + &value_str + &output[end + 2..];
-    }
-
-    return Ok(Some(Value::String(output)));
 }
 
 async fn deploy_machine(_config: &Config, api_client: &ApiClient, machine: Machine) -> Result<()> {
@@ -478,6 +451,28 @@ async fn deploy_app(_config: &Config, api_client: &ApiClient, app: App) -> Resul
         "Successfully deployed app: {}",
         app.metadata().to_string()
     ));
+
+    Ok(())
+}
+
+fn deploy_dry_run<T: Serialize>(
+    _config: &Config,
+    _api_client: &ApiClient,
+    resource_type_name: &'static str,
+    metadata: Metadata,
+    resource: T,
+) -> Result<()> {
+    let resource = serde_yaml::to_string(&resource)?;
+
+    let type_style = Style::new().fg(Color::Yellow);
+    let metadata_style = Style::new().bold().fg(Color::Blue);
+
+    eprintln!(
+        "→ {} {} as: \n{}",
+        type_style.paint(resource_type_name),
+        metadata_style.paint(metadata.to_string()),
+        resource
+    );
 
     Ok(())
 }
