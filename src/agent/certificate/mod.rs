@@ -9,7 +9,8 @@ use anyhow::{Result, anyhow};
 use config::CertificateAgentConfig;
 use instant_acme::{Account, NewAccount, NewOrder, Order};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
+use tokio::fs::{create_dir_all, remove_file, write};
 use x509_parser::prelude::*;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -236,9 +237,6 @@ impl CertificateAgent {
         private_key_pem: String,
         domains: Vec<String>,
     ) -> Result<()> {
-        use std::path::PathBuf;
-        use tokio::fs::{create_dir_all, write};
-
         let base_dir = PathBuf::from(self.config.certs_base_dir.clone());
         if !base_dir.exists() {
             create_dir_all(&base_dir).await?;
@@ -250,6 +248,18 @@ impl CertificateAgent {
 
             write(&cert_path, cert_chain_pem.as_bytes()).await?;
             write(&key_path, private_key_pem.as_bytes()).await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn delete_certificate(&self, domains: Vec<String>) -> Result<()> {
+        let base_dir = PathBuf::from(self.config.certs_base_dir.clone());
+        for domain in domains.iter() {
+            let cert_path = base_dir.join(format!("{}.cert", domain));
+            let key_path = base_dir.join(format!("{}.key", domain));
+            remove_file(&cert_path).await?;
+            remove_file(&key_path).await?;
         }
 
         Ok(())

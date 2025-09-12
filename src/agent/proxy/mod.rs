@@ -317,6 +317,11 @@ impl ProxyAgent {
         Ok(())
     }
 
+    pub fn invalidate_cert_cache_for_domains(&self, domains: Vec<String>) {
+        self.tls_cert_resolver
+            .invalidate_cert_cache_for_domains(domains);
+    }
+
     fn start_server(&self, binding: &ProxyBinding, server_key: (String, u16)) {
         let servers = self.servers.pin();
 

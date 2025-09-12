@@ -427,6 +427,10 @@ impl CertificateController {
                 status.not_after = Some(not_after.to_rfc3339());
                 status.last_failure_reason = None;
 
+                ctx.agent
+                    .proxy()
+                    .invalidate_cert_cache_for_domains(domains.to_vec());
+
                 info!(
                     "Certificate issued successfully. Valid from {} to {}",
                     not_before, not_after
@@ -527,13 +531,27 @@ impl Controller for CertificateController {
             metadata.name.clone(),
         )?
         else {
-            cert_repo.delete_status(metadata.clone()).await.ok(); // delete status if resource is deleted
+            // cleanup status if resource is deleted
+
+            let status = cert_repo.get_status(metadata.clone())?;
+            if let Some(status) = status {
+                ctx.agent
+                    .certificate()
+                    .delete_certificate(status.domains.to_vec())
+                    .await
+                    .ok();
+
+                ctx.agent
+                    .proxy()
+                    .invalidate_cert_cache_for_domains(status.domains.to_vec());
+            }
+
+            cert_repo.delete_status(metadata.clone()).await.ok();
+
             return Ok(ReconcileNext::done());
         };
 
-        let cert = match cert {
-            Certificate::V1(v1) => v1,
-        };
+        let cert = cert.latest();
 
         // Get current status
         let mut status =
