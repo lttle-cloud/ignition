@@ -120,9 +120,9 @@ mod machine {
         machine_ip: Option<String>,
         machine_tap: Option<String>,
         machine_image_volume_id: Option<String>,
-        last_boot_time_us: Option<u128>,
-        first_boot_time_us: Option<u128>,
-        last_restarting_time_us: Option<u128>,
+        last_boot_time_us: Option<u64>,
+        first_boot_time_us: Option<u64>,
+        last_restarting_time_us: Option<u64>,
         last_exit_code: Option<i32>,
     }
 

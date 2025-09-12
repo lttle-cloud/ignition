@@ -2,14 +2,15 @@ use std::{collections::BTreeMap, fmt::Debug, path::PathBuf};
 
 use anyhow::{Result, bail};
 use git2::Repository;
+use ignition::eval::{
+    CelCtxExt,
+    ctx::{GitInfo, LttleInfo},
+};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use tokio::fs::read_to_string;
 
-use crate::{
-    expr::{eval::transform_eval_expressions, std_lib},
-    ui::message::message_warn,
-};
+use crate::{expr::eval::transform_eval_expressions, ui::message::message_warn};
 
 #[derive(Clone)]
 pub struct ExprEvalContextConfig {
@@ -40,52 +41,14 @@ pub struct ExprEvalContext {
     pub namespace: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct GitInfo {
-    pub branch: Option<String>,
-
-    #[serde(rename = "commitSha")]
-    pub commit_sha: String, // 8 chars
-
-    #[serde(rename = "commitMessage")]
-    pub commit_message: String,
-
-    #[serde(rename = "tag")]
-    pub tag: Option<String>,
-
-    #[serde(rename = "latestTag")]
-    pub latest_tag: Option<String>,
-
-    #[serde(rename = "ref")]
-    pub r#ref: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct LttleInfo {
-    pub tenant: String,
-    pub user: String,
-    pub profile: String,
-}
-
-impl Debug for GitInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("")
-            .field("branch", &self.branch)
-            .field("commitSha", &self.commit_sha)
-            .field("commitMessage", &self.commit_message)
-            .field("tag", &self.tag)
-            .field("latestTag", &self.latest_tag)
-            .field("ref", &self.r#ref)
-            .finish()
-    }
-}
-
 impl Debug for ExprEvalContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("")
             .field("env", &self.env)
             .field("var", &self.var)
             .field("git", &self.git)
+            .field("lttle", &self.lttle)
+            .field("namespace", &self.namespace)
             .finish()
     }
 }
@@ -272,24 +235,7 @@ impl TryFrom<&ExprEvalContext> for cel::Context<'_> {
         ctx.add_variable("lttle", context.lttle.clone())?;
         ctx.add_variable("namespace", context.namespace.clone())?;
 
-        // custom string functions
-        ctx.add_function("last", std_lib::str::last);
-        ctx.add_function("slugify", std_lib::str::slugify);
-        ctx.add_function("toSlug", std_lib::str::to_slug);
-
-        // CEL extended string functions
-        ctx.add_function("charAt", std_lib::str::char_at);
-        ctx.add_function("indexOf", std_lib::str::index_of);
-        ctx.add_function("join", std_lib::str::join_list);
-        ctx.add_function("lastIndexOf", std_lib::str::last_index_of);
-        ctx.add_function("lowerAscii", std_lib::str::lower_ascii);
-        ctx.add_function("quote", std_lib::str::quote);
-        ctx.add_function("replace", std_lib::str::replace);
-        ctx.add_function("split", std_lib::str::split_string);
-        ctx.add_function("substring", std_lib::str::substring);
-        ctx.add_function("trim", std_lib::str::trim);
-        ctx.add_function("upperAscii", std_lib::str::upper_ascii);
-        ctx.add_function("reverse", std_lib::str::reverse);
+        ctx.add_stdlib_functions();
 
         Ok(ctx)
     }

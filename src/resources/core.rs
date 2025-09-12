@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::BTreeMap, str::FromStr};
 
 use anyhow::{Result, bail};
 use schemars::{JsonSchema, SchemaGenerator, schema_for};
@@ -21,7 +21,7 @@ pub struct ListNamespaces {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Namespace {
     pub name: String,
-    pub created_at: u128,
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -54,7 +54,7 @@ impl FromStr for LogStreamTarget {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct LogStreamItem {
-    pub timestamp: u128,
+    pub timestamp: u64,
     pub message: String,
     pub target_stream: LogStreamTarget,
 }
@@ -80,6 +80,30 @@ pub struct ExecParams {
     pub command: String,
     pub stdin: Option<bool>,
     pub tty: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct QueryParams {
+    pub query: String,
+    pub env: BTreeMap<String, String>,
+    pub var: BTreeMap<String, Value>,
+    pub git: Option<QueryGitInfo>,
+    pub lttle_profile: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct QueryGitInfo {
+    pub branch: Option<String>,
+    pub commit_sha: String,
+    pub commit_message: String,
+    pub tag: Option<String>,
+    pub latest_tag: Option<String>,
+    pub r#ref: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct QueryResponse {
+    pub query_result: Value,
 }
 
 pub fn core_api_service() -> ApiService {
@@ -195,6 +219,29 @@ pub fn core_api_service() -> ApiService {
                 }),
                 response: Some(crate::machinery::api_schema::ApiResponse::RawSocket),
             },
+            ApiMethod {
+                name: "query".to_string(),
+                path: vec![
+                    ApiPathSegment::Static {
+                        value: "core".to_string(),
+                    },
+                    ApiPathSegment::Static {
+                        value: "query".to_string(),
+                    },
+                ],
+                namespaced: false,
+                verb: ApiVerb::Put,
+                request: Some(crate::machinery::api_schema::ApiRequest::SchemaDefinition {
+                    name: "QueryParams".to_string(),
+                }),
+                response: Some(
+                    crate::machinery::api_schema::ApiResponse::SchemaDefinition {
+                        list: false,
+                        optional: false,
+                        name: "QueryResponse".to_string(),
+                    },
+                ),
+            },
         ],
     }
 }
@@ -218,6 +265,11 @@ pub fn add_core_service_schema_defs(
         schema_for!(LogStreamParams).into(),
     );
     defs.insert("ExecParams".to_string(), schema_for!(ExecParams).into());
+    defs.insert("QueryParams".to_string(), schema_for!(QueryParams).into());
+    defs.insert(
+        "QueryResponse".to_string(),
+        schema_for!(QueryResponse).into(),
+    );
 
     Ok(())
 }

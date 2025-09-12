@@ -4,8 +4,8 @@ use schemars::{JsonSchema, SchemaGenerator, generate::SchemaSettings};
 use crate::resources::{BuildableResource, ResourceBuildInfo, ResourceConfiguration};
 
 use super::{
-    client::build_rust_api_client, index::build_resource_index, repository::build_repository,
-    schema::build_schema, services::build_services,
+    cel::build_cel_functions, client::build_rust_api_client, index::build_resource_index,
+    repository::build_repository, schema::build_schema, services::build_services,
 };
 
 pub struct ResourcesBuilder {
@@ -46,6 +46,7 @@ impl ResourcesBuilder {
         build_resource_index(&self.resources).await?;
         build_repository(&self.resources).await?;
         build_services(&self.resources).await?;
+        build_cel_functions(&self.resources).await?;
 
         let api_schema = build_schema(&self.resources, &mut self.schema_generator).await?;
         build_rust_api_client(&api_schema).await?;

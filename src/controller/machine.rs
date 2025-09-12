@@ -185,12 +185,12 @@ impl Controller for MachineController {
                     let last_boot_duration_us = running_machine
                         .get_last_boot_duration()
                         .await
-                        .and_then(|duration| Some(duration.as_micros()));
+                        .and_then(|duration| Some(duration.as_micros() as u64));
 
                     let first_boot_duration_us = running_machine
                         .get_first_boot_duration()
                         .await
-                        .and_then(|duration| Some(duration.as_micros()));
+                        .and_then(|duration| Some(duration.as_micros() as u64));
 
                     let last_exit_code = running_machine.get_last_exit_code().await;
 
@@ -315,7 +315,7 @@ impl Controller for MachineController {
                 .machine(key.tenant.clone())
                 .patch_status(key.metadata(), |status| {
                     status.phase = MachinePhase::Restarting;
-                    status.last_restarting_time_us = Some(Utc::now().timestamp_millis() as u128);
+                    status.last_restarting_time_us = Some(Utc::now().timestamp_millis() as u64);
                 })
                 .await?;
 
@@ -329,7 +329,7 @@ impl Controller for MachineController {
                 .patch_status(key.metadata(), |status| {
                     status.hash = hash;
                     status.phase = MachinePhase::Restarting;
-                    status.last_restarting_time_us = Some(Utc::now().timestamp_millis() as u128);
+                    status.last_restarting_time_us = Some(Utc::now().timestamp_millis() as u64);
                 })
                 .await?;
 
@@ -741,7 +741,7 @@ impl Controller for MachineController {
                         .patch_status(key.metadata(), |status| {
                             status.phase = MachinePhase::Restarting;
                             status.last_restarting_time_us =
-                                Some(Utc::now().timestamp_millis() as u128);
+                                Some(Utc::now().timestamp_millis() as u64);
                         })
                         .await?;
 
@@ -749,7 +749,7 @@ impl Controller for MachineController {
                 }
                 MachinePhase::Restarting => {
                     if let Some(last_restarting_time_us) = status.last_restarting_time_us {
-                        let now = Utc::now().timestamp_millis() as u128;
+                        let now = Utc::now().timestamp_millis() as u64;
                         let duration =
                             Duration::from_millis((now - last_restarting_time_us) as u64);
 
@@ -783,7 +783,7 @@ impl Controller for MachineController {
                             .patch_status(key.metadata(), |status| {
                                 status.phase = MachinePhase::Restarting;
                                 status.last_restarting_time_us =
-                                    Some(Utc::now().timestamp_millis() as u128);
+                                    Some(Utc::now().timestamp_millis() as u64);
                             })
                             .await?;
 

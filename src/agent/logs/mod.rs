@@ -101,7 +101,7 @@ impl LogsAgent {
     pub async fn query(
         &self,
         origin: LogStreamOrigin,
-        range: RangeInclusive<u128>,
+        range: RangeInclusive<u64>,
     ) -> Result<Vec<LogStreamItem>> {
         let loki_client = self.get_loki_client()?;
         let loki_log_query = origin.loki_log_query();
@@ -131,7 +131,7 @@ impl LogsAgent {
             };
 
             // Collect all entries from all streams and sort by timestamp
-            let mut all_entries: Vec<(u128, String, LogStreamTarget)> = Vec::new();
+            let mut all_entries: Vec<(u64, String, LogStreamTarget)> = Vec::new();
 
             for stream in result {
                 let target_stream = stream
@@ -141,7 +141,7 @@ impl LogsAgent {
                     .unwrap_or(LogStreamTarget::Stdout);
 
                 for entry in stream.values {
-                    let timestamp = entry[0].parse::<u128>().unwrap_or(0);
+                    let timestamp = entry[0].parse::<u64>().unwrap_or(0);
                     let message = entry[1].clone();
                     all_entries.push((timestamp, message, target_stream.clone()));
                 }
@@ -205,7 +205,7 @@ impl Stream for LogStream {
                         .unwrap_or(LogStreamTarget::Stdout);
 
                     for entry in stream.values {
-                        let timestamp = entry[0].parse::<u128>().unwrap_or(0);
+                        let timestamp = entry[0].parse::<u64>().unwrap_or(0);
                         let message = entry[1].clone();
                         output.push(LogStreamItem {
                             timestamp,

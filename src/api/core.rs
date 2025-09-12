@@ -1,18 +1,22 @@
 use std::{str::FromStr, sync::Arc};
 
+use anyhow::{Result, bail};
 use axum::{
     Json, Router,
     extract::{FromRequestParts, Query, State, WebSocketUpgrade, ws::Message},
     http::request::Parts,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, put},
 };
 use base64::{DecodeError, Engine, prelude::BASE64_STANDARD};
+use cel::Context;
 use futures_util::{SinkExt, StreamExt};
 use hyper::HeaderMap;
 use reqwest::StatusCode;
 use serde::Serialize;
+use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tracing::error;
 use url::form_urlencoded;
 
 use crate::{
@@ -24,8 +28,16 @@ use crate::{
         resource_service::{ResourceService, ResourceServiceRouter},
     },
     controller::{context::ControllerKey, machine::machine_name_from_key},
+    eval::{
+        CelCtxExt, CelResourceExt,
+        ctx::{GitInfo, LttleInfo},
+    },
+    repository::Repository,
     resource_index::ResourceKind,
-    resources::core::{ExecParams, ListNamespaces, LogStreamParams, Me, Namespace, RegistryRobot},
+    resources::core::{
+        ExecParams, ListNamespaces, LogStreamParams, Me, Namespace, QueryParams, QueryResponse,
+        RegistryRobot,
+    },
 };
 
 pub struct CoreService {}
@@ -230,12 +242,12 @@ impl ResourceService for CoreService {
                 match end_ts {
                     Some(end_ts) => {
                         let start_ts = start_ts
-                            .and_then(|val| u128::from_str_radix(&val, 10).ok())
+                            .and_then(|val| u64::from_str_radix(&val, 10).ok())
                             .unwrap_or_else(|| {
                                 1 * 60 * 60 * 1_000_000_000 // 1h in ns
                             });
 
-                        let Ok(end_ts) = u128::from_str_radix(&end_ts, 10) else {
+                        let Ok(end_ts) = u64::from_str_radix(&end_ts, 10) else {
                             return;
                         };
 
@@ -410,6 +422,27 @@ impl ResourceService for CoreService {
             })
         }
 
+        async fn query(
+            state: State<Arc<ApiState>>,
+            ctx: ServiceRequestContext,
+            Json(params): Json<QueryParams>,
+        ) -> impl IntoResponse {
+            let value = match evaluate_query(state.repository.clone(), ctx, params) {
+                Ok(value) => value,
+                Err(e) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+                }
+            };
+
+            (
+                StatusCode::OK,
+                Json(QueryResponse {
+                    query_result: value.clone(),
+                }),
+            )
+                .into_response()
+        }
+
         let mut router = Router::new();
         router = router.route("/me", get(me));
         router = router.route("/registry/robot", get(registry_robot));
@@ -417,11 +450,80 @@ impl ResourceService for CoreService {
         router = router.route("/namespaces", get(list_namespaces));
         router = router.route("/logs", get(stream_logs));
         router = router.route("/exec", get(exec));
+        router = router.route("/query", put(query));
 
         ResourceServiceRouter {
             name: "Core".to_string(),
             base_path: "/core".to_string(),
             router,
+        }
+    }
+}
+
+fn evaluate_query(
+    repository: Arc<Repository>,
+    ctx: ServiceRequestContext,
+    params: QueryParams,
+) -> Result<Value> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let program = cel::Program::compile(params.query.as_str())?;
+        let mut exec_ctx = Context::default();
+
+        exec_ctx.add_variable("env", params.env)?;
+        exec_ctx.add_variable("var", params.var)?;
+        exec_ctx.add_variable(
+            "git",
+            params.git.map(|g| GitInfo {
+                branch: g.branch,
+                commit_sha: g.commit_sha,
+                commit_message: g.commit_message,
+                tag: g.tag,
+                latest_tag: g.latest_tag,
+                r#ref: g.r#ref,
+            }),
+        )?;
+        exec_ctx.add_variable(
+            "lttle",
+            LttleInfo {
+                tenant: ctx.tenant.clone(),
+                user: ctx.sub.clone(),
+                profile: params.lttle_profile,
+            },
+        )?;
+
+        exec_ctx.add_stdlib_functions();
+        exec_ctx.add_resource_functions(repository.clone(), ctx.tenant.clone());
+
+        let output = match program.execute(&exec_ctx) {
+            Ok(output) => output,
+            Err(e) => {
+                bail!("Failed to execute query: {}", e.to_string());
+            }
+        };
+
+        let value = match output.json() {
+            Ok(value) => value,
+            Err(e) => {
+                bail!("Failed to deserialize query result: {}", e.to_string());
+            }
+        };
+
+        Ok(value.clone())
+    }));
+
+    match result {
+        Ok(result) => result,
+        Err(panic_info) => {
+            let panic_msg = if let Some(msg) = panic_info.downcast_ref::<&str>() {
+                msg.to_string()
+            } else if let Some(msg) = panic_info.downcast_ref::<String>() {
+                msg.clone()
+            } else {
+                "Unknown panic occurred in CEL parser".to_string()
+            };
+            error!("Query evaluation panicked: {}", panic_msg);
+
+            bail!("Failed to evaluate query");
         }
     }
 }

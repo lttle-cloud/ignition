@@ -7,6 +7,7 @@ pub mod login;
 pub mod machine;
 pub mod namespace;
 pub mod profile;
+pub mod query;
 pub mod service;
 pub mod volume;
 
@@ -68,6 +69,9 @@ pub enum Command {
     /// Certificate management (short: cert)
     #[command(subcommand, alias = "cert")]
     Certificate(CertificateCommand),
+
+    /// Query resources
+    Query(query::QueryArgs),
 
     /// Docker management
     #[command(subcommand)]
@@ -244,6 +248,7 @@ pub async fn run_cli() -> Result<()> {
                 certificate::run_certificate_delete(&config, args).await
             }
         },
+        Command::Query(args) => query::run_query(&config, args).await,
         Command::Docker(cmd) => match cmd {
             DockerCommand::Login(args) => docker::run_docker_login(&config, args).await,
         },
