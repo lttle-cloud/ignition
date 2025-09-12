@@ -1,16 +1,22 @@
 use std::path::PathBuf;
 
+use ansi_term::{Color, Style};
 use anyhow::{Result, bail};
 use clap::{ArgAction, Args};
 use ignition::{
     api_client::ApiClient,
     resource_index::Resources,
     resources::{
-        ProvideMetadata, app::App, certificate::Certificate, machine::Machine, metadata::Namespace,
-        service::Service, volume::Volume,
+        ProvideMetadata,
+        app::App,
+        certificate::Certificate,
+        machine::Machine,
+        metadata::{Metadata, Namespace},
+        service::Service,
+        volume::Volume,
     },
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use tokio::fs::{read_dir, read_to_string};
 
@@ -58,6 +64,10 @@ pub struct DeployArgs {
     /// Debug the expression evaluation context
     #[arg(long = "debug-context")]
     debug_context: bool,
+
+    /// Print the changes that would be committed without applying them
+    #[arg(long = "dry-run")]
+    dry_run: bool,
 
     /// Dump the context to stdout as JSON
     #[arg(long = "dump-context-json")]
@@ -146,6 +156,10 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
         bail!("Path does not exist: {:?}", path);
     }
 
+    if args.dry_run {
+        message_info("Dry run mode enabled. No changes will be committed.");
+    }
+
     let mut resources = Vec::new();
     if path.is_file() {
         let contents = read_to_string(&path).await?;
@@ -212,32 +226,68 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
     }
 
     for (_path, resource) in resources {
-        if let Ok(certificate) = resource.clone().try_into() {
-            deploy_certificate(config, &api_client, certificate).await?;
-            continue;
-        }
+        match resource {
+            Resources::Certificate(certificate) | Resources::CertificateV1(certificate) => {
+                if args.dry_run {
+                    deploy_dry_run::<Certificate>(
+                        config,
+                        &api_client,
+                        "certificate",
+                        certificate.metadata(),
+                        certificate.into(),
+                    )?;
+                    continue;
+                }
+                deploy_certificate(config, &api_client, certificate.into()).await?;
+            }
+            Resources::App(app) | Resources::AppV1(app) => {
+                if args.dry_run {
+                    deploy_dry_run::<App>(config, &api_client, "app", app.metadata(), app.into())?;
+                    continue;
+                }
+                deploy_app(config, &api_client, app.into()).await?;
+            }
+            Resources::Machine(machine) | Resources::MachineV1(machine) => {
+                if args.dry_run {
+                    deploy_dry_run::<Machine>(
+                        config,
+                        &api_client,
+                        "machine",
+                        machine.metadata(),
+                        machine.into(),
+                    )?;
+                    continue;
+                }
 
-        if let Ok(machine) = resource.clone().try_into() {
-            deploy_machine(config, &api_client, machine).await?;
-            continue;
-        }
-
-        if let Ok(service) = resource.clone().try_into() {
-            deploy_service(config, &api_client, service).await?;
-            continue;
-        }
-
-        if let Ok(volume) = resource.clone().try_into() {
-            deploy_volume(config, &api_client, volume).await?;
-            continue;
-        }
-
-        if let Ok(app) = resource.clone().try_into() {
-            deploy_app(config, &api_client, app).await?;
-            continue;
-        }
-
-        unreachable!("Unknown resource type: {:?}", resource);
+                deploy_machine(config, &api_client, machine.into()).await?;
+            }
+            Resources::Service(service) | Resources::ServiceV1(service) => {
+                if args.dry_run {
+                    deploy_dry_run::<Service>(
+                        config,
+                        &api_client,
+                        "service",
+                        service.metadata(),
+                        service.into(),
+                    )?;
+                    continue;
+                }
+                deploy_service(config, &api_client, service.into()).await?;
+            }
+            Resources::Volume(volume) | Resources::VolumeV1(volume) => {
+                if args.dry_run {
+                    deploy_dry_run::<Volume>(
+                        config,
+                        &api_client,
+                        "volume",
+                        volume.metadata(),
+                        volume.into(),
+                    )?;
+                    continue;
+                }
+                deploy_volume(config, &api_client, volume.into()).await?;
+            }
+        };
     }
 
     Ok(())
@@ -401,6 +451,28 @@ async fn deploy_app(_config: &Config, api_client: &ApiClient, app: App) -> Resul
         "Successfully deployed app: {}",
         app.metadata().to_string()
     ));
+
+    Ok(())
+}
+
+fn deploy_dry_run<T: Serialize>(
+    _config: &Config,
+    _api_client: &ApiClient,
+    resource_type_name: &'static str,
+    metadata: Metadata,
+    resource: T,
+) -> Result<()> {
+    let resource = serde_yaml::to_string(&resource)?;
+
+    let type_style = Style::new().fg(Color::Yellow);
+    let metadata_style = Style::new().bold().fg(Color::Blue);
+
+    eprintln!(
+        "→ {} {} as: \n{}",
+        type_style.paint(resource_type_name),
+        metadata_style.paint(metadata.to_string()),
+        resource
+    );
 
     Ok(())
 }
