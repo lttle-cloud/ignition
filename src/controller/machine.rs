@@ -58,7 +58,7 @@ impl Controller for MachineController {
         info!("scheduling machine controller for event: {:?}", event);
         let key = match event {
             ControllerEvent::BringUp(ResourceKind::Machine, metadata) => {
-                let Ok(Some((_, status))) = ctx
+                let Ok(Some(_)) = ctx
                     .repository
                     .machine(ctx.tenant.clone())
                     .get_with_status(metadata.clone())
@@ -66,27 +66,13 @@ impl Controller for MachineController {
                     return Ok(None);
                 };
 
-                let new_phase = match status.phase {
-                    MachinePhase::Idle | MachinePhase::PullingImage => Some(MachinePhase::Idle),
-                    _ => Some(MachinePhase::Creating),
-                };
-
-                if let Some(new_phase) = new_phase {
-                    ctx.repository
-                        .machine(ctx.tenant.clone())
-                        .patch_status(metadata.clone(), move |status| {
-                            status.phase = new_phase.clone();
-                            status.last_exit_code = None;
-                        })
-                        .await?;
-                } else {
-                    ctx.repository
-                        .machine(ctx.tenant.clone())
-                        .patch_status(metadata.clone(), |status| {
-                            status.last_exit_code = None;
-                        })
-                        .await?;
-                }
+                ctx.repository
+                    .machine(ctx.tenant.clone())
+                    .patch_status(metadata.clone(), move |status| {
+                        status.phase = MachinePhase::Idle;
+                        status.last_exit_code = None;
+                    })
+                    .await?;
 
                 Some(ControllerKey::new(
                     ctx.tenant.clone(),
@@ -361,7 +347,6 @@ impl Controller for MachineController {
         'phase_match: {
             match status.phase {
                 MachinePhase::Idle => {
-                    // TODO: start pulling image
                     let image_agent = ctx.agent.image();
                     ctx.agent
                         .job()
@@ -768,9 +753,9 @@ impl Controller for MachineController {
                         let duration =
                             Duration::from_millis((now - last_restarting_time_us) as u64);
 
-                        // wait at least 5 seconds before restarting
-                        if duration < Duration::from_secs(5) {
-                            return Ok(ReconcileNext::after(Duration::from_secs(2)));
+                        // wait at least 1 second before restarting
+                        if duration < Duration::from_secs(1) {
+                            return Ok(ReconcileNext::after(Duration::from_millis(500)));
                         }
                     }
 
@@ -781,7 +766,7 @@ impl Controller for MachineController {
                         })
                         .await?;
 
-                    return Ok(ReconcileNext::after(Duration::from_secs(2)));
+                    return Ok(ReconcileNext::immediate());
                 }
 
                 MachinePhase::Error { message } => {
