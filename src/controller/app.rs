@@ -88,7 +88,8 @@ impl Controller for AppController {
                         Namespace::from_value(key.metadata().namespace.clone()),
                         machine_name,
                     )
-                    .await?;
+                    .await
+                    .ok();
             }
 
             for (_, allocated_service) in status.allocated_services.iter() {
@@ -98,7 +99,8 @@ impl Controller for AppController {
                         Namespace::from_value(key.metadata().namespace.clone()),
                         allocated_service.name.clone(),
                     )
-                    .await?;
+                    .await
+                    .ok();
             }
 
             ctx.repository
