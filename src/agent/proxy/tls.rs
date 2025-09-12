@@ -81,6 +81,14 @@ impl ProxyTlsCertResolver {
         }
     }
 
+    pub fn invalidate_cert_cache_for_domains(&self, domains: Vec<String>) {
+        info!("Invalidating certificate cache for domains: {:?}", domains);
+        let cert_pool = self.cert_pool.pin();
+        for domain in domains {
+            cert_pool.remove(&domain);
+        }
+    }
+
     pub fn resolve_cert(&self, host: &str) -> Option<Arc<CertifiedKey>> {
         let cert_pool = self.cert_pool.pin();
         let cert = cert_pool.get(host);
