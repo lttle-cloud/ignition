@@ -68,11 +68,13 @@ lttle completions --help
 The resource authoring experience heavily relies on YAML. Given that we don't have any docs yet, we encourage you to setup the YAML LSP for your editor of choice and add our resources schema to it.
 
 For example, in VSCode, you can install the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) and add the following to your `settings.json`:
+
 ```json
 "yaml.schemas": {
-  "https://raw.githubusercontent.com/lttle-cloud/ignition/refs/heads/master/schemas/resources.json": "*.yaml"
+  "https://resources.lttle.sh": "*.yaml"
 }
 ```
+
 Make sure that the path is correct for your workspace (`*.yaml` matches all the YAML files in the root of the workspace).
 
 ## After installation
@@ -84,7 +86,6 @@ lttle login
 ```
 
 If you applied for the early-access program, you will receive the instructions and credentials for one of our hosted regions. If you didn't apply, you can do so [on our website](https://lttle.cloud), or you can build and self-host the `ignitiond` daemon. There are no docs on how to do this yet; you're on your own (feel free to [reach out to us on discord](https://discord.gg/xhNGGrZQja) if you need help).
-
 
 ## State of the project
 
