@@ -77,6 +77,35 @@
           }
         },
         {
+          "name": "delete_namespace",
+          "namespaced": false,
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "namespaces"
+            },
+            {
+              "type": "static",
+              "value": "delete"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "DeleteNamespaceParams"
+          },
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "DeleteNamespaceResponse"
+          }
+        },
+        {
           "name": "stream_logs",
           "namespaced": true,
           "verb": "WS",
@@ -1254,6 +1283,60 @@
         "domains",
         "issuer"
       ]
+    },
+    "DeleteNamespaceParams": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": "string"
+        },
+        "confirm": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "namespace",
+        "confirm"
+      ],
+      "title": "DeleteNamespaceParams",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "DeleteNamespaceResponse": {
+      "type": "object",
+      "properties": {
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DeletedResource"
+          }
+        },
+        "did_delete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "resources",
+        "did_delete"
+      ],
+      "title": "DeleteNamespaceResponse",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "DeletedResource": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ]
+        }
+      }
     },
     "ExecParams": {
       "type": "object",
