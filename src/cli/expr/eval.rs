@@ -51,8 +51,11 @@ fn extract_namespace_from_map(map: &Mapping, context: &ExprEvalContext) -> Resul
         return Ok(None);
     };
 
-    let Some(Value::String(namespace)) = parse_and_eval_expr(namespace, context)? else {
-        bail!("Failed to evaluate namespace expr");
+    let result = parse_and_eval_expr(namespace, context);
+    let namespace = match result {
+        Ok(Some(Value::String(namespace))) => namespace,
+        Ok(None) => namespace.clone(),
+        _ => bail!("Failed to evaluate namespace exp {:?}", result),
     };
 
     Ok(Some(namespace))
