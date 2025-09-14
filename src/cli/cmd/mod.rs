@@ -191,6 +191,10 @@ pub enum NamespaceCommand {
     /// List namespaces (short: ls)
     #[command(alias = "ls")]
     List,
+
+    /// Delete a namespace (short: rm)
+    #[command(alias = "rm")]
+    Delete(namespace::NamespaceDeleteArgs),
 }
 
 pub async fn run_cli() -> Result<()> {
@@ -214,6 +218,7 @@ pub async fn run_cli() -> Result<()> {
         },
         Command::Namespace(cmd) => match cmd {
             NamespaceCommand::List => namespace::run_namespace_list(&config).await,
+            NamespaceCommand::Delete(args) => namespace::run_namespace_delete(&config, args).await,
         },
         Command::Deploy(args) => deploy::run_deploy(&config, args).await,
         Command::App(cmd) => match cmd {

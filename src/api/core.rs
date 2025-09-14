@@ -27,16 +27,23 @@ use crate::{
         context::ServiceRequestContext,
         resource_service::{ResourceService, ResourceServiceRouter},
     },
-    controller::{context::ControllerKey, machine::machine_name_from_key},
+    controller::{
+        AdmissionCheckBeforeDelete, context::ControllerKey, machine::machine_name_from_key,
+    },
     eval::{
         CelCtxExt, CelResourceExt,
         ctx::{GitInfo, LttleInfo},
     },
     repository::Repository,
     resource_index::ResourceKind,
-    resources::core::{
-        ExecParams, ListNamespaces, LogStreamParams, Me, Namespace, QueryParams, QueryResponse,
-        RegistryRobot,
+    resources::{
+        ProvideMetadata,
+        core::{
+            DeleteNamespaceParams, DeleteNamespaceResponse, DeletedResource, ExecParams,
+            ListNamespaces, LogStreamParams, Me, Namespace, QueryParams, QueryResponse,
+            RegistryRobot,
+        },
+        metadata,
     },
 };
 
@@ -193,6 +200,223 @@ impl ResourceService for CoreService {
                             created_at: n.created_at,
                         })
                         .collect(),
+                }),
+            )
+                .into_response()
+        }
+
+        async fn delete_namespace(
+            state: State<Arc<ApiState>>,
+            ctx: ServiceRequestContext,
+            Json(params): Json<DeleteNamespaceParams>,
+        ) -> impl IntoResponse {
+            let repository = state.repository.clone();
+            let namespace =
+                metadata::Namespace::from_value_or_default(params.namespace.clone().into());
+            let mut resources = vec![];
+
+            // delete all resources in the namespace
+            // certificates
+            println!("certificates: {:?}", namespace);
+            for certificate in repository
+                .certificate(ctx.tenant.clone())
+                .list(namespace.clone())
+                .unwrap_or_default()
+            {
+                let metadata = certificate.metadata();
+
+                println!("certificate: {}", metadata.name);
+
+                resources.push(DeletedResource {
+                    kind: "certificate".to_string(),
+                    name: metadata.name.clone(),
+                });
+
+                if params.confirm {
+                    let Ok(_) = certificate
+                        .before_delete(
+                            ctx.tenant.clone(),
+                            repository.clone(),
+                            state.scheduler.agent.clone(),
+                            metadata.clone(),
+                        )
+                        .await
+                    else {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!(
+                                "Failed to delete certificate {}: Before delete hook failed",
+                                metadata.name
+                            ),
+                        )
+                            .into_response();
+                    };
+
+                    let Ok(_) = repository
+                        .certificate(ctx.tenant.clone())
+                        .delete(namespace.clone(), metadata.name.clone())
+                        .await
+                    else {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("Failed to delete certificate: {}", metadata.name),
+                        )
+                            .into_response();
+                    };
+                }
+            }
+
+            // services
+            for service in repository
+                .service(ctx.tenant.clone())
+                .list(namespace.clone())
+                .unwrap_or_default()
+            {
+                let metadata = service.metadata();
+
+                resources.push(DeletedResource {
+                    kind: "service".to_string(),
+                    name: metadata.name.clone(),
+                });
+
+                if params.confirm {
+                    let Ok(_) = service
+                        .before_delete(
+                            ctx.tenant.clone(),
+                            repository.clone(),
+                            state.scheduler.agent.clone(),
+                            metadata.clone(),
+                        )
+                        .await
+                    else {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!(
+                                "Failed to delete service {}: Before delete hook failed",
+                                metadata.name
+                            ),
+                        )
+                            .into_response();
+                    };
+
+                    let Ok(_) = repository
+                        .service(ctx.tenant.clone())
+                        .delete(namespace.clone(), metadata.name.clone())
+                        .await
+                    else {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("Failed to delete service: {}", metadata.name),
+                        )
+                            .into_response();
+                    };
+                }
+            }
+
+            // machines
+            for machine in repository
+                .machine(ctx.tenant.clone())
+                .list(namespace.clone())
+                .unwrap_or_default()
+            {
+                let metadata = machine.metadata();
+
+                resources.push(DeletedResource {
+                    kind: "machine".to_string(),
+                    name: metadata.name.clone(),
+                });
+
+                if params.confirm {
+                    let Ok(_) = repository
+                        .machine(ctx.tenant.clone())
+                        .delete(namespace.clone(), metadata.name.clone())
+                        .await
+                    else {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("Failed to delete machine: {}", metadata.name),
+                        )
+                            .into_response();
+                    };
+                }
+            }
+
+            // apps
+            for app in repository
+                .app(ctx.tenant.clone())
+                .list(namespace.clone())
+                .unwrap_or_default()
+            {
+                let metadata = app.metadata();
+
+                resources.push(DeletedResource {
+                    kind: "app".to_string(),
+                    name: metadata.name.clone(),
+                });
+
+                if params.confirm {
+                    let Ok(_) = repository
+                        .app(ctx.tenant.clone())
+                        .delete(namespace.clone(), metadata.name.clone())
+                        .await
+                    else {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("Failed to delete app: {}", metadata.name),
+                        )
+                            .into_response();
+                    };
+                }
+            }
+
+            // volumes
+            println!("volumes: {:?}", namespace);
+            for volume in repository
+                .volume(ctx.tenant.clone())
+                .list(namespace.clone())
+                .unwrap_or_default()
+            {
+                let metadata = volume.metadata();
+                println!("volume: {}", metadata.name);
+
+                resources.push(DeletedResource {
+                    kind: "volume".to_string(),
+                    name: metadata.name.clone(),
+                });
+
+                if params.confirm {
+                    let Ok(_) = repository
+                        .volume(ctx.tenant.clone())
+                        .delete(namespace.clone(), metadata.name.clone())
+                        .await
+                    else {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("Failed to delete volume: {}", metadata.name),
+                        )
+                            .into_response();
+                    };
+                }
+            }
+
+            if params.confirm {
+                let Ok(_) = state
+                    .store
+                    .untrack_namespace_for_tenant(ctx.tenant.clone(), params.namespace.clone())
+                else {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to delete namespace: {}", params.namespace),
+                    )
+                        .into_response();
+                };
+            }
+
+            (
+                StatusCode::OK,
+                Json(DeleteNamespaceResponse {
+                    resources,
+                    did_delete: params.confirm,
                 }),
             )
                 .into_response()
@@ -448,6 +672,7 @@ impl ResourceService for CoreService {
         router = router.route("/registry/robot", get(registry_robot));
         router = router.route("/registry/auth", get(registry_auth));
         router = router.route("/namespaces", get(list_namespaces));
+        router = router.route("/namespaces/delete", put(delete_namespace));
         router = router.route("/logs", get(stream_logs));
         router = router.route("/exec", get(exec));
         router = router.route("/query", put(query));

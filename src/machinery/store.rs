@@ -349,6 +349,26 @@ impl Store {
         Ok(())
     }
 
+    pub fn untrack_namespace_for_tenant(
+        &self,
+        tenant: impl AsRef<str>,
+        namespace: impl AsRef<str>,
+    ) -> Result<()> {
+        let key = Key::<TrackedNamespaces>::not_namespaced()
+            .tenant(CORE_TENANT)
+            .collection("tracked_namespaces")
+            .key(tenant.as_ref().to_string());
+
+        let mut tracked_namespaces = self
+            .get(&key)?
+            .unwrap_or_else(|| TrackedNamespaces::new(tenant.as_ref().to_string()));
+        tracked_namespaces.namespaces.remove(namespace.as_ref());
+
+        self.put(&key, &tracked_namespaces)?;
+
+        Ok(())
+    }
+
     pub fn list_tracked_namespaces(
         &self,
         tenant: impl AsRef<str>,

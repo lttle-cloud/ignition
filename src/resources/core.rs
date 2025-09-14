@@ -19,6 +19,24 @@ pub struct ListNamespaces {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DeleteNamespaceParams {
+    pub namespace: String,
+    pub confirm: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DeleteNamespaceResponse {
+    pub resources: Vec<DeletedResource>,
+    pub did_delete: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DeletedResource {
+    pub kind: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Namespace {
     pub name: String,
     pub created_at: u64,
@@ -180,6 +198,32 @@ pub fn core_api_service() -> ApiService {
                 ),
             },
             ApiMethod {
+                name: "delete_namespace".to_string(),
+                path: vec![
+                    ApiPathSegment::Static {
+                        value: "core".to_string(),
+                    },
+                    ApiPathSegment::Static {
+                        value: "namespaces".to_string(),
+                    },
+                    ApiPathSegment::Static {
+                        value: "delete".to_string(),
+                    },
+                ],
+                namespaced: false,
+                verb: ApiVerb::Put,
+                request: Some(crate::machinery::api_schema::ApiRequest::SchemaDefinition {
+                    name: "DeleteNamespaceParams".to_string(),
+                }),
+                response: Some(
+                    crate::machinery::api_schema::ApiResponse::SchemaDefinition {
+                        list: false,
+                        optional: false,
+                        name: "DeleteNamespaceResponse".to_string(),
+                    },
+                ),
+            },
+            ApiMethod {
                 name: "stream_logs".to_string(),
                 path: vec![
                     ApiPathSegment::Static {
@@ -255,6 +299,14 @@ pub fn add_core_service_schema_defs(
     defs.insert(
         "ListNamespaces".to_string(),
         schema_for!(ListNamespaces).into(),
+    );
+    defs.insert(
+        "DeleteNamespaceParams".to_string(),
+        schema_for!(DeleteNamespaceParams).into(),
+    );
+    defs.insert(
+        "DeleteNamespaceResponse".to_string(),
+        schema_for!(DeleteNamespaceResponse).into(),
     );
     defs.insert(
         "LogStreamItem".to_string(),
