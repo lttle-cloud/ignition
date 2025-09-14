@@ -634,7 +634,10 @@
           ]
         },
         "name": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "tag": {
           "type": [
@@ -643,9 +646,6 @@
           ]
         }
       },
-      "required": [
-        "name"
-      ],
       "type": "object"
     },
     "MachineDependency": {
@@ -695,7 +695,10 @@
           ]
         },
         "name": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "tag": {
           "type": [
@@ -704,9 +707,6 @@
           ]
         }
       },
-      "required": [
-        "name"
-      ],
       "type": "object"
     },
     "MachineMode": {

@@ -34,7 +34,7 @@ mod machine {
 
     #[schema]
     struct MachineBuildOptions {
-        name: String,
+        name: Option<String>,
         tag: Option<String>,
         image: Option<String>,
         dir: Option<String>,
@@ -42,7 +42,7 @@ mod machine {
 
     #[schema]
     struct MachineDockerOptions {
-        name: String,
+        name: Option<String>,
         tag: Option<String>,
         image: Option<String>,
         context: Option<String>,

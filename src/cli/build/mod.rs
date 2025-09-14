@@ -33,7 +33,6 @@ pub async fn build_image(
             build_image_docker(dir, tenant, auth, options, debug, disable_build_cache).await
         }
         MachineBuild::NixpacksAuto => {
-            let id = uuid::Uuid::new_v4().to_string();
             build_image_nixpacks(
                 dir,
                 tenant,
@@ -41,7 +40,7 @@ pub async fn build_image(
                     dir: None,
                     image: None,
                     tag: None,
-                    name: id,
+                    name: None,
                 },
                 auth,
                 debug,
@@ -71,11 +70,13 @@ async fn build_image_nixpacks(
     }
 
     let image = options.image.unwrap_or_else(|| {
+        let id = uuid::Uuid::new_v4().to_string();
+
         format!(
             "{}/{}/{}:{}",
             registry,
             tenant,
-            options.name,
+            options.name.unwrap_or(id),
             options.tag.unwrap_or("latest".to_string())
         )
     });
@@ -210,15 +211,17 @@ async fn build_image_docker(
     };
 
     if debug {
-        message_detail("Building image with nixpacks");
+        message_detail("Building image with docker");
     }
+
+    let id = uuid::Uuid::new_v4().to_string();
 
     let image = options.image.unwrap_or_else(|| {
         format!(
             "{}/{}/{}:{}",
             registry,
             tenant,
-            options.name,
+            options.name.unwrap_or(id),
             options.tag.unwrap_or("latest".to_string())
         )
     });
@@ -251,6 +254,12 @@ async fn build_image_docker(
 
     if disable_build_cache {
         cmd.arg("--no-cache");
+    }
+
+    if debug {
+        cmd.arg("--progress=plain");
+        cmd.stdout(std::process::Stdio::inherit());
+        cmd.stderr(std::process::Stdio::inherit());
     }
 
     if let Some(args) = options.args {

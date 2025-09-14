@@ -1552,7 +1552,10 @@
       "type": "object",
       "properties": {
         "name": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "tag": {
           "type": [
@@ -1572,10 +1575,7 @@
             "null"
           ]
         }
-      },
-      "required": [
-        "name"
-      ]
+      }
     },
     "MachineDependency": {
       "type": "object",
@@ -1599,7 +1599,10 @@
       "type": "object",
       "properties": {
         "name": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "tag": {
           "type": [
@@ -1634,10 +1637,7 @@
             "type": "string"
           }
         }
-      },
-      "required": [
-        "name"
-      ]
+      }
     },
     "MachineMode": {
       "oneOf": [
