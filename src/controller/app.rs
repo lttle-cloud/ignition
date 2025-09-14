@@ -8,14 +8,14 @@ use crate::{
     agent::Agent,
     constants::DEFAULT_NAMESPACE,
     controller::{
-        AdmissionCheckBeforeSet, Controller, ReconcileNext,
+        AdmissionCheckBeforeDelete, AdmissionCheckBeforeSet, Controller, ReconcileNext,
         context::{ControllerContext, ControllerEvent, ControllerKey},
     },
     repository::Repository,
     resource_index::ResourceKind,
     resources::{
-        Convert,
-        app::{App, AppAllocatedService},
+        Convert, ProvideMetadata,
+        app::{App, AppAllocatedService, AppExpose, AppV1},
         machine::{Machine, MachineV1},
         metadata::{Metadata, Namespace},
         service::{
@@ -93,6 +93,23 @@ impl Controller for AppController {
             }
 
             for (_, allocated_service) in status.allocated_services.iter() {
+                let Some(service) = ctx.repository.service(ctx.tenant.clone()).get(
+                    Namespace::from_value(key.metadata().namespace.clone()),
+                    allocated_service.name.clone(),
+                )?
+                else {
+                    continue;
+                };
+
+                service
+                    .before_delete(
+                        ctx.tenant.clone(),
+                        ctx.repository.clone(),
+                        ctx.agent.clone(),
+                        service.metadata().clone(),
+                    )
+                    .await?;
+
                 ctx.repository
                     .service(ctx.tenant.clone())
                     .delete(
@@ -141,93 +158,37 @@ impl Controller for AppController {
         let mut services = BTreeMap::new();
 
         for (expose_name, expose) in exposed.iter() {
-            let service_name = format!("{}-{}", app.name, expose_name);
-
-            let service_target = match (expose.internal.clone(), expose.external.clone()) {
-                (Some(_internal), None) => ServiceTarget {
-                    name: app.name.clone(),
-                    namespace: Some(resolved_namespace.clone()),
-                    port: expose.port,
-                    protocol: ServiceTargetProtocol::Tcp,
-                    connection_tracking: expose.connection_tracking.clone(),
-                },
-                (None, Some(external)) => ServiceTarget {
-                    name: app.name.clone(),
-                    namespace: Some(resolved_namespace.clone()),
-                    port: expose.port,
-                    protocol: match external.protocol {
-                        ServiceBindExternalProtocol::Http => ServiceTargetProtocol::Http,
-                        ServiceBindExternalProtocol::Https => ServiceTargetProtocol::Http,
-                        ServiceBindExternalProtocol::Tls => ServiceTargetProtocol::Tcp,
-                    },
-                    connection_tracking: expose.connection_tracking.clone(),
-                },
-                _ => bail!(
-                    "invalid expose configuration for app: {} {}",
-                    app.name,
-                    expose_name
-                ),
-            };
-
-            let service_bind = match (expose.internal.clone(), expose.external.clone()) {
-                (Some(internal), None) => ServiceBind::Internal {
-                    port: internal.port,
-                },
-                (None, Some(external)) => {
-                    let allocated_domain = status
-                        .allocated_services
-                        .get(expose_name)
-                        .and_then(|s| s.domain.clone());
-
-                    let generated_domain = ctx.agent.dns().region_domain_for_service(
-                        ctx.tenant.as_str(),
-                        app.name.as_str(),
-                        resolved_namespace.as_str(),
-                        expose_name.as_str(),
-                    );
-
-                    // if we don't have a host set on external.host and the domain allocated exists and is not a region domain, reset the domain to a generated one
-                    let host = if let Some(host) = external.host {
-                        host
-                    } else {
-                        if let Some(allocated_domain) = allocated_domain {
-                            if ctx.agent.dns().is_region_domain(&allocated_domain) {
-                                allocated_domain
-                            } else {
-                                generated_domain
-                            }
-                        } else {
-                            generated_domain
-                        }
-                    };
-
-                    ServiceBind::External {
-                        host,
-                        port: external.port,
-                        protocol: external.protocol,
-                    }
-                }
-                _ => bail!(
-                    "invalid expose configuration for app: {} {}",
-                    app.name,
-                    expose_name
-                ),
-            };
-
-            let service = ServiceV1 {
-                name: service_name,
-                namespace: Some(resolved_namespace.clone()),
-                tags: Some(tags.clone()),
-                target: service_target,
-                bind: service_bind,
-            };
-
+            let service = generate_service_from_expose(
+                ctx.agent.clone(),
+                ctx.tenant.as_str(),
+                &app,
+                &status.allocated_services,
+                expose_name,
+                expose,
+            )?;
             services.insert(expose_name, service);
         }
 
         // delete services that are in the status but not in the expose configuration
         for (allocated_service_name, allocated_service) in status.allocated_services.iter() {
             if !services.contains_key(allocated_service_name) {
+                let Some(service) = ctx.repository.service(ctx.tenant.clone()).get(
+                    Namespace::from_value(resolved_namespace.clone().into()),
+                    allocated_service.name.clone(),
+                )?
+                else {
+                    continue;
+                };
+
+                service
+                    .before_delete(
+                        ctx.tenant.clone(),
+                        ctx.repository.clone(),
+                        ctx.agent.clone(),
+                        service.metadata().clone(),
+                    )
+                    .await?;
+
                 ctx.repository
                     .service(ctx.tenant.clone())
                     .delete(
@@ -321,15 +282,110 @@ impl Controller for AppController {
     }
 }
 
+fn generate_service_from_expose(
+    agent: Arc<Agent>,
+    tenant: &str,
+    app: &AppV1,
+    allocated_services: &BTreeMap<String, AppAllocatedService>,
+    expose_name: &str,
+    expose: &AppExpose,
+) -> Result<ServiceV1> {
+    let resolved_namespace = Namespace::from_value(app.namespace.clone())
+        .as_value()
+        .unwrap_or(DEFAULT_NAMESPACE.to_string());
+
+    let service_name = format!("{}-{}", app.name, expose_name);
+
+    let service_target = match (expose.internal.clone(), expose.external.clone()) {
+        (Some(_internal), None) => ServiceTarget {
+            name: app.name.clone(),
+            namespace: Some(resolved_namespace.clone()),
+            port: expose.port,
+            protocol: ServiceTargetProtocol::Tcp,
+            connection_tracking: expose.connection_tracking.clone(),
+        },
+        (None, Some(external)) => ServiceTarget {
+            name: app.name.clone(),
+            namespace: Some(resolved_namespace.clone()),
+            port: expose.port,
+            protocol: match external.protocol {
+                ServiceBindExternalProtocol::Http => ServiceTargetProtocol::Http,
+                ServiceBindExternalProtocol::Https => ServiceTargetProtocol::Http,
+                ServiceBindExternalProtocol::Tls => ServiceTargetProtocol::Tcp,
+            },
+            connection_tracking: expose.connection_tracking.clone(),
+        },
+        _ => bail!(
+            "invalid expose configuration for app: {} {}",
+            app.name,
+            expose_name
+        ),
+    };
+
+    let service_bind = match (expose.internal.clone(), expose.external.clone()) {
+        (Some(internal), None) => ServiceBind::Internal {
+            port: internal.port,
+        },
+        (None, Some(external)) => {
+            let allocated_domain = allocated_services
+                .get(expose_name)
+                .and_then(|s| s.domain.clone());
+
+            let generated_domain = agent.dns().region_domain_for_service(
+                tenant,
+                app.name.as_str(),
+                resolved_namespace.as_str(),
+                expose_name,
+            );
+
+            // if we don't have a host set on external.host and the domain allocated exists and is not a region domain, reset the domain to a generated one
+            let host = if let Some(host) = external.host {
+                host
+            } else {
+                if let Some(allocated_domain) = allocated_domain {
+                    if agent.dns().is_region_domain(&allocated_domain) {
+                        allocated_domain
+                    } else {
+                        generated_domain
+                    }
+                } else {
+                    generated_domain
+                }
+            };
+
+            ServiceBind::External {
+                host,
+                port: external.port,
+                protocol: external.protocol,
+            }
+        }
+        _ => bail!(
+            "invalid expose configuration for app: {} {}",
+            app.name,
+            expose_name
+        ),
+    };
+
+    let service = ServiceV1 {
+        name: service_name,
+        namespace: Some(resolved_namespace.clone()),
+        tags: Some(app.tags.clone().unwrap_or_default()),
+        target: service_target,
+        bind: service_bind,
+    };
+
+    Ok(service)
+}
+
 #[async_trait]
 impl AdmissionCheckBeforeSet for App {
     async fn before_set(
         &self,
         _before: Option<&Self>,
-        _tenant: String,
-        _repo: Arc<Repository>,
-        _agent: Arc<Agent>,
-        _metadata: Metadata,
+        tenant: String,
+        repo: Arc<Repository>,
+        agent: Arc<Agent>,
+        metadata: Metadata,
     ) -> Result<()> {
         let resource = self.latest();
 
@@ -341,7 +397,13 @@ impl AdmissionCheckBeforeSet for App {
             bail!("image is not set for app: {}", resource.name);
         }
 
-        for (expose_name, expose) in resource.expose.unwrap_or_default().iter() {
+        let allocated_services = repo
+            .app(tenant.clone())
+            .get_status(metadata.clone())?
+            .map(|s| s.allocated_services)
+            .unwrap_or_default();
+
+        for (expose_name, expose) in resource.expose.clone().unwrap_or_default().iter() {
             if expose.internal.is_some() && expose.external.is_some() {
                 bail!(
                     "app: {} expose: {} cannot have both internal and external",
@@ -363,6 +425,34 @@ impl AdmissionCheckBeforeSet for App {
                     expose_name
                 );
             }
+
+            let service = generate_service_from_expose(
+                agent.clone(),
+                tenant.as_str(),
+                &resource,
+                &allocated_services,
+                expose_name,
+                expose,
+            )?;
+
+            let service_resource = Service::V1(service);
+
+            if let Err(e) = service_resource
+                .before_set(
+                    Some(&service_resource),
+                    tenant.clone(),
+                    repo.clone(),
+                    agent.clone(),
+                    service_resource.metadata(),
+                )
+                .await
+            {
+                bail!(
+                    "failed before set hook for service {}: {}",
+                    service_resource.metadata().name,
+                    e
+                );
+            };
         }
 
         Ok(())
