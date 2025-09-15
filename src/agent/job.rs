@@ -36,7 +36,7 @@ impl JobAgent {
         key: ControllerKey,
         job_key: impl AsRef<str>,
         job: impl Future<Output = std::result::Result<R, E>> + Send + 'static,
-        notifier: impl (Fn(std::result::Result<R, E>, ControllerKey) -> ControllerEvent)
+        notifier: impl (Fn(std::result::Result<R, E>, ControllerKey) -> Option<ControllerEvent>)
         + Send
         + 'static,
     ) -> Result<()> {
@@ -64,6 +64,10 @@ impl JobAgent {
                 for watch_key in job_state.watch_keys {
                     let event = notifier(result.clone(), watch_key.clone());
                     let Some(task_scheduler) = task_scheduler.upgrade() else {
+                        continue;
+                    };
+
+                    let Some(event) = event else {
                         continue;
                     };
 

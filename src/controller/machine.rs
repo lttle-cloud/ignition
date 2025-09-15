@@ -44,6 +44,10 @@ fn pull_image_job_key(reference: &Reference) -> String {
     format!("pull-image-{}", reference)
 }
 
+fn image_is_latest_available_job_key(reference: &Reference) -> String {
+    format!("image-is-latest-available-{}", reference)
+}
+
 pub fn machine_name_from_key(key: &ControllerKey) -> String {
     format!("{}-{}", key.tenant, key.metadata().to_string())
 }
@@ -82,16 +86,82 @@ impl Controller for MachineController {
                 ))
             }
             ControllerEvent::ResourceChange(ResourceKind::Machine, metadata) => {
-                Some(ControllerKey::new(
+                let key = ControllerKey::new(
                     ctx.tenant.clone(),
                     ResourceKind::Machine,
-                    metadata.namespace,
-                    metadata.name,
-                ))
+                    metadata.namespace.clone(),
+                    metadata.name.clone(),
+                );
+
+                if let Some((machine, status)) = ctx
+                    .repository
+                    .machine(ctx.tenant.clone())
+                    .get_with_status(metadata.clone())?
+                {
+                    'check_machine: {
+                        let machine = machine.latest();
+                        let Some(image) = machine.image.clone() else {
+                            bail!("image is not set for machine: {}", metadata.name);
+                        };
+
+                        let tags = machine.tags.clone().unwrap_or_default();
+                        // we will restart the machine anyways
+                        if tags.contains(&"ignitiond.restart".to_string()) {
+                            break 'check_machine;
+                        }
+
+                        if status.hash == 0 {
+                            break 'check_machine;
+                        }
+
+                        let tenant = ctx.tenant.clone();
+                        let image_agent = ctx.agent.image();
+
+                        let reference = Reference::from_str(&image)
+                            .map_err(|_| anyhow!("invalid image reference: {}", image))?;
+
+                        ctx.agent
+                            .job()
+                            .run_with_notify(
+                                key.clone(),
+                                image_is_latest_available_job_key(&reference),
+                                async move {
+                                    let is_latest_available = image_agent
+                                        .image_is_latest_available(tenant, reference.clone())
+                                        .await
+                                        .map_err(|e| {
+                                            warn!(
+                                                "failed to check if image is latest available: {}",
+                                                e
+                                            );
+                                            format!(
+                                                "failed to check if image is latest available: {:?}",
+                                                &reference
+                                            )
+                                        })?;
+
+                                    Ok(is_latest_available)
+                                },
+                                |result: std::result::Result<bool, String>, key| match result {
+                                    Ok(is_latest_available) if !is_latest_available => {
+                                        Some(ControllerEvent::AsyncWorkChange(
+                                            key,
+                                            AsyncWork::ImageNeedsPull,
+                                        ))
+                                    }
+                                    _ => None,
+                                },
+                            )
+                            .await?;
+                    }
+                }
+
+                Some(key)
             }
             ControllerEvent::AsyncWorkChange(
                 key,
                 AsyncWork::ImagePullComplete { .. }
+                | AsyncWork::ImageNeedsPull
                 | AsyncWork::MachineStateChange { .. }
                 | AsyncWork::Error(_),
             ) => Some(key),
@@ -336,6 +406,31 @@ impl Controller for MachineController {
             return Ok(ReconcileNext::immediate());
         }
 
+        if let Some(_event) = ctx
+            .agent
+            .job()
+            .get_result(image_is_latest_available_job_key(&reference), key.clone())
+            .await?
+        {
+            info!("image digest changed, restarting machine");
+
+            // we need to restart the machine to pull the latest image
+            ctx.repository
+                .machine(key.tenant.clone())
+                .patch_status(key.metadata(), |status| {
+                    status.phase = MachinePhase::Restarting;
+                    status.last_restarting_time_us = Some(Utc::now().timestamp_millis() as u64);
+                })
+                .await?;
+
+            ctx.agent
+                .job()
+                .consume_result(image_is_latest_available_job_key(&reference), key.clone())
+                .await?;
+
+            return Ok(ReconcileNext::immediate());
+        };
+
         ctx.repository
             .machine(key.tenant.clone())
             .patch_status(key.metadata(), |status| {
@@ -343,11 +438,11 @@ impl Controller for MachineController {
             })
             .await?;
 
-        let tenant = ctx.tenant.clone();
         'phase_match: {
             match status.phase {
                 MachinePhase::Idle => {
                     let image_agent = ctx.agent.image();
+                    let tenant = ctx.tenant.clone();
                     ctx.agent
                         .job()
                         .run_with_notify(
@@ -367,12 +462,12 @@ impl Controller for MachineController {
                                 Ok((image.id, reference))
                             },
                             |result, key| match result {
-                                Ok((id, reference)) => ControllerEvent::AsyncWorkChange(
+                                Ok((id, reference)) => Some(ControllerEvent::AsyncWorkChange(
                                     key,
                                     AsyncWork::ImagePullComplete { id, reference },
-                                ),
+                                )),
                                 Err(e) => {
-                                    ControllerEvent::AsyncWorkChange(key, AsyncWork::Error(e))
+                                    Some(ControllerEvent::AsyncWorkChange(key, AsyncWork::Error(e)))
                                 }
                             },
                         )
@@ -397,6 +492,11 @@ impl Controller for MachineController {
                     else {
                         return Ok(ReconcileNext::done());
                     };
+
+                    ctx.agent
+                        .job()
+                        .consume_result(pull_image_job_key(&reference), key.clone())
+                        .await?;
 
                     match event {
                         ControllerEvent::AsyncWorkChange(
