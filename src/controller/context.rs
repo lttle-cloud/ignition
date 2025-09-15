@@ -100,6 +100,7 @@ pub enum AsyncWork {
         id: String,
         reference: String,
     },
+    ImageNeedsPull,
     MachineStateChange {
         machine_id: String,
         state: MachineState,

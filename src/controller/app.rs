@@ -210,21 +210,20 @@ impl Controller for AppController {
         let machine_resource = Machine::V1(machine);
         let machine_hash = machine_resource.hash_with_updated_metadata();
 
-        // if the hash of the machine has changed, apply the new machine
-        if status.machine_hash != machine_hash {
-            ctx.repository
-                .machine(ctx.tenant.clone())
-                .set(machine_resource)
-                .await?;
+        // we always apply the mahcine resource
+        // giving the machine a chance to reconcile image digest change for the same tag
+        ctx.repository
+            .machine(ctx.tenant.clone())
+            .set(machine_resource)
+            .await?;
 
-            ctx.repository
-                .app(ctx.tenant.clone())
-                .patch_status(key.metadata().clone(), |status| {
-                    status.machine_hash = machine_hash;
-                    status.machine_name = Some(machine_name.clone());
-                })
-                .await?;
-        }
+        ctx.repository
+            .app(ctx.tenant.clone())
+            .patch_status(key.metadata().clone(), |status| {
+                status.machine_hash = machine_hash;
+                status.machine_name = Some(machine_name.clone());
+            })
+            .await?;
 
         for (service_name, service) in services.iter() {
             let service_resource = Service::V1(service.clone());

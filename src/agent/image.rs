@@ -128,6 +128,34 @@ impl ImageAgent {
         Ok(images)
     }
 
+    pub async fn image_is_latest_available(
+        &self,
+        tenant: String,
+        reference: Reference,
+    ) -> Result<bool> {
+        let credentials_provider = InternalCredentialsProvider::new(
+            self.auth_handler.clone(),
+            self.internal_registry_service.clone(),
+            tenant,
+        );
+
+        let (_, digest, _) = oci::fetch_manifest(&credentials_provider, &reference).await?;
+
+        if let Some(existing_image) = self.image_by_reference(&reference.to_string())? {
+            info!(
+                "existing image found for reference {}: {}",
+                reference.to_string(),
+                existing_image.id
+            );
+
+            if existing_image.digest == digest {
+                return Ok(true);
+            }
+        };
+
+        Ok(false)
+    }
+
     pub async fn image_pull(&self, tenant: String, reference: Reference) -> Result<Image> {
         let credentials_provider = InternalCredentialsProvider::new(
             self.auth_handler.clone(),
