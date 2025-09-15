@@ -288,6 +288,11 @@ impl AdmissionCheckBeforeSet for Service {
             return Ok(());
         };
 
+        let dns = agent.dns();
+        if dns.is_region_domain(host) && !dns.is_tenant_owned_region_domain(&tenant, host) {
+            bail!("Your tenant does not own the domain: {}", host);
+        }
+
         if let Some(before) = before {
             let before = before.latest();
             if let ServiceBind::External {

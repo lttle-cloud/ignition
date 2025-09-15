@@ -162,7 +162,6 @@ impl Controller for AppController {
                 ctx.agent.clone(),
                 ctx.tenant.as_str(),
                 &app,
-                &status.allocated_services,
                 expose_name,
                 expose,
             )?;
@@ -285,7 +284,6 @@ fn generate_service_from_expose(
     agent: Arc<Agent>,
     tenant: &str,
     app: &AppV1,
-    allocated_services: &BTreeMap<String, AppAllocatedService>,
     expose_name: &str,
     expose: &AppExpose,
 ) -> Result<ServiceV1> {
@@ -326,10 +324,6 @@ fn generate_service_from_expose(
             port: internal.port,
         },
         (None, Some(external)) => {
-            let allocated_domain = allocated_services
-                .get(expose_name)
-                .and_then(|s| s.domain.clone());
-
             let generated_domain = agent.dns().region_domain_for_service(
                 tenant,
                 app.name.as_str(),
@@ -341,15 +335,7 @@ fn generate_service_from_expose(
             let host = if let Some(host) = external.host {
                 host
             } else {
-                if let Some(allocated_domain) = allocated_domain {
-                    if agent.dns().is_region_domain(&allocated_domain) {
-                        allocated_domain
-                    } else {
-                        generated_domain
-                    }
-                } else {
-                    generated_domain
-                }
+                generated_domain
             };
 
             ServiceBind::External {
@@ -384,7 +370,7 @@ impl AdmissionCheckBeforeSet for App {
         tenant: String,
         repo: Arc<Repository>,
         agent: Arc<Agent>,
-        metadata: Metadata,
+        _metadata: Metadata,
     ) -> Result<()> {
         let resource = self.latest();
 
@@ -395,12 +381,6 @@ impl AdmissionCheckBeforeSet for App {
         if resource.image.is_none() {
             bail!("image is not set for app: {}", resource.name);
         }
-
-        let allocated_services = repo
-            .app(tenant.clone())
-            .get_status(metadata.clone())?
-            .map(|s| s.allocated_services)
-            .unwrap_or_default();
 
         for (expose_name, expose) in resource.expose.clone().unwrap_or_default().iter() {
             if expose.internal.is_some() && expose.external.is_some() {
@@ -429,7 +409,6 @@ impl AdmissionCheckBeforeSet for App {
                 agent.clone(),
                 tenant.as_str(),
                 &resource,
-                &allocated_services,
                 expose_name,
                 expose,
             )?;

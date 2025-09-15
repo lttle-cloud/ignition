@@ -117,6 +117,11 @@ impl DnsAgent {
         domain.ends_with(&self.config.region_root_domain)
     }
 
+    pub fn is_tenant_owned_region_domain(&self, tenant: &str, domain: &str) -> bool {
+        let expected_domain = format!("-{}.{}", tenant, self.config.region_root_domain);
+        domain.ends_with(&expected_domain)
+    }
+
     pub fn config(&self) -> &DnsAgentConfig {
         &self.config
     }
