@@ -679,6 +679,16 @@ impl Machine {
             return TrafficAwareConnection::new(self.clone(), target_port, inactivity_mode).await;
         }
 
+        // Wait for suspension to complete if machine is suspending
+        if current_state == MachineState::Suspending {
+            info!(
+                "Machine is suspending, waiting for suspension to complete before establishing connection"
+            );
+            self.wait_for_state(MachineState::Suspended).await?;
+            // Recursively call get_connection to handle the Suspended state
+            return Box::pin(self.get_connection(target_port, inactivity_timeout)).await;
+        }
+
         if !matches!(
             current_state,
             MachineState::Idle | MachineState::Stopped | MachineState::Suspended

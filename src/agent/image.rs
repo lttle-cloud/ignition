@@ -128,11 +128,11 @@ impl ImageAgent {
         Ok(images)
     }
 
-    pub async fn image_is_latest_available(
+    pub async fn image_latest_available(
         &self,
         tenant: String,
         reference: Reference,
-    ) -> Result<bool> {
+    ) -> Result<Option<Image>> {
         let credentials_provider = InternalCredentialsProvider::new(
             self.auth_handler.clone(),
             self.internal_registry_service.clone(),
@@ -149,11 +149,11 @@ impl ImageAgent {
             );
 
             if existing_image.digest == digest {
-                return Ok(true);
+                return Ok(Some(existing_image));
             }
         };
 
-        Ok(false)
+        Ok(None)
     }
 
     pub async fn image_pull(&self, tenant: String, reference: Reference) -> Result<Image> {

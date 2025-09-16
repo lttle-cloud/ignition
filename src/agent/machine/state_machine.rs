@@ -338,6 +338,16 @@ impl MachineStateMachine {
             MachineState::Booting | MachineState::Ready => {
                 Ok(()) // Already started/starting
             }
+            MachineState::Suspending => {
+                // Wait for suspension to complete, then start
+                info!(
+                    "Machine '{}' is suspending, waiting for suspension to complete before starting",
+                    self.resources.config.name
+                );
+                self.wait_for_suspension_complete().await?;
+                // Once suspended, recursively call start to handle the Suspended state
+                Box::pin(self.handle_user_start()).await
+            }
             _ => Err(anyhow!("Can't start from {:?}", self.current_state)),
         }
     }
@@ -388,6 +398,20 @@ impl MachineStateMachine {
             .await
             .stop_all(exit_reason)
             .await
+    }
+
+    async fn wait_for_suspension_complete(&mut self) -> Result<()> {
+        // Wait for the machine to transition from Suspending to Suspended or Error
+        while self.current_state == MachineState::Suspending {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        // Check if suspension completed successfully
+        match &self.current_state {
+            MachineState::Suspended => Ok(()),
+            MachineState::Error(msg) => Err(anyhow!("Suspension failed: {}", msg)),
+            other => Err(anyhow!("Unexpected state after suspension: {:?}", other)),
+        }
     }
 
     async fn handle_user_suspend(&mut self) -> Result<()> {
@@ -497,13 +521,26 @@ impl MachineStateMachine {
             .await
             .cancel_timeout();
 
-        // Wake up suspended machine
-        if self.current_state == MachineState::Suspended {
-            info!(
-                "Machine '{}' is suspended but has active flash locks, waking it up",
-                self.resources.config.name
-            );
-            self.handle_user_start().await?;
+        // Wake up suspended machine or cancel suspension in progress
+        match self.current_state {
+            MachineState::Suspended => {
+                info!(
+                    "Machine '{}' is suspended but has active flash locks, waking it up",
+                    self.resources.config.name
+                );
+                self.handle_user_start().await?;
+            }
+            MachineState::Suspending => {
+                info!(
+                    "Machine '{}' is suspending but received flash lock, will start after suspension completes",
+                    self.resources.config.name
+                );
+                // Start the machine - handle_user_start will wait for suspension to complete
+                self.handle_user_start().await?;
+            }
+            _ => {
+                // For other states, just track the flash lock
+            }
         }
         Ok(())
     }

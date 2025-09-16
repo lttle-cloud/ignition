@@ -116,6 +116,7 @@ impl Controller for MachineController {
 
                         let tenant = ctx.tenant.clone();
                         let image_agent = ctx.agent.image();
+                        let image_status = status.clone();
 
                         let reference = Reference::from_str(&image)
                             .map_err(|_| anyhow!("invalid image reference: {}", image))?;
@@ -126,8 +127,8 @@ impl Controller for MachineController {
                                 key.clone(),
                                 image_is_latest_available_job_key(&reference),
                                 async move {
-                                    let is_latest_available = image_agent
-                                        .image_is_latest_available(tenant, reference.clone())
+                                    let latest_available_image = image_agent
+                                        .image_latest_available(tenant, reference.clone())
                                         .await
                                         .map_err(|e| {
                                             warn!(
@@ -139,6 +140,12 @@ impl Controller for MachineController {
                                                 &reference
                                             )
                                         })?;
+
+                                    let is_latest_available = if let Some(latest_available_image) = latest_available_image {
+                                        image_status.image_id == Some(latest_available_image.id)
+                                    } else {
+                                        false
+                                    };
 
                                     Ok(is_latest_available)
                                 },
@@ -205,7 +212,10 @@ impl Controller for MachineController {
                     );
 
                     // we have a running machine but no stored machine. time to clean up
-                    running_machine.stop().await?;
+                    if let Err(e) = running_machine.stop().await {
+                        // might be stuck in stopping state or error state
+                        warn!("failed to stop machine: {}", e);
+                    }
                     ctx.agent.machine().delete_machine(&machine_name).await?;
 
                     // delete tap device
@@ -305,7 +315,10 @@ impl Controller for MachineController {
                     );
 
                     // we have a running machine but no stored machine. time to clean up
-                    running_machine.stop().await?;
+                    if let Err(e) = running_machine.stop().await {
+                        // might be stuck in stopping state or error state
+                        warn!("failed to stop machine: {}", e);
+                    }
                     ctx.agent.machine().delete_machine(&machine_name).await?;
 
                     // delete tap device
