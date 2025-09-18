@@ -639,7 +639,7 @@ async fn write_config_to_disk(
     Ok((uses_env_file, app_name, app_namespace))
 }
 
-async fn write_editor_config() -> Result<()> {
+async fn write_vscode_settings() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let vscode_settings_dir = cwd.join(".vscode");
     if !vscode_settings_dir.exists() {
@@ -691,8 +691,16 @@ async fn write_editor_config() -> Result<()> {
     )?;
 
     message_info("Updated .vscode/settings.json");
+    Ok(())
+}
 
-    // append "redhat.vscode-yaml" to extensions.json > recommendations array
+async fn write_vscode_extensions() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let vscode_settings_dir = cwd.join(".vscode");
+    if !vscode_settings_dir.exists() {
+        std::fs::create_dir_all(&vscode_settings_dir)?;
+    }
+
     let extensions_file = vscode_settings_dir.join("extensions.json");
     if !extensions_file.exists() {
         std::fs::write(
@@ -733,6 +741,11 @@ async fn write_editor_config() -> Result<()> {
     )?;
 
     message_info("Updated .vscode/extensions.json");
+    Ok(())
+}
 
+async fn write_editor_config() -> Result<()> {
+    write_vscode_settings().await?;
+    write_vscode_extensions().await?;
     Ok(())
 }
