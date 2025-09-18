@@ -84,7 +84,7 @@ fn find_deployment_path(provided_path: Option<PathBuf>) -> Result<PathBuf> {
 
     // If none of the fallback paths exist, suggest initialization
     bail!(
-        "No deployment configuration found. Please run `lttle gadget init` to initialize the project to use lttle cloud"
+        "No deployment configuration found. Please create a valid deployment configuration or use `lttle gadget init` to automatically initialize your project to use lttle.cloud"
     );
 }
 

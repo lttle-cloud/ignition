@@ -292,18 +292,19 @@ Examine these key files and patterns:
 - Application config files (`config.js`, `settings.py`, etc.)
 - Kubernetes manifests (`*.yaml` in k8s dirs)
 
-**MANDATORY**: 
-- Always read and analyze ALL `.env*` files in the project to discover required services and configurations
+**RECOMMENDED**: 
+- Always read and analyze `.env*` files if they exist to discover required services and configurations
 - **Always read `docker-compose.yaml/yml` files if they exist** - they reveal the complete service architecture, dependencies, and configurations
+- **Simple projects may not have these files and that's perfectly fine** - a basic Next.js app can deploy without any external services
 
-### ENVIRONMENT VARIABLE PROCESSING WORKFLOW:
-1. **READ** all .env files completely
-2. **READ** docker-compose.yaml/yml files if they exist
-3. **LIST** every single environment variable found
-4. **IDENTIFY** which services need to be created based on variable patterns AND docker-compose services
-5. **FOR EACH APP**, determine which variables it needs and add them ALL to the `envs` array
+### CONFIGURATION DISCOVERY WORKFLOW:
+1. **READ** .env files if they exist (skip if none found)
+2. **READ** docker-compose.yaml/yml files if they exist (skip if none found)
+3. **LIST** any environment variables found (empty list is fine for simple apps)
+4. **IDENTIFY** which services need to be created (may be none for simple frontends)
+5. **FOR EACH APP**, determine which variables it needs (may be just PORT for simple apps)
 6. **TRANSFORM** each variable appropriately (Copy/Literal/Expression)
-7. **VERIFY** no variables are missed - check every line of every .env file
+7. **CREATE** deployment plan (single app is perfectly valid)
 
 ### COMMON APP PATTERNS AND REQUIRED VARIABLES:
 
@@ -409,7 +410,7 @@ Transform .env files intelligently based on variable type:
 - For main app: Set `PORT` to desired port (3000, 8080, etc.)
 
 **4. External Service Credentials**:
-- API keys, tokens, secrets for external services (OpenAI, Stripe, WhatsApp)
+- API keys, tokens, secrets for external services (eg: OpenAI, Stripe)
 - Keep as `CopyFromEnvFile`: `OPENAI_API_KEY`, `STRIPE_SECRET_KEY`, etc.
 
 **5. Client/Frontend URLs**:
@@ -506,35 +507,44 @@ Add appropriate ignore patterns (only the ones that are used/needed). For exampl
 4. **Port Validation**: Every app has proper port configuration
 5. **Volume Requirements**: Persistent data properly handled
 
-### MANDATORY SERVICE VALIDATION CHECKLIST:
-Before returning your plan, verify EVERY ONE of these:
+### SERVICE CONSISTENCY GUIDELINES:
+**ONLY validate these IF you find the corresponding variables or configurations:**
 
 **Database Services**: 
-- If you see `POSTGRES_*` variables → PostgreSQL app MUST be in apps array
-- If you see `MONGODB_*` variables → MongoDB app MUST be in apps array
-- If you see `REDIS_*` variables → Redis app MUST be in apps array
-- If docker-compose defines `postgres`, `mongodb`, `redis` services → Corresponding apps MUST exist
+- If you see `POSTGRES_*` variables → PostgreSQL app should be in apps array
+- If you see `MONGODB_*` variables → MongoDB app should be in apps array
+- If you see `REDIS_*` variables → Redis app should be in apps array
+- If docker-compose defines `postgres`, `mongodb`, `redis` services → Consider corresponding apps
 
 **Storage Services**:
-- If you see `MINIO_*` variables → MinIO app MUST be in apps array
+- If you see `MINIO_*` variables → MinIO app should be in apps array
 - If you see `S3_*` variables → Consider if S3-compatible service needed
-- If docker-compose defines `minio`, `s3` services → Corresponding apps MUST exist
+- If docker-compose defines `minio`, `s3` services → Consider corresponding apps
 
 **Vector/Search Services**:
-- If you see `QDRANT_*` variables → Qdrant app MUST be in apps array
-- If you see `ELASTICSEARCH_*` variables → Elasticsearch app MUST be in apps array
-- If docker-compose defines `qdrant`, `elasticsearch` services → Corresponding apps MUST exist
+- If you see `QDRANT_*` variables → Qdrant app should be in apps array
+- If you see `ELASTICSEARCH_*` variables → Elasticsearch app should be in apps array
+- If docker-compose defines `qdrant`, `elasticsearch` services → Consider corresponding apps
 
 **Connection String Validation**:
-- If `POSTGRES_URL` references `postgres-main.namespace.svc.lttle.local` → PostgreSQL app MUST exist
-- If `MONGODB_URL` references `mongodb-main.namespace.svc.lttle.local` → MongoDB app MUST exist
-- If `REDIS_URL` references `redis-main.namespace.svc.lttle.local` → Redis app MUST exist
+- If `POSTGRES_URL` references `postgres-main.namespace.svc.lttle.local` → PostgreSQL app should exist
+- If `MONGODB_URL` references `mongodb-main.namespace.svc.lttle.local` → MongoDB app should exist
+- If `REDIS_URL` references `redis-main.namespace.svc.lttle.local` → Redis app should exist
 
 **Dependencies**:
-- Main app `depends_on` MUST include ALL service apps it connects to
-- Service names in `depends_on` MUST match actual app names in the plan
+- Main app `depends_on` should include service apps it connects to
+- Service names in `depends_on` should match actual app names in the plan
 
-**FAILURE TO PASS THIS CHECKLIST = BROKEN DEPLOYMENT**
+**SIMPLE APPS ARE PERFECTLY VALID**: A Next.js frontend, React app, or simple API with no external dependencies is a completely valid deployment plan.
+
+### SIMPLE PROJECT PATTERNS:
+These are common valid single-app deployments:
+- **Static Frontend**: React, Vue, Angular app → Single app with `BuildAutomatically`, external HTTPS port
+- **Next.js App**: Full-stack Next.js → Single app with `BuildAutomatically`, PORT env var, external HTTPS port  
+- **Simple API**: Express, FastAPI without database → Single app with `BuildAutomatically`, PORT env var, external HTTPS port
+- **Documentation Site**: Docusaurus, GitBook → Single app with `BuildAutomatically`, external HTTPS port
+
+**NO .env, docker-compose, or external services required for these patterns.**
 
 ### Error Handling:
 - If insufficient information: Return empty plan with detailed issues
@@ -549,22 +559,40 @@ Write warnings and issues that are:
 - **Helpful**: Explain the impact and solution
 
 **GOOD WARNING EXAMPLES**:
-- \"No environment configuration found. Create a .env file with your database credentials, API keys, and other secrets.\"
-- \"Missing database configuration. Add PostgreSQL connection details to your .env file.\"
-- \"No port configuration detected. Your app may not be accessible without proper port setup.\"
+- \"Database connection configured but PostgreSQL service missing. Add PostgreSQL connection details to your .env file if you need a database.\"
+- \"API references external services but no configuration found. Add API keys to your .env file if needed.\"
+- \"Custom port configuration detected but may conflict with other services.\"
 
 **BAD WARNING EXAMPLES** (never write these):
 - \"I used BuildAutomatically for static site\"
 - \"No .env or .env.* files were found in the repository\"  
 - \"Project contains a build plan that installs nginx\"
+- \"No .env or docker-compose files were found. If your app requires any secrets...\" (for simple apps)
+- \"Environment variables are not automatically available\" (when no env vars are referenced)
 
 ### WHEN TO ADD WARNINGS:
-- **Missing environment configuration**: No .env files found
+- **Missing environment configuration for complex apps**: .env files expected but not found for apps that clearly need external services
 - **Incomplete database setup**: Database referenced but missing connection details
 - **Potential security issues**: Hardcoded credentials, missing secrets
 - **Port conflicts**: Multiple apps trying to use same ports
 - **Missing dependencies**: App references services that aren't deployed
 - **Configuration assumptions**: Guessed values that may need user verification
+
+### WHEN NOT TO ADD WARNINGS:
+- **Simple frontends without .env**: React/Next.js apps don't always need environment configuration
+- **Static sites**: Documentation sites, marketing pages typically don't need .env files
+- **Basic APIs**: Simple REST APIs may only need PORT configuration
+- **Any project that doesn't reference external services**: If no database connections, API keys, or external service URLs are found in code, don't warn about missing .env
+- **Self-contained applications**: Apps that work standalone without external dependencies
+
+### CRITICAL: DO NOT WARN ABOUT MISSING .env FOR SIMPLE APPS
+**NEVER generate warnings like**: \"No .env or docker-compose files were found. If your app requires any secrets...\"
+**This warning is ONLY appropriate when**:
+- Code explicitly references external APIs (database imports, API client libraries)
+- Application clearly needs secrets (authentication middleware, payment processing)  
+- External service connections are found in application code
+
+**For simple Next.js, React, static sites, or basic APIs → NO WARNING NEEDED**
 
 ### WHEN TO ADD ISSUES (deployment-blocking):
 - **Critical missing information**: Cannot determine how to build/run the app
@@ -663,14 +691,14 @@ Return a JSON object matching the `GadgetInitData` schema with:
 }}
 ```
 
-## FINAL VALIDATION BEFORE SUBMITTING:
+## CONSISTENCY CHECK BEFORE SUBMITTING:
 **Step 1**: Review your apps array
-**Step 2**: Review your environment variables that reference services  
-**Step 3**: Verify EVERY service referenced in environment variables exists as an app
-**Step 4**: Verify `depends_on` includes ALL referenced services
-**Step 5**: If any service is missing, ADD IT NOW
+**Step 2**: IF you have environment variables that reference services, verify those services exist as apps
+**Step 3**: IF you reference services in connection strings, ensure those apps are deployed
+**Step 4**: IF apps depend on other services, include them in `depends_on`
+**Step 5**: Simple single-app deployments are perfectly fine and don't need external services
 
-**REMEMBER**: Environment variables like `POSTGRES_URL`, `MINIO_ENDPOINT_*`, `QDRANT_URL` are USELESS without the actual services deployed. The deployment will fail if services are missing.
+**REMEMBER**: Only worry about service consistency IF you're referencing external services. A simple Next.js app with just PORT=3000 is completely valid.
 
 **BEGIN DISCOVERY NOW** - Start by listing the root directory contents.
     "
