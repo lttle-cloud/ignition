@@ -45,6 +45,10 @@ otel-ingest-endpoint = "http://host.lttle.local:3100/otlp/v1/logs" # TODO: for n
 type = "loki"
 url = "http://localhost:3100"
 
+# [openai]
+# api-key = "sk-proj-..."
+# default-model = "gpt-4o"
+
 [[cert-provider]]
 name = "letsencrypt-staging"
 acme-base-url = "https://acme-staging-v02.api.letsencrypt.org/directory"

@@ -180,6 +180,43 @@
       ]
     },
     {
+      "name": "Gadget",
+      "tag": "gadget",
+      "crate_path": "resources::gadget",
+      "namespaced": false,
+      "methods": [
+        {
+          "name": "run_init",
+          "namespaced": false,
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "gadget"
+            },
+            {
+              "type": "static",
+              "value": "run"
+            },
+            {
+              "type": "static",
+              "value": "init"
+            }
+          ],
+          "request": {
+            "type": "schema",
+            "name": "GadgetInitRunParams"
+          },
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "GadgetInitRunResponse"
+          }
+        }
+      ]
+    },
+    {
       "name": "App",
       "tag": "app",
       "crate_path": "resources::app",
@@ -1366,6 +1403,1482 @@
       ],
       "title": "ExecParams",
       "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "GadgetInitRunParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "discovery_data": {
+          "$ref": "#/$defs/GadgetInitDiscoveryData"
+        },
+        "reasoning_effort": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GadgetInitReasoningEffort"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GadgetClientMessage"
+          }
+        }
+      },
+      "required": [
+        "discovery_data",
+        "messages"
+      ],
+      "title": "GadgetInitRunParams",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "GadgetInitDiscoveryData": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "base_dir_name": {
+              "type": "string"
+            },
+            "base_dir_build_plan": {
+              "$ref": "#/$defs/DirBuildPlan"
+            }
+          },
+          "required": [
+            "base_dir_name",
+            "base_dir_build_plan"
+          ]
+        },
+        "DirBuildPlan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "detected_providers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "phases": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/BuildPlanPhase"
+              }
+            }
+          },
+          "required": [
+            "detected_providers",
+            "phases"
+          ]
+        },
+        "BuildPlanPhase": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "build_info": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "build_info"
+          ]
+        },
+        "GadgetInitReasoningEffort": {
+          "type": "string",
+          "enum": [
+            "Minimal",
+            "Low",
+            "Medium",
+            "High"
+          ]
+        },
+        "GadgetClientMessage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "service_message": {
+              "$ref": "#/$defs/GadgetServiceMessage"
+            },
+            "client_reply": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/GadgetClientReply"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "service_message"
+          ]
+        },
+        "GadgetServiceMessage": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ReadFile": {
+                  "$ref": "#/$defs/ReadFileArgs"
+                }
+              },
+              "required": [
+                "ReadFile"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ListDir": {
+                  "$ref": "#/$defs/ListDirArgs"
+                }
+              },
+              "required": [
+                "ListDir"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "DirBuildPlan": {
+                  "$ref": "#/$defs/DirBuildPlanArgs"
+                }
+              },
+              "required": [
+                "DirBuildPlan"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "Finish": {
+                  "$ref": "#/$defs/GadgetInitData"
+                }
+              },
+              "required": [
+                "Finish"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "Error": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "Error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "ReadFileArgs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Paths of the file to read (relative to root directory)"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        "ListDirArgs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Path of the file or directory to list (relative to root directory)"
+            },
+            "max_depth": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        "DirBuildPlanArgs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Path of the directory to attempt to build (relative to root directory)"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        "GadgetInitData": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "plan": {
+              "$ref": "#/$defs/InitPlan"
+            }
+          },
+          "required": [
+            "plan"
+          ]
+        },
+        "InitPlan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "apps": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InitApp"
+              }
+            },
+            "volumes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InitVolume"
+              }
+            },
+            "issues": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InitIssue"
+              }
+            },
+            "warnings": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InitWarning"
+              }
+            }
+          },
+          "required": [
+            "apps",
+            "volumes",
+            "issues",
+            "warnings"
+          ]
+        },
+        "InitApp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "$ref": "#/$defs/InitAppSource"
+            },
+            "snapshot_strategy": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/InitAppSnapshotStrategy"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envs": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/$defs/InitAppEnv"
+              }
+            },
+            "depends_on": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/$defs/InitAppDependsOn"
+              },
+              "description": "Services that this app depends on"
+            },
+            "exposed_ports": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/$defs/InitAppExposedPort"
+              }
+            },
+            "binded_volumes": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/$defs/InitAppBindedVolume"
+              }
+            }
+          },
+          "required": [
+            "name",
+            "source"
+          ]
+        },
+        "InitAppSource": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "BuildAutomatically": {
+                  "$ref": "#/$defs/InitAppBuildAuto"
+                }
+              },
+              "required": [
+                "BuildAutomatically"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "BuildWithDockerfile": {
+                  "$ref": "#/$defs/InitAppBuildDockerfile"
+                }
+              },
+              "required": [
+                "BuildWithDockerfile"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "Image": {
+                  "$ref": "#/$defs/InitAppImage"
+                }
+              },
+              "required": [
+                "Image"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "InitAppBuildAuto": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dir_path": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Path of the directory to build (relative to root directory)"
+            },
+            "append_docker_ignore_extra": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/InitAppendDockerIgnoreExtra"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Extra files to ignore (relative to root directory)"
+            }
+          }
+        },
+        "InitAppendDockerIgnoreExtra": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Path of the file to append to (relative to root directory)"
+            },
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "path",
+            "lines"
+          ]
+        },
+        "InitAppBuildDockerfile": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dir_path": {
+              "type": "string",
+              "description": "Path of the Dockerfile to build (relative to root directory)"
+            },
+            "dockerfile_name": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Name of the Dockerfile to use (relative to root directory) (default: Dockerfile)"
+            },
+            "append_docker_ignore_extra": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/InitAppendDockerIgnoreExtra"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Extra files to ignore (relative to root directory)"
+            }
+          },
+          "required": [
+            "dir_path"
+          ]
+        },
+        "InitAppImage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "image": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "image"
+          ]
+        },
+        "InitAppSnapshotStrategy": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "SuspendBeforeStart",
+                "SuspendAfterListenOnAnyPort",
+                "SuspendManually"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "SuspendAfterListenOnPort": {
+                  "type": "integer",
+                  "format": "uint16",
+                  "minimum": 0,
+                  "maximum": 65535
+                }
+              },
+              "required": [
+                "SuspendAfterListenOnPort"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "InitAppEnv": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/InitAppEnvValue"
+            }
+          },
+          "required": [
+            "name",
+            "value"
+          ]
+        },
+        "InitAppEnvValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "Literal": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "Literal"
+              ],
+              "additionalProperties": false,
+              "description": "A literal string value"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "Expression": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "Expression"
+              ],
+              "additionalProperties": false,
+              "description": "CEL expression (or interpolation of CEL expressions). You must include the ${{ }} in the expression (with DOUBLE curly braces).\nex: http://${{ env.VAR_NAME }}-${{ env.VAR_NAME2 }}.com/${{ env.VAR_NAME3 }}"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "CopyFromEnvFile": {
+                  "type": "object",
+                  "properties": {
+                    "var_name": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "var_name"
+                  ]
+                }
+              },
+              "required": [
+                "CopyFromEnvFile"
+              ],
+              "additionalProperties": false,
+              "description": "The value of this variable will be copied from the .env file when the app is deployed"
+            }
+          ]
+        },
+        "InitAppDependsOn": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "InitAppExposedPort": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "port": {
+              "type": "integer",
+              "format": "uint16",
+              "minimum": 0,
+              "maximum": 65535,
+              "description": "Port inside the container"
+            },
+            "mode": {
+              "$ref": "#/$defs/InitAppExposedPortMode"
+            }
+          },
+          "required": [
+            "name",
+            "port",
+            "mode"
+          ]
+        },
+        "InitAppExposedPortMode": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "Internal": {
+                  "type": "object",
+                  "properties": {
+                    "protocol": {
+                      "$ref": "#/$defs/InitAppExposedPortProtocolInternal"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "protocol"
+                  ]
+                }
+              },
+              "required": [
+                "Internal"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "External": {
+                  "type": "object",
+                  "properties": {
+                    "protocol": {
+                      "$ref": "#/$defs/InitAppExposedPortProtocolExternal"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "protocol"
+                  ]
+                }
+              },
+              "required": [
+                "External"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "InitAppExposedPortProtocolInternal": {
+          "type": "string",
+          "enum": [
+            "Tcp"
+          ]
+        },
+        "InitAppExposedPortProtocolExternal": {
+          "type": "string",
+          "enum": [
+            "Tls",
+            "Https"
+          ]
+        },
+        "InitAppBindedVolume": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "path": {
+              "type": "string",
+              "description": "Path of the volume inside the container"
+            }
+          },
+          "required": [
+            "name",
+            "path"
+          ]
+        },
+        "InitVolume": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "InitIssue": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "message"
+          ]
+        },
+        "InitWarning": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "message"
+          ]
+        },
+        "GadgetClientReply": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ReadFile": {
+                  "$ref": "#/$defs/ReadFileResult"
+                }
+              },
+              "required": [
+                "ReadFile"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ListDir": {
+                  "$ref": "#/$defs/ListDirResult"
+                }
+              },
+              "required": [
+                "ListDir"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "DirBuildPlan": {
+                  "$ref": "#/$defs/DirBuildPlan"
+                }
+              },
+              "required": [
+                "DirBuildPlan"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "Error": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "Error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "ReadFileResult": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Path of the file (relative to root directory)"
+            },
+            "content": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ]
+        },
+        "ListDirResult": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ListDirItem"
+              }
+            }
+          },
+          "required": [
+            "items"
+          ]
+        },
+        "ListDirItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Path of the file or directory (relative to root directory)"
+            },
+            "is_dir": {
+              "type": "boolean"
+            },
+            "size": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "path",
+            "is_dir",
+            "size"
+          ]
+        }
+      }
+    },
+    "GadgetInitRunResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GadgetServiceMessage"
+          }
+        }
+      },
+      "required": [
+        "messages"
+      ],
+      "title": "GadgetInitRunResponse",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "GadgetServiceMessage": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ReadFile": {
+                  "$ref": "#/$defs/ReadFileArgs"
+                }
+              },
+              "required": [
+                "ReadFile"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ListDir": {
+                  "$ref": "#/$defs/ListDirArgs"
+                }
+              },
+              "required": [
+                "ListDir"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "DirBuildPlan": {
+                  "$ref": "#/$defs/DirBuildPlanArgs"
+                }
+              },
+              "required": [
+                "DirBuildPlan"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "Finish": {
+                  "$ref": "#/$defs/GadgetInitData"
+                }
+              },
+              "required": [
+                "Finish"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "Error": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "Error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "ReadFileArgs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Paths of the file to read (relative to root directory)"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        "ListDirArgs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Path of the file or directory to list (relative to root directory)"
+            },
+            "max_depth": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        "DirBuildPlanArgs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Path of the directory to attempt to build (relative to root directory)"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        },
+        "GadgetInitData": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "plan": {
+              "$ref": "#/$defs/InitPlan"
+            }
+          },
+          "required": [
+            "plan"
+          ]
+        },
+        "InitPlan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "apps": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InitApp"
+              }
+            },
+            "volumes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InitVolume"
+              }
+            },
+            "issues": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InitIssue"
+              }
+            },
+            "warnings": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InitWarning"
+              }
+            }
+          },
+          "required": [
+            "apps",
+            "volumes",
+            "issues",
+            "warnings"
+          ]
+        },
+        "InitApp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "$ref": "#/$defs/InitAppSource"
+            },
+            "snapshot_strategy": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/InitAppSnapshotStrategy"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envs": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/$defs/InitAppEnv"
+              }
+            },
+            "depends_on": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/$defs/InitAppDependsOn"
+              },
+              "description": "Services that this app depends on"
+            },
+            "exposed_ports": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/$defs/InitAppExposedPort"
+              }
+            },
+            "binded_volumes": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/$defs/InitAppBindedVolume"
+              }
+            }
+          },
+          "required": [
+            "name",
+            "source"
+          ]
+        },
+        "InitAppSource": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "BuildAutomatically": {
+                  "$ref": "#/$defs/InitAppBuildAuto"
+                }
+              },
+              "required": [
+                "BuildAutomatically"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "BuildWithDockerfile": {
+                  "$ref": "#/$defs/InitAppBuildDockerfile"
+                }
+              },
+              "required": [
+                "BuildWithDockerfile"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "Image": {
+                  "$ref": "#/$defs/InitAppImage"
+                }
+              },
+              "required": [
+                "Image"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "InitAppBuildAuto": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dir_path": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Path of the directory to build (relative to root directory)"
+            },
+            "append_docker_ignore_extra": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/InitAppendDockerIgnoreExtra"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Extra files to ignore (relative to root directory)"
+            }
+          }
+        },
+        "InitAppendDockerIgnoreExtra": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Path of the file to append to (relative to root directory)"
+            },
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "path",
+            "lines"
+          ]
+        },
+        "InitAppBuildDockerfile": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dir_path": {
+              "type": "string",
+              "description": "Path of the Dockerfile to build (relative to root directory)"
+            },
+            "dockerfile_name": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Name of the Dockerfile to use (relative to root directory) (default: Dockerfile)"
+            },
+            "append_docker_ignore_extra": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/InitAppendDockerIgnoreExtra"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Extra files to ignore (relative to root directory)"
+            }
+          },
+          "required": [
+            "dir_path"
+          ]
+        },
+        "InitAppImage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "image": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "image"
+          ]
+        },
+        "InitAppSnapshotStrategy": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "SuspendBeforeStart",
+                "SuspendAfterListenOnAnyPort",
+                "SuspendManually"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "SuspendAfterListenOnPort": {
+                  "type": "integer",
+                  "format": "uint16",
+                  "minimum": 0,
+                  "maximum": 65535
+                }
+              },
+              "required": [
+                "SuspendAfterListenOnPort"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "InitAppEnv": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/InitAppEnvValue"
+            }
+          },
+          "required": [
+            "name",
+            "value"
+          ]
+        },
+        "InitAppEnvValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "Literal": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "Literal"
+              ],
+              "additionalProperties": false,
+              "description": "A literal string value"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "Expression": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "Expression"
+              ],
+              "additionalProperties": false,
+              "description": "CEL expression (or interpolation of CEL expressions). You must include the ${{ }} in the expression (with DOUBLE curly braces).\nex: http://${{ env.VAR_NAME }}-${{ env.VAR_NAME2 }}.com/${{ env.VAR_NAME3 }}"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "CopyFromEnvFile": {
+                  "type": "object",
+                  "properties": {
+                    "var_name": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "var_name"
+                  ]
+                }
+              },
+              "required": [
+                "CopyFromEnvFile"
+              ],
+              "additionalProperties": false,
+              "description": "The value of this variable will be copied from the .env file when the app is deployed"
+            }
+          ]
+        },
+        "InitAppDependsOn": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "InitAppExposedPort": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "port": {
+              "type": "integer",
+              "format": "uint16",
+              "minimum": 0,
+              "maximum": 65535,
+              "description": "Port inside the container"
+            },
+            "mode": {
+              "$ref": "#/$defs/InitAppExposedPortMode"
+            }
+          },
+          "required": [
+            "name",
+            "port",
+            "mode"
+          ]
+        },
+        "InitAppExposedPortMode": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "Internal": {
+                  "type": "object",
+                  "properties": {
+                    "protocol": {
+                      "$ref": "#/$defs/InitAppExposedPortProtocolInternal"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "protocol"
+                  ]
+                }
+              },
+              "required": [
+                "Internal"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "External": {
+                  "type": "object",
+                  "properties": {
+                    "protocol": {
+                      "$ref": "#/$defs/InitAppExposedPortProtocolExternal"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "protocol"
+                  ]
+                }
+              },
+              "required": [
+                "External"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "InitAppExposedPortProtocolInternal": {
+          "type": "string",
+          "enum": [
+            "Tcp"
+          ]
+        },
+        "InitAppExposedPortProtocolExternal": {
+          "type": "string",
+          "enum": [
+            "Tls",
+            "Https"
+          ]
+        },
+        "InitAppBindedVolume": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "path": {
+              "type": "string",
+              "description": "Path of the volume inside the container"
+            }
+          },
+          "required": [
+            "name",
+            "path"
+          ]
+        },
+        "InitVolume": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "InitIssue": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "message"
+          ]
+        },
+        "InitWarning": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "message"
+          ]
+        }
+      }
     },
     "ListNamespaces": {
       "type": "object",

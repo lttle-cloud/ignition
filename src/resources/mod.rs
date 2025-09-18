@@ -12,6 +12,7 @@ use crate::{
 pub mod app;
 pub mod certificate;
 pub mod core;
+pub mod gadget;
 pub mod machine;
 pub mod metadata;
 pub mod service;

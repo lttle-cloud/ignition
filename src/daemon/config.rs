@@ -40,6 +40,9 @@ pub struct Config {
 
     #[serde(rename = "logs")]
     pub logs_config: LogsConfig,
+
+    #[serde(rename = "openai")]
+    pub openai_config: Option<OpenAIConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -111,6 +114,15 @@ pub struct LogsConfig {
     #[serde(rename = "otel-ingest-endpoint")]
     pub otel_ingest_endpoint: String,
     pub store: LogsStoreConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OpenAIConfig {
+    #[serde(rename = "api-key")]
+    pub api_key: String,
+
+    #[serde(rename = "default-model")]
+    pub default_model: String,
 }
 
 async fn resolve_config_path(path_override: Option<PathBuf>) -> Result<PathBuf> {

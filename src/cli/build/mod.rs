@@ -5,7 +5,8 @@ use std::{io::Write, path::Path};
 use anyhow::{Result, bail};
 use ignition::resources::machine::{MachineBuild, MachineBuildOptions, MachineDockerOptions};
 use nixpacks::nixpacks::{
-    builder::docker::DockerBuilderOptions, plan::generator::GeneratePlanOptions,
+    builder::docker::DockerBuilderOptions,
+    plan::{BuildPlan, generator::GeneratePlanOptions},
 };
 use tokio::process::Command;
 
@@ -196,6 +197,43 @@ async fn build_image_nixpacks(
     };
 
     Ok(image)
+}
+
+pub async fn get_build_plan(path: impl AsRef<Path>) -> Result<(BuildPlan, Vec<String>)> {
+    let envs = std::env::vars()
+        .into_iter()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect::<Vec<String>>();
+
+    let envs = envs.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
+
+    let mut plan_options = GeneratePlanOptions::default();
+    // check if dir or pwd contains a nixpacks.toml
+    let dir_nixpacks_toml = path.as_ref().join("nixpacks.toml");
+    let pwd_nixpacks_toml = std::env::current_dir().unwrap().join("nixpacks.toml");
+
+    let nixpacks_toml = if dir_nixpacks_toml.exists() {
+        Some(dir_nixpacks_toml)
+    } else if pwd_nixpacks_toml.exists() {
+        Some(pwd_nixpacks_toml)
+    } else {
+        None
+    };
+
+    if let Some(nixpacks_toml) = nixpacks_toml {
+        message_detail(format!(
+            "Using nixpacks options from: {}",
+            nixpacks_toml.to_str().unwrap()
+        ));
+        plan_options.config_file = Some(nixpacks_toml.to_str().unwrap().to_string());
+    };
+
+    let path_str = path.as_ref().to_str().unwrap();
+
+    let providers = nixpacks::get_plan_providers(path_str, envs.clone(), &plan_options)?;
+    let plan = nixpacks::generate_build_plan(path_str, envs.clone(), &plan_options)?;
+
+    Ok((plan, providers))
 }
 
 async fn build_image_docker(

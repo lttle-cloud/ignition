@@ -6,13 +6,14 @@ pub mod job;
 pub mod logs;
 pub mod machine;
 pub mod net;
+pub mod openai;
 pub mod proxy;
 pub mod tracker;
 pub mod volume;
 
 use std::sync::{Arc, Weak};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use crate::{
     agent::{
@@ -23,6 +24,7 @@ use crate::{
         logs::{LogsAgent, LogsAgentConfig},
         machine::{MachineAgent, MachineAgentConfig},
         net::{NetAgent, NetAgentConfig},
+        openai::{OpenAIAgent, OpenAIAgentConfig},
         proxy::{ProxyAgent, ProxyAgentConfig},
         tracker::TrackerAgent,
         volume::{VolumeAgent, VolumeAgentConfig},
@@ -44,6 +46,7 @@ pub struct AgentConfig {
     pub dns_config: DnsAgentConfig,
     pub cert_config: CertificateAgentConfig,
     pub logs_config: LogsAgentConfig,
+    pub openai_config: Option<OpenAIAgentConfig>,
 }
 
 pub struct Agent {
@@ -57,6 +60,7 @@ pub struct Agent {
     certificate: Arc<CertificateAgent>,
     logs: Arc<LogsAgent>,
     tracker: Arc<TrackerAgent>,
+    openai: Option<Arc<OpenAIAgent>>,
 }
 
 impl Agent {
@@ -112,6 +116,9 @@ impl Agent {
             certificate,
             logs,
             tracker,
+            openai: config
+                .openai_config
+                .map(|config| Arc::new(OpenAIAgent::new(config))),
         })
     }
 
@@ -153,5 +160,13 @@ impl Agent {
 
     pub fn tracker(&self) -> Arc<TrackerAgent> {
         self.tracker.clone()
+    }
+
+    pub fn openai(&self) -> Result<Arc<OpenAIAgent>> {
+        if let Some(openai) = &self.openai {
+            Ok(openai.clone())
+        } else {
+            bail!("OpenAI agent not configured")
+        }
     }
 }
