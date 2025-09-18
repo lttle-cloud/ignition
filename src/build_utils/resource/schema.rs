@@ -13,6 +13,7 @@ use crate::{
     resources::{
         ResourceBuildInfo,
         core::{add_core_service_schema_defs, core_api_service},
+        gadget::{add_gadget_service_schema_defs, gadget_api_service},
     },
 };
 
@@ -101,6 +102,9 @@ async fn build_api_schema(
     let mut api_schema = ApiSchema::new();
     api_schema.services.push(core_api_service());
     add_core_service_schema_defs(schema_generator, &mut api_schema.defs)?;
+
+    api_schema.services.push(gadget_api_service());
+    add_gadget_service_schema_defs(schema_generator, &mut api_schema.defs)?;
 
     for resource in resources {
         if !resource.configuration.generate_service {

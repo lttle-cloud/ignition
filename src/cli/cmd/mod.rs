@@ -3,6 +3,7 @@ pub mod certificate;
 pub mod completion;
 pub mod deploy;
 pub mod docker;
+pub mod gadget;
 pub mod login;
 pub mod machine;
 pub mod namespace;
@@ -42,6 +43,10 @@ pub enum Command {
     /// Config profile management
     #[command(subcommand)]
     Profile(ProfileCommand),
+
+    /// Gadget management
+    #[command(subcommand)]
+    Gadget(GadgetCommand),
 
     /// Namespace management (short: ns)
     #[command(subcommand, alias = "ns")]
@@ -181,6 +186,12 @@ pub enum ProfileCommand {
 }
 
 #[derive(Subcommand)]
+pub enum GadgetCommand {
+    /// Run gadget init workflow
+    Init(gadget::GadgetInitArgs),
+}
+
+#[derive(Subcommand)]
 pub enum DockerCommand {
     /// Login to a docker registry
     Login(docker::DockerLoginArgs),
@@ -219,6 +230,9 @@ pub async fn run_cli() -> Result<()> {
         Command::Namespace(cmd) => match cmd {
             NamespaceCommand::List => namespace::run_namespace_list(&config).await,
             NamespaceCommand::Delete(args) => namespace::run_namespace_delete(&config, args).await,
+        },
+        Command::Gadget(cmd) => match cmd {
+            GadgetCommand::Init(args) => gadget::run_gadget_init(&config, args).await,
         },
         Command::Deploy(args) => deploy::run_deploy(&config, args).await,
         Command::App(cmd) => match cmd {

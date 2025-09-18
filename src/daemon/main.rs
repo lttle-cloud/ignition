@@ -9,10 +9,12 @@ use ignition::{
     agent::{
         Agent, AgentConfig, certificate::config::CertificateAgentConfig,
         dns::config::DnsAgentConfig, image::ImageAgentConfig, logs::LogsAgentConfig,
-        machine::MachineAgentConfig, net::NetAgentConfig, proxy::ProxyAgentConfig,
-        volume::VolumeAgentConfig,
+        machine::MachineAgentConfig, net::NetAgentConfig, openai::OpenAIAgentConfig,
+        proxy::ProxyAgentConfig, volume::VolumeAgentConfig,
     },
-    api::{ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService},
+    api::{
+        ApiServer, ApiServerConfig, auth::AuthHandler, core::CoreService, gadget::GadgetService,
+    },
     constants::DEFAULT_KERNEL_CMD_LINE_INIT,
     controller::{
         app::AppController,
@@ -163,6 +165,12 @@ async fn main() -> Result<()> {
                                     .logs_config
                                     .otel_ingest_endpoint,
                             },
+                            openai_config: scheduler_config.openai_config.map(|c| {
+                                OpenAIAgentConfig {
+                                    api_key: c.api_key,
+                                    default_model: c.default_model,
+                                }
+                            }),
                         },
                         agent_scheduler,
                         repository_clone,
@@ -204,6 +212,7 @@ async fn main() -> Result<()> {
         },
     )
     .add_service::<CoreService>()
+    .add_service::<GadgetService>()
     .add_service::<services::CertificateService>()
     .add_service::<services::MachineService>()
     .add_service::<services::ServiceService>()

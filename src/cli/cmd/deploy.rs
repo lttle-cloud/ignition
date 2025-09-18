@@ -32,6 +32,62 @@ use crate::{
     ui::message::{message_detail, message_info, message_warn},
 };
 
+/// Find deployment path using fallback logic
+fn find_deployment_path(provided_path: Option<PathBuf>) -> Result<PathBuf> {
+    // If path was provided, try to use it
+    if let Some(path) = provided_path {
+        if !path.exists() {
+            bail!("Provided path does not exist: {:?}", path);
+        }
+
+        return Ok(path);
+    }
+
+    // Check fallback paths in order:
+    // 1. .lttle/deploy directory
+    let lttle_deploy_dir = PathBuf::from(".lttle/deploy");
+    if lttle_deploy_dir.exists() && lttle_deploy_dir.is_dir() {
+        return Ok(lttle_deploy_dir);
+    }
+
+    // 2. .lttle/deploy.yaml or .lttle/deploy.yml
+    let lttle_deploy_yaml = PathBuf::from(".lttle/deploy.yaml");
+    if lttle_deploy_yaml.exists() {
+        return Ok(lttle_deploy_yaml);
+    }
+    let lttle_deploy_yml = PathBuf::from(".lttle/deploy.yml");
+    if lttle_deploy_yml.exists() {
+        return Ok(lttle_deploy_yml);
+    }
+
+    // 3. .lttle/ directory
+    let lttle_dir = PathBuf::from(".lttle");
+    if lttle_dir.exists() && lttle_dir.is_dir() {
+        return Ok(lttle_dir);
+    }
+
+    // 4. lttle.yaml or lttle.yml at root
+    let lttle_yaml = PathBuf::from("lttle.yaml");
+    if lttle_yaml.exists() {
+        return Ok(lttle_yaml);
+    }
+    let lttle_yml = PathBuf::from("lttle.yml");
+    if lttle_yml.exists() {
+        return Ok(lttle_yml);
+    }
+
+    // 5. app.lttle.yaml
+    let app_lttle_yaml = PathBuf::from("app.lttle.yaml");
+    if app_lttle_yaml.exists() {
+        return Ok(app_lttle_yaml);
+    }
+
+    // If none of the fallback paths exist, suggest initialization
+    bail!(
+        "No deployment configuration found. Please run `lttle gadget init` to initialize the project to use lttle cloud"
+    );
+}
+
 #[derive(Args)]
 pub struct DeployArgs {
     /// Environment file to use for the deployment
@@ -149,13 +205,7 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
         return Ok(());
     }
 
-    let Some(path) = args.path else {
-        bail!("No path provided");
-    };
-
-    if !path.exists() {
-        bail!("Path does not exist: {:?}", path);
-    }
+    let path = find_deployment_path(args.path)?;
 
     if args.dry_run {
         message_info("Dry run mode enabled. No changes will be committed.");

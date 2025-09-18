@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod context;
 pub mod core;
+pub mod gadget;
 pub mod resource_service;
 
 use std::sync::Arc;
