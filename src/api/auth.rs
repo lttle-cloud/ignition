@@ -115,7 +115,7 @@ impl AuthHandler {
             tenant,
             sub,
             iat: now.as_secs(),
-            exp: now.as_secs() + 60 * 60 * 24 * 30, // TODO: hardcoded 30 days
+            exp: now.as_secs() + 6 * 60 * 60 * 24 * 30, // TODO: hardcoded ~6 months
         };
 
         let token = encode(
