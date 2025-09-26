@@ -1,0 +1,18 @@
+# find out more here: https://docs.lttle.cloud/docs/
+
+app:
+  name: ${{ lovable_project_name }}
+  build: auto
+  resources:
+    cpu: 1
+    memory: 128
+  mode:
+    flash:
+      strategy:
+        listen-on-port: 3000
+      timeout: 2
+  expose:
+    public:
+      port: 3000
+      external:
+        protocol: https

@@ -28,13 +28,13 @@ release-ignitiond-linux:
 	strip dist/ignitiond
 
 release-cli-linux:
-	cargo build --release --bin lttle
+	cargo build --release --bin lttle --features lovable
 	strip target/release/lttle
 	mkdir -p dist
 	mv target/release/lttle dist/lttle_linux_x86_64
 
 release-cli-darwin:
-	cargo build --release --bin lttle
+	cargo build --release --bin lttle --features lovable
 	strip target/release/lttle
 	mkdir -p dist
 	mv target/release/lttle dist/lttle_darwin_aarch64

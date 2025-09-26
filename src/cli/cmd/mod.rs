@@ -4,6 +4,8 @@ pub mod completion;
 pub mod deploy;
 pub mod docker;
 pub mod gadget;
+#[cfg(feature = "lovable")]
+pub mod import;
 pub mod login;
 pub mod machine;
 pub mod namespace;
@@ -47,6 +49,11 @@ pub enum Command {
     /// Gadget management
     #[command(subcommand)]
     Gadget(GadgetCommand),
+
+    /// Import from another platform
+    #[cfg(feature = "lovable")]
+    #[command(subcommand)]
+    Import(ImportCommand),
 
     /// Namespace management (short: ns)
     #[command(subcommand, alias = "ns")]
@@ -191,6 +198,13 @@ pub enum GadgetCommand {
     Init(gadget::GadgetInitArgs),
 }
 
+#[cfg(feature = "lovable")]
+#[derive(Subcommand)]
+pub enum ImportCommand {
+    /// Import a lovable project
+    Lovable(import::ImportLovableArgs),
+}
+
 #[derive(Subcommand)]
 pub enum DockerCommand {
     /// Login to a docker registry
@@ -233,6 +247,10 @@ pub async fn run_cli() -> Result<()> {
         },
         Command::Gadget(cmd) => match cmd {
             GadgetCommand::Init(args) => gadget::run_gadget_init(&config, args).await,
+        },
+        #[cfg(feature = "lovable")]
+        Command::Import(cmd) => match cmd {
+            ImportCommand::Lovable(args) => import::run_import_lovable(&config, args).await,
         },
         Command::Deploy(args) => deploy::run_deploy(&config, args).await,
         Command::App(cmd) => match cmd {
