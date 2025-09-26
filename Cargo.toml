@@ -126,6 +126,7 @@ nixpacks = { git = "https://github.com/lttle-cloud/nixpacks", rev = "26919cada94
 async-openai = { version = "0.29.3", features = [
     "native-tls",
 ], default-features = false }
+lovable-client = { path = "../lovable-client", optional = true }
 
 [features]
 default = []
@@ -139,6 +140,7 @@ daemon = [
     "virtio-blk",
     "caps",
 ]
+lovable = ["lovable-client"]
 
 [build-dependencies]
 meta = { path = "meta" }

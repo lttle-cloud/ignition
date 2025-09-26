@@ -1,7 +1,8 @@
 {
     "editor.formatOnSave": true,
     "rust-analyzer.cargo.features": [
-        "daemon"
+        "daemon",
+        "lovable"
     ],
     "[protobuf]": {
         "editor.defaultFormatter": "tooltitudeteam.tooltitude-pb",
@@ -10,6 +11,7 @@
         "schemas/resources.json": [
             "demos/**/*.yaml",
             "debug/**/*.yaml",
+            "templates/*.yaml",
             "!demos/**/_*.yaml"
         ]
     },
