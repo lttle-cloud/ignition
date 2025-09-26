@@ -22,7 +22,7 @@ use serde_yaml::Value;
 use tokio::fs::{read_dir, read_to_string};
 
 use crate::{
-    build::{build_image, docker_auth::DockerAuthConfig, push_image},
+    build::{BuildTarget, build_and_push_image, docker_auth::DockerAuthConfig},
     client::get_api_client,
     config::Config,
     expr::{
@@ -105,6 +105,14 @@ pub struct DeployArgs {
     /// Disable environment variable ambient override
     #[arg(long = "no-env-ambient-override")]
     ignore_env_ambient_override: bool,
+
+    /// Force the build to be remote
+    #[arg(long = "force-remote-build")]
+    force_remote_build: bool,
+
+    /// Force the build to be local
+    #[arg(long = "force-local-build")]
+    force_local_build: bool,
 
     /// Recursively parse all files in the directory
     #[arg(short = 'r', long = "recursive")]
@@ -255,22 +263,27 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
             bail!("No parent directory for path: {:?}", path);
         };
 
-        message_detail(format!("Building image for {}", resource_name));
-        let image = build_image(
+        let force_build_target = if args.force_remote_build {
+            Some(BuildTarget::Remote)
+        } else if args.force_local_build {
+            Some(BuildTarget::Local)
+        } else {
+            None
+        };
+
+        message_detail(format!("Building and pushing image for {}", resource_name));
+        let image = build_and_push_image(
+            &api_client,
             dir,
             &me.tenant,
             build,
             auth.clone(),
             args.debug_build,
             args.disable_build_cache,
+            force_build_target,
         )
         .await?;
-        message_detail(format!("Pushing image for {} → {}", resource_name, image));
-        push_image(image.clone(), auth.clone()).await?;
-        message_info(format!(
-            "Successfully built and pushed image for {}",
-            resource_name
-        ));
+        message_detail(format!("Pushed image for {} → {}", resource_name, image));
 
         *mut_build = None;
         *mut_image = Some(image);

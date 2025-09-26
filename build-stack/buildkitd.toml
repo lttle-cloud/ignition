@@ -1,0 +1,6 @@
+[worker.oci]
+gc = true
+# Keep at most ~30 GiB of cache, ensure at least 10% disk free, and reserve 10 GiB.
+maxUsedSpace = "30GB"
+minFreeSpace = "10%"
+reservedSpace = "10GB"

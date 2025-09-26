@@ -39,8 +39,8 @@ use crate::{
     resources::{
         ProvideMetadata,
         core::{
-            DeleteNamespaceParams, DeleteNamespaceResponse, DeletedResource, ExecParams,
-            ListNamespaces, LogStreamParams, Me, Namespace, QueryParams, QueryResponse,
+            AllocatedBuilder, DeleteNamespaceParams, DeleteNamespaceResponse, DeletedResource,
+            ExecParams, ListNamespaces, LogStreamParams, Me, Namespace, QueryParams, QueryResponse,
             RegistryRobot,
         },
         metadata,
@@ -667,6 +667,34 @@ impl ResourceService for CoreService {
                 .into_response()
         }
 
+        async fn alloc_builder(
+            state: State<Arc<ApiState>>,
+            ctx: ServiceRequestContext,
+        ) -> impl IntoResponse {
+            let Ok(build_agent) = state.scheduler.agent.build() else {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Builds are not configured",
+                )
+                    .into_response();
+            };
+
+            let Ok(builder) = build_agent.pick_and_authorize_builder(&ctx.tenant, &ctx.sub) else {
+                return (StatusCode::INTERNAL_SERVER_ERROR, "No available builder").into_response();
+            };
+
+            (
+                StatusCode::OK,
+                Json(AllocatedBuilder {
+                    host: builder.host,
+                    client_cert_pem: builder.client_cert_pem,
+                    client_key_pem: builder.client_key_pem,
+                    ca_cert_pem: builder.ca_cert_pem,
+                }),
+            )
+                .into_response()
+        }
+
         let mut router = Router::new();
         router = router.route("/me", get(me));
         router = router.route("/registry/robot", get(registry_robot));
@@ -676,6 +704,7 @@ impl ResourceService for CoreService {
         router = router.route("/logs", get(stream_logs));
         router = router.route("/exec", get(exec));
         router = router.route("/query", put(query));
+        router = router.route("/build/alloc", put(alloc_builder));
 
         ResourceServiceRouter {
             name: "Core".to_string(),

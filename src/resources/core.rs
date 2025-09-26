@@ -124,6 +124,14 @@ pub struct QueryResponse {
     pub query_result: Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AllocatedBuilder {
+    pub host: String,
+    pub client_cert_pem: String,
+    pub client_key_pem: String,
+    pub ca_cert_pem: String,
+}
+
 pub fn core_api_service() -> ApiService {
     ApiService {
         name: "Core".to_string(),
@@ -286,6 +294,30 @@ pub fn core_api_service() -> ApiService {
                     },
                 ),
             },
+            ApiMethod {
+                name: "alloc_builder".to_string(),
+                path: vec![
+                    ApiPathSegment::Static {
+                        value: "core".to_string(),
+                    },
+                    ApiPathSegment::Static {
+                        value: "build".to_string(),
+                    },
+                    ApiPathSegment::Static {
+                        value: "alloc".to_string(),
+                    },
+                ],
+                namespaced: false,
+                verb: ApiVerb::Put,
+                request: None,
+                response: Some(
+                    crate::machinery::api_schema::ApiResponse::SchemaDefinition {
+                        name: "AllocatedBuilder".to_string(),
+                        list: false,
+                        optional: false,
+                    },
+                ),
+            },
         ],
     }
 }
@@ -321,6 +353,10 @@ pub fn add_core_service_schema_defs(
     defs.insert(
         "QueryResponse".to_string(),
         schema_for!(QueryResponse).into(),
+    );
+    defs.insert(
+        "AllocatedBuilder".to_string(),
+        schema_for!(AllocatedBuilder).into(),
     );
 
     Ok(())
