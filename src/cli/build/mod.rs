@@ -30,7 +30,7 @@ use crate::{
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 const BUILDCTL_BINARY: &[u8] = include_bytes!("../../../bins/buildctl_linux_amd64");
 
-#[cfg(all(target_os = "darwin", target_arch = "arm64"))]
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 const BUILDCTL_BINARY: &[u8] = include_bytes!("../../../bins/buildctl_darwin_arm64");
 
 #[derive(Debug, Clone)]
@@ -203,7 +203,7 @@ async fn remote_build_and_push_image(
 
     for (key, value) in remote_build_context.build_args {
         buildkit_args.push("--opt".to_string());
-        buildkit_args.push(format!("build-arg:{}='{}'", key, value));
+        buildkit_args.push(format!("build-arg:{}={}", key, value));
     }
 
     if !disable_build_cache {
