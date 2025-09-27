@@ -123,6 +123,10 @@ pub async fn run_import_lovable(_config: &Config, args: ImportLovableArgs) -> Re
     }
     eprintln!("  → Run `lttle deploy` to deploy your project");
     eprintln!(
+        "  → Run `lttle machine get {}` to see if your machine is ready",
+        selected_project.project_name
+    );
+    eprintln!(
         "  → Run `lttle app get {}` to get the URL of your app (and other info)",
         selected_project.project_name
     );

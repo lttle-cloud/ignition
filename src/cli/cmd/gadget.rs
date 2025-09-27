@@ -154,6 +154,19 @@ pub async fn run_gadget_init(config: &Config, cmd: GadgetInitArgs) -> Result<()>
                         eprintln!("  → Deploy your app with `lttle deploy`");
                     }
 
+                    let machine_get_cmd = match (app_name.clone(), app_namespace.clone()) {
+                        (Some(name), Some(namespace)) => {
+                            Some(format!("lttle machine get {} --ns {}", name, namespace))
+                        }
+                        (Some(name), None) => Some(format!("lttle machine get {}", name)),
+                        (None, _) => None,
+                    };
+                    
+                    match machine_get_cmd {
+                        Some(cmd) => eprintln!("  → Check on your machine with `{}`", cmd),
+                        None => eprintln!("  → Check on your machines with `lttle machine ls -a`"),
+                    };
+
                     let app_get_cmd = match (app_name, app_namespace) {
                         (Some(name), Some(namespace)) => {
                             Some(format!("lttle app get {} --ns {}", name, namespace))
