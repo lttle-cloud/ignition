@@ -1,0 +1,25 @@
+[Unit]
+Description=BuildKit daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+StateDirectory=buildkit
+RuntimeDirectory=buildkit
+RuntimeDirectoryMode=0755
+EnvironmentFile=-/etc/buildkit/buildkitd.env
+
+ExecStart=/usr/local/bin/buildkitd \
+  --config /etc/buildkit/buildkitd.toml \
+  --addr unix:///run/buildkit/buildkitd.sock \
+  --addr tcp://0.0.0.0:1234 \
+  --tlscacert /etc/buildkit/tls/ca.pem \
+  --tlscert /etc/buildkit/tls/server.pem \
+  --tlskey /etc/buildkit/tls/server.key
+
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target

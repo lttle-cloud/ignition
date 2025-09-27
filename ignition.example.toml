@@ -49,6 +49,11 @@ url = "http://localhost:3100"
 # api-key = "sk-proj-..."
 # default-model = "gpt-4o"
 
+# [build]
+# ca-cert-path = "./build-stack/certs/ca.pem"
+# ca-key-path = "./build-stack/certs/ca.key"
+# pool = ["builder.lttle.local"]
+
 [[cert-provider]]
 name = "letsencrypt-staging"
 acme-base-url = "https://acme-staging-v02.api.letsencrypt.org/directory"

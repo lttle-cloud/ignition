@@ -7,7 +7,7 @@ use anyhow::Result;
 use clap::Parser;
 use ignition::{
     agent::{
-        Agent, AgentConfig, certificate::config::CertificateAgentConfig,
+        Agent, AgentConfig, build::BuildAgentConfig, certificate::config::CertificateAgentConfig,
         dns::config::DnsAgentConfig, image::ImageAgentConfig, logs::LogsAgentConfig,
         machine::MachineAgentConfig, net::NetAgentConfig, openai::OpenAIAgentConfig,
         proxy::ProxyAgentConfig, volume::VolumeAgentConfig,
@@ -170,6 +170,11 @@ async fn main() -> Result<()> {
                                     api_key: c.api_key,
                                     default_model: c.default_model,
                                 }
+                            }),
+                            build_config: scheduler_config.build_config.map(|c| BuildAgentConfig {
+                                remote_build_ca_cert_path: c.ca_cert_path,
+                                remote_build_ca_key_path: c.ca_key_path,
+                                builders_pool: c.pool,
                             }),
                         },
                         agent_scheduler,

@@ -43,6 +43,9 @@ pub struct Config {
 
     #[serde(rename = "openai")]
     pub openai_config: Option<OpenAIConfig>,
+
+    #[serde(rename = "build")]
+    pub build_config: Option<BuildConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -123,6 +126,15 @@ pub struct OpenAIConfig {
 
     #[serde(rename = "default-model")]
     pub default_model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BuildConfig {
+    #[serde(rename = "ca-cert-path")]
+    pub ca_cert_path: String,
+    #[serde(rename = "ca-key-path")]
+    pub ca_key_path: String,
+    pub pool: Vec<String>,
 }
 
 async fn resolve_config_path(path_override: Option<PathBuf>) -> Result<PathBuf> {

@@ -176,6 +176,32 @@
             "optional": false,
             "name": "QueryResponse"
           }
+        },
+        {
+          "name": "alloc_builder",
+          "namespaced": false,
+          "verb": "PUT",
+          "path": [
+            {
+              "type": "static",
+              "value": "core"
+            },
+            {
+              "type": "static",
+              "value": "build"
+            },
+            {
+              "type": "static",
+              "value": "alloc"
+            }
+          ],
+          "request": null,
+          "response": {
+            "type": "schema",
+            "list": false,
+            "optional": false,
+            "name": "AllocatedBuilder"
+          }
         }
       ]
     },
@@ -768,6 +794,31 @@
     }
   ],
   "defs": {
+    "AllocatedBuilder": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "client_cert_pem": {
+          "type": "string"
+        },
+        "client_key_pem": {
+          "type": "string"
+        },
+        "ca_cert_pem": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "client_cert_pem",
+        "client_key_pem",
+        "ca_cert_pem"
+      ],
+      "title": "AllocatedBuilder",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
     "App": {
       "oneOf": [
         {

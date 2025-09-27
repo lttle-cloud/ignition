@@ -1,3 +1,4 @@
+pub mod build;
 pub mod certificate;
 pub mod data;
 pub mod dns;
@@ -17,6 +18,7 @@ use anyhow::{Result, bail};
 
 use crate::{
     agent::{
+        build::{BuildAgent, BuildAgentConfig},
         certificate::{CertificateAgent, config::CertificateAgentConfig},
         dns::{DnsAgent, config::DnsAgentConfig},
         image::{ImageAgent, ImageAgentConfig},
@@ -47,6 +49,7 @@ pub struct AgentConfig {
     pub cert_config: CertificateAgentConfig,
     pub logs_config: LogsAgentConfig,
     pub openai_config: Option<OpenAIAgentConfig>,
+    pub build_config: Option<BuildAgentConfig>,
 }
 
 pub struct Agent {
@@ -61,6 +64,7 @@ pub struct Agent {
     logs: Arc<LogsAgent>,
     tracker: Arc<TrackerAgent>,
     openai: Option<Arc<OpenAIAgent>>,
+    build: Option<Arc<BuildAgent>>,
 }
 
 impl Agent {
@@ -102,6 +106,11 @@ impl Agent {
 
         let tracker = Arc::new(TrackerAgent::new(store.clone()));
 
+        let build = match config.build_config {
+            Some(config) => Some(Arc::new(BuildAgent::new(config)?)),
+            None => None,
+        };
+
         // Start the DNS server
         dns.start().await?;
 
@@ -119,6 +128,7 @@ impl Agent {
             openai: config
                 .openai_config
                 .map(|config| Arc::new(OpenAIAgent::new(config))),
+            build,
         })
     }
 
@@ -167,6 +177,14 @@ impl Agent {
             Ok(openai.clone())
         } else {
             bail!("OpenAI agent not configured")
+        }
+    }
+
+    pub fn build(&self) -> Result<Arc<BuildAgent>> {
+        if let Some(build) = &self.build {
+            Ok(build.clone())
+        } else {
+            bail!("Build agent not configured")
         }
     }
 }

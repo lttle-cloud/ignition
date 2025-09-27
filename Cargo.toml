@@ -122,11 +122,13 @@ git2 = { version = "0.20.2", default-features = false }
 dotenvy = "0.15.7"
 caps = { version = "0.5.5", optional = true }
 blake3 = "1.8.2"
-nixpacks = { git = "https://github.com/lttle-cloud/nixpacks", rev = "26919cada94dba845ae1afd3ccb63e068ba8d194" }
+nixpacks = { git = "https://github.com/lttle-cloud/nixpacks", rev = "5aa1442eea54d8353fdae11d9a04fc85fa876bfb" }
 async-openai = { version = "0.29.3", features = [
     "native-tls",
 ], default-features = false }
 lovable-client = { path = "../lovable-client", optional = true }
+rcgen = { version = "0.14.5", features = ["pem", "x509-parser", "crypto"] }
+time = "0.3.44"
 
 [features]
 default = []
