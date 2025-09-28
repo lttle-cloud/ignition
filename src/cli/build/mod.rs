@@ -170,7 +170,7 @@ async fn remote_build_and_push_image(
     tokio::fs::write(&client_cert, builder.client_cert_pem).await?;
     tokio::fs::write(&client_key, builder.client_key_pem).await?;
 
-    let Some(registry) = auth.get_registry() else {
+    let Some(_registry) = auth.get_registry() else {
         bail!("No registry found in auth");
     };
 
