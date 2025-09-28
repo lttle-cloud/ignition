@@ -174,8 +174,6 @@ async fn remote_build_and_push_image(
         bail!("No registry found in auth");
     };
 
-    let cache_ref = format!("{}/{}/lttle-build-cache:bk", registry, tenant);
-
     let mut buildkit_args = vec![
         "--addr".to_string(),
         format!("tcp://{}:1234", builder.host),
@@ -206,14 +204,7 @@ async fn remote_build_and_push_image(
         buildkit_args.push(format!("build-arg:{}={}", key, value));
     }
 
-    if !disable_build_cache {
-        buildkit_args.extend(vec![
-            "--import-cache".to_string(),
-            format!("type=registry,ref={}", cache_ref),
-            "--export-cache".to_string(),
-            format!("type=registry,ref={},mode=max", cache_ref),
-        ]);
-    } else {
+    if disable_build_cache {
         buildkit_args.extend(vec!["--no-cache".to_string()]);
     }
 
