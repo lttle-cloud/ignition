@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -20,7 +20,7 @@ const LOVABLE_VSCODE_SETTINGS: &str =
 const LOVABLE_VSCODE_EXTENSIONS: &str =
     include_str!("../../../templates/lovable/vscode-extensions.json");
 const LOVABLE_DOCKERIGNORE: &str = include_str!("../../../templates/lovable/dockerignore");
-const LOVABLE_FAVICON: &str = include_str!("../../../templates/lovable/favicon.ico");
+const LOVABLE_FAVICON: &[u8] = include_bytes!("../../../templates/lovable/favicon.ico");
 const LOVABLE_README_SIMPLE: &str = include_str!("../../../templates/lovable/readme-simple.md");
 const LOVABLE_README_SUPABASE: &str = include_str!("../../../templates/lovable/readme-supabase.md");
 
@@ -167,10 +167,7 @@ pub async fn run_import_lovable(_config: &Config, args: ImportLovableArgs) -> Re
                 .replace("${{ supabase_project_id }}", &supabase_project_id),
         );
         let package_json = serde_json::to_string_pretty(&package_json)?;
-        std::fs::write(
-            package_json_path,
-            serde_json::to_string_pretty(&package_json)?,
-        )?;
+        std::fs::write(package_json_path, package_json)?;
         eprintln!("  → package.json");
     }
 

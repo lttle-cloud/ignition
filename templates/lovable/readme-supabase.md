@@ -21,7 +21,7 @@ If you're not sure what commands to use, what a command does or what arguments a
 
 ## Using Supabase
 
-The Supabase client is already installed and configured to use the (this project)[https://supabase.com/dashboard/project/${{ supabase_project_id }}] (the same one used in Lovable).
+The Supabase client is already installed and configured to use the [this project](https://supabase.com/dashboard/project/${{ supabase_project_id }}) (the same one used in Lovable).
 
 Make sure you are authenticated by running `npm exec supabase login`.
 
