@@ -1,7 +1,8 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::{Result, bail};
 use clap::Args;
+use serde_json::Map;
 
 use crate::{
     config::Config,
@@ -13,12 +14,18 @@ pub struct ImportLovableArgs {
     dir: Option<PathBuf>,
 }
 
-const LOVABLE_LTTLE_YAML: &str = include_str!("../../../templates/lovable-lttle.yaml");
+const LOVABLE_LTTLE_YAML: &str = include_str!("../../../templates/lovable/lttle.yaml");
 const LOVABLE_VSCODE_SETTINGS: &str =
-    include_str!("../../../templates/lovable-vscode-settings.json");
+    include_str!("../../../templates/lovable/vscode-settings.json");
 const LOVABLE_VSCODE_EXTENSIONS: &str =
-    include_str!("../../../templates/lovable-vscode-extensions.json");
-const LOVABLE_DOCKERIGNORE: &str = include_str!("../../../templates/lovable-dockerignore");
+    include_str!("../../../templates/lovable/vscode-extensions.json");
+const LOVABLE_DOCKERIGNORE: &str = include_str!("../../../templates/lovable/dockerignore");
+const LOVABLE_FAVICON: &str = include_str!("../../../templates/lovable/favicon.ico");
+const LOVABLE_README_SIMPLE: &str = include_str!("../../../templates/lovable/readme-simple.md");
+const LOVABLE_README_SUPABASE: &str = include_str!("../../../templates/lovable/readme-supabase.md");
+
+const SUPABASE_CLI_VERSION: &str = "^2.47.2";
+const SUPABASE_UPDATE_SCRIPT: &str = "supabase gen types typescript --project-id ${{ supabase_project_id }} --schema public > src/integrations/supabase/types.ts";
 
 pub async fn run_import_lovable(_config: &Config, args: ImportLovableArgs) -> Result<()> {
     let current_dir = std::env::current_dir().unwrap();
@@ -108,6 +115,67 @@ pub async fn run_import_lovable(_config: &Config, args: ImportLovableArgs) -> Re
         std::fs::write(dockerignore_path, LOVABLE_DOCKERIGNORE)?;
         eprintln!("  → .dockerignore");
     }
+
+    std::fs::write(path.join("public/favicon.ico"), LOVABLE_FAVICON)?;
+    eprintln!("  → public/favicon.ico");
+
+    let supabase_config = lovable_client::client::get_supabase_config(
+        &selected_project.auth_token,
+        &selected_project.project_id,
+    )
+    .await
+    .ok();
+
+    let supabase_project_id = supabase_config.and_then(|config| {
+        if config.supabase_project_id != "" {
+            Some(config.supabase_project_id)
+        } else {
+            None
+        }
+    });
+
+    let is_supabase = supabase_project_id.is_some();
+    let readme_path = path.join("README.md");
+    let content = if is_supabase {
+        LOVABLE_README_SUPABASE.to_string()
+    } else {
+        LOVABLE_README_SIMPLE.to_string()
+    };
+    let content = content.replace(
+        "${{ lovable_project_name }}",
+        &selected_project.project_name,
+    );
+    let mut content = content.replace("${{ lovable_project_id }}", &selected_project.project_id);
+    if let Some(supabase_project_id) = supabase_project_id {
+        content = content.replace("${{ supabase_project_id }}", &supabase_project_id);
+
+        let package_json_path = path.join("package.json");
+        let package_json = std::fs::read_to_string(&package_json_path)?;
+        let mut package_json = serde_json::from_str::<serde_json::Value>(&package_json)?;
+        if package_json["devDependencies"].is_null() {
+            package_json["devDependencies"] = serde_json::Value::Object(Map::new());
+        }
+        package_json["devDependencies"]["supabase"] =
+            serde_json::Value::String(SUPABASE_CLI_VERSION.to_string());
+
+        if package_json["scripts"].is_null() {
+            package_json["scripts"] = serde_json::Value::Object(Map::new());
+        }
+        package_json["scripts"]["update-supabase"] = serde_json::Value::String(
+            SUPABASE_UPDATE_SCRIPT
+                .to_string()
+                .replace("${{ supabase_project_id }}", &supabase_project_id),
+        );
+        let package_json = serde_json::to_string_pretty(&package_json)?;
+        std::fs::write(
+            package_json_path,
+            serde_json::to_string_pretty(&package_json)?,
+        )?;
+        eprintln!("  → package.json");
+    }
+
+    std::fs::write(readme_path, content)?;
+    eprintln!("  → README.md");
 
     message_info(format!(
         "Imported project {} successfully",
