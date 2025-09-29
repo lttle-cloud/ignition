@@ -214,9 +214,13 @@ impl AuthHandler {
             if typ != "repository" {
                 bail!("unsupported scope type '{typ}' in '{raw}'");
             }
-            if !name.starts_with(&tenant_prefix) {
+
+            let is_cache_image = name.contains("/lttle-build-cache");
+            let is_other_tenant_image = !name.starts_with(&tenant_prefix);
+            if is_other_tenant_image && !is_cache_image {
                 bail!("scope '{}' is outside tenant '{}'", raw, claims.tenant);
             }
+
             let mut uniq = BTreeSet::new();
             for a in actions_csv.split(',') {
                 match a.trim().to_lowercase().as_str() {
@@ -230,6 +234,17 @@ impl AuthHandler {
             if actions.is_empty() {
                 bail!("no valid actions in scope '{raw}'");
             }
+
+            // TODO(sec): restrict this only for builder robot account.
+            // TEMP: allow pull for cache images cross-tenant.
+            if is_other_tenant_image && is_cache_image {
+                for action in actions.iter() {
+                    if action != "pull" {
+                        bail!("unsupported action '{action}' in '{raw}'");
+                    }
+                }
+            }
+
             access.push(AccessEntry {
                 typ: "repository".to_string(),
                 name: name.to_string(),
