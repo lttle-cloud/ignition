@@ -197,7 +197,7 @@ pub async fn run_import_lovable(_config: &Config, args: ImportLovableArgs) -> Re
     );
     eprintln!("  → Run `lttle app ls -a` to list all your apps");
     eprintln!("  → Check out the docs at https://docs.lttle.cloud");
-    message_info("🎉 Vibe hard!");
+    eprintln!("🎉 Vibe hard!");
 
     Ok(())
 }
