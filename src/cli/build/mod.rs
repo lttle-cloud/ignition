@@ -499,6 +499,7 @@ async fn build_image_nixpacks(
                     name: name.clone(),
                     cell_style: SummaryCellStyle::Default,
                     value: content.clone(),
+                    clip_value: true,
                 })
                 .collect(),
         };
@@ -506,6 +507,7 @@ async fn build_image_nixpacks(
             name: "start".to_string(),
             cell_style: SummaryCellStyle::Default,
             value: vec![phase_info_desc.start],
+            clip_value: true,
         });
         build_summary.print();
     }

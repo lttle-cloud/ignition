@@ -24,6 +24,7 @@ impl SummaryCellStyle {
 pub struct SummaryRow {
     pub name: String,
     pub cell_style: SummaryCellStyle,
+    pub clip_value: bool,
     pub value: Vec<String>,
 }
 
@@ -53,7 +54,7 @@ impl Summary {
             // print each value, start a new line after each and pad to the right
             for (i, value) in row.value.iter().enumerate() {
                 let value_style = row.cell_style.get_style();
-                let value = if value.chars().count() > values_max_width {
+                let value = if value.chars().count() > values_max_width && row.clip_value {
                     let truncated: String = value.chars().take(values_max_width - 3).collect();
                     format!("{}...", value_style.paint(truncated))
                 } else {

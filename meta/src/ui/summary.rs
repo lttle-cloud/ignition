@@ -53,6 +53,7 @@ pub fn summary_macro(_args: TokenStream, input: TokenStream) -> TokenStream {
             .cell_style
             .unwrap_or(crate::types::SummaryCellStyle::Default);
         let cell_style = syn::Ident::new(&format!("{:?}", cell_style), field.span());
+        let clip_value = field_args.clip_value;
 
         let value_set = if is_vec {
             quote! {
@@ -73,6 +74,7 @@ pub fn summary_macro(_args: TokenStream, input: TokenStream) -> TokenStream {
                 name: #name.to_string(),
                 cell_style: crate::ui::summary::SummaryCellStyle::#cell_style,
                 value: #value_set,
+                clip_value: #clip_value,
             }
         });
 
