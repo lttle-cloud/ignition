@@ -88,7 +88,7 @@ pub struct AppSummary {
     #[field(name = "dependencies")]
     depends_on: Vec<String>,
 
-    #[field(name = "services")]
+    #[field(name = "services", clip_value = false)]
     services: Vec<String>,
 }
 

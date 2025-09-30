@@ -170,12 +170,6 @@ async fn remote_build_and_push_image(
     tokio::fs::write(&client_cert, builder.client_cert_pem).await?;
     tokio::fs::write(&client_key, builder.client_key_pem).await?;
 
-    let Some(registry) = auth.get_registry() else {
-        bail!("No registry found in auth");
-    };
-
-    let cache_ref = format!("{}/{}/lttle-build-cache:bk", registry, tenant);
-
     let mut buildkit_args = vec![
         "--addr".to_string(),
         format!("tcp://{}:1234", builder.host),
@@ -207,19 +201,28 @@ async fn remote_build_and_push_image(
     }
 
     if !disable_build_cache {
-        buildkit_args.extend(vec![
-            "--import-cache".to_string(),
-            format!("type=registry,ref={}", cache_ref),
-            "--export-cache".to_string(),
-            format!("type=registry,ref={},mode=max", cache_ref),
-        ]);
+        // TODO: enable this when we need multi-builder support
+        // let Some(registry) = auth.get_registry() else {
+        //     bail!("No registry found in auth");
+        // };
+        // let cache_ref = format!("{}/{}/lttle-build-cache:bk", registry, tenant);
+
+        // buildkit_args.extend(vec![
+        //     "--import-cache".to_string(),
+        //     format!("type=registry,ref={}", cache_ref),
+        //     "--export-cache".to_string(),
+        //     format!("type=registry,ref={},mode=min", cache_ref),
+        // ]);
     } else {
         buildkit_args.extend(vec!["--no-cache".to_string()]);
     }
 
     buildkit_args.extend(vec![
         "--output".to_string(),
-        format!("type=image,name={},push=true", remote_build_context.image),
+        format!(
+            "type=image,name={},push=true,compression=gzip,compression-level=1,oci-mediatypes=true",
+            remote_build_context.image
+        ),
     ]);
 
     if debug {
@@ -496,6 +499,7 @@ async fn build_image_nixpacks(
                     name: name.clone(),
                     cell_style: SummaryCellStyle::Default,
                     value: content.clone(),
+                    clip_value: true,
                 })
                 .collect(),
         };
@@ -503,6 +507,7 @@ async fn build_image_nixpacks(
             name: "start".to_string(),
             cell_style: SummaryCellStyle::Default,
             value: vec![phase_info_desc.start],
+            clip_value: true,
         });
         build_summary.print();
     }

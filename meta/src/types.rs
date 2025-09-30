@@ -273,6 +273,7 @@ impl Parse for TableFieldArgs {
 pub struct SummaryFieldArgs {
     pub name: String,
     pub cell_style: Option<SummaryCellStyle>,
+    pub clip_value: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -313,6 +314,7 @@ impl Parse for SummaryFieldArgs {
 
         let mut name = None;
         let mut cell_style = None;
+        let mut clip_value = None;
 
         for item in list {
             if item.path.is_ident("name") {
@@ -353,11 +355,29 @@ impl Parse for SummaryFieldArgs {
                 };
 
                 cell_style = Some(last_segment.ident.to_string().parse::<SummaryCellStyle>()?);
+            } else if item.path.is_ident("clip_value") {
+                let syn::Expr::Lit(syn::ExprLit {
+                    attrs: _,
+                    lit: syn::Lit::Bool(lit),
+                    ..
+                }) = item.value
+                else {
+                    return Err(syn::Error::new(
+                        item.value.span(),
+                        "clip_value must be a boolean",
+                    ));
+                };
+                clip_value = Some(lit.value());
             }
         }
 
         let name = name.ok_or(syn::Error::new(Span::call_site(), "name is required"))?;
+        let clip_value = clip_value.unwrap_or(true);
 
-        Ok(SummaryFieldArgs { name, cell_style })
+        Ok(SummaryFieldArgs {
+            name,
+            cell_style,
+            clip_value,
+        })
     }
 }
