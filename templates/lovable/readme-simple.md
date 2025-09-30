@@ -19,6 +19,10 @@ This project was imported from [Lovable](https://lovable.dev) using [lttle.cloud
 
 If you're not sure what commands to use, what a command does or what arguments a command accept, you can add the `--help` flag to the command to get more information.
 
+You can also find more useful information (ex: [how to setup custom domains to apps](https://docs.lttle.cloud/docs/resources/apps#using-custom-domains), [how to setup certificates](https://docs.lttle.cloud/docs/resources/certificates) [how building works](https://docs.lttle.cloud/docs/resources/certificates), etc.) in the [lttle.cloud documentation](https://docs.lttle.cloud).
+
+** Tip **: If you want to setup multiple resources in a single file, you can separate them with [`---`](https://docs.ansible.com/ansible/latest/reference_appendices/YAMLSyntax.html#yaml-basics).
+
 ## What technologies are used for this project?
 
 This project is built with:
