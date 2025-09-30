@@ -170,12 +170,6 @@ async fn remote_build_and_push_image(
     tokio::fs::write(&client_cert, builder.client_cert_pem).await?;
     tokio::fs::write(&client_key, builder.client_key_pem).await?;
 
-    let Some(registry) = auth.get_registry() else {
-        bail!("No registry found in auth");
-    };
-
-    let cache_ref = format!("{}/{}/lttle-build-cache:bk", registry, tenant);
-
     let mut buildkit_args = vec![
         "--addr".to_string(),
         format!("tcp://{}:1234", builder.host),
@@ -208,6 +202,11 @@ async fn remote_build_and_push_image(
 
     if !disable_build_cache {
         // TODO: enable this when we need multi-builder support
+        // let Some(registry) = auth.get_registry() else {
+        //     bail!("No registry found in auth");
+        // };
+        // let cache_ref = format!("{}/{}/lttle-build-cache:bk", registry, tenant);
+
         // buildkit_args.extend(vec![
         //     "--import-cache".to_string(),
         //     format!("type=registry,ref={}", cache_ref),
