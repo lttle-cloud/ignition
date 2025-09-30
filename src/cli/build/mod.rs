@@ -207,19 +207,23 @@ async fn remote_build_and_push_image(
     }
 
     if !disable_build_cache {
-        buildkit_args.extend(vec![
-            "--import-cache".to_string(),
-            format!("type=registry,ref={}", cache_ref),
-            "--export-cache".to_string(),
-            format!("type=registry,ref={},mode=max", cache_ref),
-        ]);
+        // TODO: enable this when we need multi-builder support
+        // buildkit_args.extend(vec![
+        //     "--import-cache".to_string(),
+        //     format!("type=registry,ref={}", cache_ref),
+        //     "--export-cache".to_string(),
+        //     format!("type=registry,ref={},mode=min", cache_ref),
+        // ]);
     } else {
         buildkit_args.extend(vec!["--no-cache".to_string()]);
     }
 
     buildkit_args.extend(vec![
         "--output".to_string(),
-        format!("type=image,name={},push=true", remote_build_context.image),
+        format!(
+            "type=image,name={},push=true,compression=gzip,compression-level=1,oci-mediatypes=true",
+            remote_build_context.image
+        ),
     ]);
 
     if debug {
