@@ -388,7 +388,7 @@ pub struct Machine {
     pub config: MachineConfig,
 
     // State machine communication
-    command_tx: mpsc::Sender<StateCommand>,
+    command_tx: mpsc::UnboundedSender<StateCommand>,
     state_rx: broadcast::Receiver<MachineState>,
 
     // VM resources (immutable after creation)
@@ -538,8 +538,8 @@ impl Machine {
         }
 
         // Create state machine communication channels
-        let (command_tx, command_rx) = mpsc::channel(32);
-        let (state_tx, state_rx) = broadcast::channel(32);
+        let (command_tx, command_rx) = mpsc::unbounded_channel();
+        let (state_tx, state_rx) = broadcast::channel(1024);
 
         // Create timing tracking
         let first_boot_duration = Arc::new(tokio::sync::RwLock::new(None));
@@ -617,7 +617,7 @@ impl Machine {
                             VcpuEventType::Suspended => StateCommand::SystemVcpuSuspended,
                             VcpuEventType::Restarted => StateCommand::SystemVcpuRestarted,
                         };
-                        let _ = vcpu_command_tx.send(command).await;
+                        let _ = vcpu_command_tx.send(command);
                     }
                     Err(async_broadcast::RecvError::Closed) => {
                         break;
@@ -643,7 +643,7 @@ impl Machine {
                     DeviceEvent::FlashUnlock => StateCommand::SystemFlashUnlock,
                     DeviceEvent::ExitCode(code) => StateCommand::SystemExitCode { code },
                 };
-                let _ = device_command_tx.send(command).await;
+                let _ = device_command_tx.send(command);
             }
         });
     }
@@ -652,7 +652,6 @@ impl Machine {
     async fn send_command(&self, command: StateCommand) -> Result<()> {
         self.command_tx
             .send(command)
-            .await
             .map_err(|_| anyhow!("State machine died"))
     }
 

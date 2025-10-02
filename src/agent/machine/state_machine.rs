@@ -58,8 +58,8 @@ pub struct MachineStateMachine {
     shared_state: Arc<tokio::sync::RwLock<MachineState>>,
 
     // Communication
-    command_rx: mpsc::Receiver<StateCommand>,
-    command_tx: mpsc::Sender<StateCommand>,
+    command_rx: mpsc::UnboundedReceiver<StateCommand>,
+    command_tx: mpsc::UnboundedSender<StateCommand>,
     state_tx: broadcast::Sender<MachineState>,
 
     // Resources for executing transitions
@@ -190,12 +190,16 @@ impl FlashLockTracker {
         }
     }
 
-    pub fn start_timeout(&mut self, command_tx: mpsc::Sender<StateCommand>, timeout: Duration) {
+    pub fn start_timeout(
+        &mut self,
+        command_tx: mpsc::UnboundedSender<StateCommand>,
+        timeout: Duration,
+    ) {
         self.cancel_timeout();
 
         let task = tokio::spawn(async move {
             sleep(timeout).await;
-            let _ = command_tx.send(StateCommand::SystemSuspendTimeout).await;
+            let _ = command_tx.send(StateCommand::SystemSuspendTimeout);
         });
 
         self.timeout_task = Some(task);
@@ -204,8 +208,8 @@ impl FlashLockTracker {
 
 impl MachineStateMachine {
     pub fn new(
-        command_rx: mpsc::Receiver<StateCommand>,
-        command_tx: mpsc::Sender<StateCommand>,
+        command_rx: mpsc::UnboundedReceiver<StateCommand>,
+        command_tx: mpsc::UnboundedSender<StateCommand>,
         state_tx: broadcast::Sender<MachineState>,
         shared_state: Arc<tokio::sync::RwLock<MachineState>>,
         config: MachineConfig,
@@ -730,7 +734,7 @@ impl MachineStateMachine {
     }
 
     // Helper method to get command sender
-    async fn get_command_sender(&self) -> Result<mpsc::Sender<StateCommand>> {
+    async fn get_command_sender(&self) -> Result<mpsc::UnboundedSender<StateCommand>> {
         Ok(self.command_tx.clone())
     }
 
