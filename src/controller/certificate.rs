@@ -648,6 +648,21 @@ impl AdmissionCheckBeforeSet for Certificate {
     ) -> Result<()> {
         let resource = self.latest();
 
+        if let CertificateIssuer::Auto {
+            provider, email, ..
+        } = &resource.issuer
+        {
+            if let Err(_e) = agent
+                .certificate()
+                .resolve_email(provider.as_str(), email.as_deref())
+            {
+                bail!(
+                    "Email is required for auto certificate issuer '{}'.",
+                    provider
+                );
+            }
+        }
+
         let domains = resource.domains.clone();
 
         if let Some(before) = before {
