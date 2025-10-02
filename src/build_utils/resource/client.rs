@@ -25,7 +25,9 @@ pub async fn build_rust_api_client(api_schema: &ApiSchema) -> Result<()> {
     src.push_str("    use url::Url;\n");
     src.push_str("    use tokio_tungstenite::tungstenite::client::IntoClientRequest;\n");
     src.push_str("    use tungstenite::http::HeaderValue;\n\n");
-    src.push_str("    use crate::resources::metadata::Namespace;\n\n");
+    src.push_str(
+        "    use crate::resources::{metadata::Namespace, core::CLIENT_COMPAT_VERSION};\n\n",
+    );
 
     // Generate config struct
     src.push_str("    #[derive(Clone)]\n");
@@ -250,6 +252,10 @@ fn generate_method(src: &mut String, service: &ApiService, method: &ApiMethod) {
         "            let mut request = client.{}(url);\n",
         verb
     ));
+
+    src.push_str(
+        "            request = request.header(\"x-ignition-compat\", CLIENT_COMPAT_VERSION);\n",
+    );
 
     // Add namespace header if namespaced
     if generate_namespace_header {

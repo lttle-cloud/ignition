@@ -7,6 +7,8 @@ use serde_json::{Map, Value};
 
 use crate::machinery::api_schema::{ApiMethod, ApiPathSegment, ApiService, ApiVerb};
 
+pub const CLIENT_COMPAT_VERSION: &str = "1";
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Me {
     pub tenant: String,

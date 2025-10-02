@@ -7,7 +7,14 @@ pub mod resource_service;
 use std::sync::Arc;
 
 use anyhow::Result;
-use axum::Router;
+use axum::{
+    Router,
+    body::Body,
+    extract::Request,
+    middleware::{self, Next},
+    response::Response,
+};
+use hyper::StatusCode;
 use tokio::net::TcpListener;
 use tracing::info;
 
@@ -19,6 +26,7 @@ use crate::{
     controller::scheduler::Scheduler,
     machinery::store::Store,
     repository::Repository,
+    resources::core::CLIENT_COMPAT_VERSION,
 };
 
 pub struct ApiState {
@@ -73,6 +81,7 @@ impl ApiServer {
             app = app.nest(&router.base_path, router.router);
         }
 
+        let app = app.route_layer(middleware::from_fn(check_client_compat));
         let app = app.with_state(self.state);
 
         let addr = format!("{}:{}", self.config.host, self.config.port);
@@ -84,4 +93,28 @@ impl ApiServer {
 
         Ok(())
     }
+}
+
+const SKIP_CLIENT_COMPAT_CHECK: &[&str] = &["/core/registry/auth"];
+
+async fn check_client_compat(request: Request, next: Next) -> Response {
+    let compat_version = request
+        .headers()
+        .get("x-ignition-compat")
+        .and_then(|v| v.to_str().map(|s| s.to_string()).ok())
+        .unwrap_or("".to_string());
+
+    let is_skip_client_compat_check = SKIP_CLIENT_COMPAT_CHECK.contains(&request.uri().path());
+
+    if compat_version != CLIENT_COMPAT_VERSION && !is_skip_client_compat_check {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from(
+                "incompatible client version.\nHere's how you can install the latest version: https://github.com/lttle-cloud/ignition?tab=readme-ov-file#installation",
+            ))
+            .unwrap();
+    }
+
+    let response = next.run(request).await;
+    response
 }
