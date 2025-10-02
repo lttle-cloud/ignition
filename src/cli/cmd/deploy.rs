@@ -22,7 +22,7 @@ use serde_yaml::Value;
 use tokio::fs::{read_dir, read_to_string};
 
 use crate::{
-    build::{BuildTarget, build_and_push_image, docker_auth::DockerAuthConfig},
+    build::{BuildTarget, build_and_push_image},
     client::get_api_client,
     config::Config,
     expr::{
@@ -231,13 +231,6 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
 
     let me = api_client.core().me().await?;
 
-    let registry_robot = api_client.core().get_registry_robot().await?;
-    let auth = DockerAuthConfig::internal(
-        &registry_robot.registry,
-        &registry_robot.user,
-        &registry_robot.pass,
-    );
-
     for (path, resource) in resources.iter_mut() {
         let (resource_name, mut_image, mut_build) = match resource {
             Resources::Machine(machine) => (
@@ -277,7 +270,6 @@ pub async fn run_deploy(config: &Config, args: DeployArgs) -> Result<()> {
             dir,
             &me.tenant,
             build,
-            auth.clone(),
             args.debug_build,
             args.disable_build_cache,
             force_build_target,

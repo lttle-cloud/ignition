@@ -62,7 +62,6 @@ pub async fn build_and_push_image(
     dir: impl AsRef<Path>,
     tenant: &str,
     build: MachineBuild,
-    auth: DockerAuthConfig,
     debug: bool,
     disable_build_cache: bool,
     force_build_target: Option<BuildTarget>,
@@ -72,6 +71,16 @@ pub async fn build_and_push_image(
     } else {
         BuildTarget::preferred().await
     };
+
+    let registry_robot = match build_target {
+        BuildTarget::Local => api_client.core().get_registry_robot().await?,
+        BuildTarget::Remote => api_client.core().get_registry_builder_robot().await?,
+    };
+    let auth = DockerAuthConfig::internal(
+        &registry_robot.registry,
+        &registry_robot.user,
+        &registry_robot.pass,
+    );
 
     match build_target {
         BuildTarget::Local => {

@@ -135,6 +135,32 @@ impl ResourceService for CoreService {
                 .into_response()
         }
 
+        async fn registry_builder_robot(
+            state: State<Arc<ApiState>>,
+            ctx: ServiceRequestContext,
+        ) -> impl IntoResponse {
+            let claims = RegistryRobotHmacClaims::for_builder_robot(&ctx.tenant);
+            let Ok(pass) = state.auth_handler.generate_registry_hmac(&claims) else {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to generate registry robot hmac",
+                )
+                    .into_response();
+            };
+
+            let user = claims.to_string();
+
+            (
+                StatusCode::OK,
+                Json(RegistryRobot {
+                    user,
+                    pass,
+                    registry: state.auth_handler.registry_service.clone(),
+                }),
+            )
+                .into_response()
+        }
+
         async fn registry_auth(
             state: State<Arc<ApiState>>,
             headers: HeaderMap,
@@ -698,6 +724,7 @@ impl ResourceService for CoreService {
         let mut router = Router::new();
         router = router.route("/me", get(me));
         router = router.route("/registry/robot", get(registry_robot));
+        router = router.route("/registry/builder-robot", get(registry_builder_robot));
         router = router.route("/registry/auth", get(registry_auth));
         router = router.route("/namespaces", get(list_namespaces));
         router = router.route("/namespaces/delete", put(delete_namespace));

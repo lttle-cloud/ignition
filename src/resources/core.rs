@@ -185,6 +185,30 @@ pub fn core_api_service() -> ApiService {
                 ),
             },
             ApiMethod {
+                name: "get_registry_builder_robot".to_string(),
+                path: vec![
+                    ApiPathSegment::Static {
+                        value: "core".to_string(),
+                    },
+                    ApiPathSegment::Static {
+                        value: "registry".to_string(),
+                    },
+                    ApiPathSegment::Static {
+                        value: "builder-robot".to_string(),
+                    },
+                ],
+                namespaced: false,
+                verb: ApiVerb::Get,
+                request: None,
+                response: Some(
+                    crate::machinery::api_schema::ApiResponse::SchemaDefinition {
+                        list: false,
+                        optional: false,
+                        name: "RegistryRobot".to_string(),
+                    },
+                ),
+            },
+            ApiMethod {
                 name: "list_namespaces".to_string(),
                 path: vec![
                     ApiPathSegment::Static {

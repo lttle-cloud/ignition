@@ -11,6 +11,8 @@ use blake3::KEY_LEN;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
+const BUILDER_ROBOT_SUB: &str = "builder-robot";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthTokenClaims {
     pub tenant: String,
@@ -50,6 +52,13 @@ impl RegistryRobotHmacClaims {
         Self {
             tenant: tenant.as_ref().to_string(),
             sub: sub.as_ref().to_string(),
+        }
+    }
+
+    pub fn for_builder_robot(tenant: impl AsRef<str>) -> Self {
+        Self {
+            tenant: tenant.as_ref().to_string(),
+            sub: BUILDER_ROBOT_SUB.to_string(),
         }
     }
 }
@@ -200,7 +209,7 @@ impl AuthHandler {
         // Parse scopes & enforce tenant boundary
         let tenant_prefix = format!("{}/", claims.tenant);
         let mut access: Vec<AccessEntry> = Vec::new();
-        for raw in scopes {
+        'scope: for raw in scopes {
             let mut parts = raw.splitn(3, ':');
             let typ = parts
                 .next()
@@ -215,9 +224,9 @@ impl AuthHandler {
                 bail!("unsupported scope type '{typ}' in '{raw}'");
             }
 
-            let is_cache_image = name.contains("/lttle-build-cache");
             let is_other_tenant_image = !name.starts_with(&tenant_prefix);
-            if is_other_tenant_image && !is_cache_image {
+            let is_builder_robot = claims.sub == BUILDER_ROBOT_SUB;
+            if is_other_tenant_image && !is_builder_robot {
                 bail!("scope '{}' is outside tenant '{}'", raw, claims.tenant);
             }
 
@@ -235,12 +244,10 @@ impl AuthHandler {
                 bail!("no valid actions in scope '{raw}'");
             }
 
-            // TODO(sec): restrict this only for builder robot account.
-            // TEMP: allow pull for cache images cross-tenant.
-            if is_other_tenant_image && is_cache_image {
+            if is_other_tenant_image && is_builder_robot {
                 for action in actions.iter() {
                     if action != "pull" {
-                        bail!("unsupported action '{action}' in '{raw}'");
+                        continue 'scope;
                     }
                 }
             }
