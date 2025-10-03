@@ -399,6 +399,7 @@ fn generate_websocket_method(src: &mut String, service: &ApiService, method: &Ap
     src.push_str("            let mut request = ws_url.into_client_request()?;\n");
     src.push_str("            let headers = request.headers_mut();\n");
     src.push_str("            headers.insert(\"x-ignition-token\", HeaderValue::from_str(&self.config.token)?);\n");
+    src.push_str("            headers.insert(\"x-ignition-compat\", HeaderValue::from_str(CLIENT_COMPAT_VERSION)?);\n");
 
     // Add namespace header if namespaced
     let namespaced = service.namespaced || method.namespaced;
