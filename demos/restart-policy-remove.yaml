@@ -1,0 +1,10 @@
+machine:
+  name: test
+  namespace: demos
+  image: alpine:latest
+  # delete this resource after cmd exits
+  restart-policy: remove
+  command: ["echo", "hi mom!"]
+  resources:
+    cpu: 1
+    memory: 128

@@ -832,7 +832,8 @@
       "enum": [
         "never",
         "always",
-        "on-failure"
+        "on-failure",
+        "remove"
       ],
       "type": "string"
     },
