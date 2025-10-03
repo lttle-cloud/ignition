@@ -839,10 +839,19 @@ impl Controller for MachineController {
                     {
                         resources::machine::MachineRestartPolicy::Always => true,
                         resources::machine::MachineRestartPolicy::OnFailure => {
-                            // status.last_exit_code.is_error()
-                            true
+                            // last status code exists and is non zero
+                            !(matches!(status.last_exit_code, Some(0)))
                         }
                         resources::machine::MachineRestartPolicy::Never => false,
+                        resources::machine::MachineRestartPolicy::Remove => {
+                            let metadata = key.metadata();
+                            let namespace = Namespace::from_value_or_default(metadata.namespace);
+                            if let Err(e) = ctx.repository.machine(ctx.tenant.clone()).delete(namespace, metadata.name).await {
+                                warn!("restart-policy remove failed to delete machine {}", e);
+                            };
+
+                            false
+                        }
                     };
 
                     if !should_restart {

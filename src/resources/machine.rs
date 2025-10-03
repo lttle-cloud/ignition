@@ -59,6 +59,8 @@ mod machine {
         Always,
         #[serde(rename = "on-failure")]
         OnFailure,
+        #[serde(rename = "remove")]
+        Remove,
     }
 
     #[schema]
@@ -180,6 +182,7 @@ impl ToString for MachineRestartPolicy {
             MachineRestartPolicy::Never => "never".to_string(),
             MachineRestartPolicy::Always => "always".to_string(),
             MachineRestartPolicy::OnFailure => "on-failure".to_string(),
+            MachineRestartPolicy::Remove => "remove".to_string(),
         }
     }
 }
