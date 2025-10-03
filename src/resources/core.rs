@@ -7,6 +7,7 @@ use serde_json::{Map, Value};
 
 use crate::machinery::api_schema::{ApiMethod, ApiPathSegment, ApiService, ApiVerb};
 
+// Increment this when you want to force clients to update their version
 pub const CLIENT_COMPAT_VERSION: &str = "1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
