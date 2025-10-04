@@ -5,6 +5,7 @@
       "tag": "core",
       "crate_path": "resources::core",
       "namespaced": false,
+      "versioned": false,
       "methods": [
         {
           "name": "me",
@@ -236,6 +237,7 @@
       "tag": "gadget",
       "crate_path": "resources::gadget",
       "namespaced": false,
+      "versioned": false,
       "methods": [
         {
           "name": "run_init",
@@ -273,6 +275,7 @@
       "tag": "app",
       "crate_path": "resources::app",
       "namespaced": true,
+      "versioned": true,
       "methods": [
         {
           "name": "get",
@@ -383,6 +386,7 @@
       "tag": "machine",
       "crate_path": "resources::machine",
       "namespaced": true,
+      "versioned": true,
       "methods": [
         {
           "name": "get",
@@ -493,6 +497,7 @@
       "tag": "service",
       "crate_path": "resources::service",
       "namespaced": true,
+      "versioned": true,
       "methods": [
         {
           "name": "get",
@@ -603,6 +608,7 @@
       "tag": "certificate",
       "crate_path": "resources::certificate",
       "namespaced": true,
+      "versioned": true,
       "methods": [
         {
           "name": "get",
@@ -713,6 +719,7 @@
       "tag": "volume",
       "crate_path": "resources::volume",
       "namespaced": true,
+      "versioned": true,
       "methods": [
         {
           "name": "get",
@@ -1092,7 +1099,8 @@
           ],
           "additionalProperties": {
             "type": "string"
-          }
+          },
+          "description": "!sdk:skip-formatting"
         },
         "depends-on": {
           "type": [
@@ -3547,7 +3555,8 @@
           ],
           "additionalProperties": {
             "type": "string"
-          }
+          },
+          "description": "!sdk:skip-formatting"
         },
         "depends-on": {
           "type": [
@@ -3709,6 +3718,27 @@
         "query_result"
       ],
       "title": "QueryResponse",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "RegistryRobot": {
+      "type": "object",
+      "properties": {
+        "registry": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
+        },
+        "pass": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "registry",
+        "user",
+        "pass"
+      ],
+      "title": "RegistryRobot",
       "$schema": "https://json-schema.org/draft/2020-12/schema"
     },
     "Service": {
