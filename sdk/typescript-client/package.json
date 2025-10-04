@@ -1,0 +1,32 @@
+{
+  "name": "@lttle/client",
+  "version": "0.1.0-rc12",
+  "description": "API client for lttle.cloud",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lttle-cloud/ignition"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ignition",
+    "microvm",
+    "orchestrator",
+    "lttle",
+    "api-client"
+  ],
+  "author": "lttle",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}
