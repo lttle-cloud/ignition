@@ -141,6 +141,7 @@ pub fn core_api_service() -> ApiService {
         tag: "core".to_string(),
         crate_path: "resources::core".to_string(),
         namespaced: false,
+        versioned: false,
         methods: vec![
             ApiMethod {
                 name: "me".to_string(),
@@ -366,6 +367,10 @@ pub fn add_core_service_schema_defs(
     defs.insert(
         "DeleteNamespaceResponse".to_string(),
         schema_for!(DeleteNamespaceResponse).into(),
+    );
+    defs.insert(
+        "RegistryRobot".to_string(),
+        schema_for!(RegistryRobot).into(),
     );
     defs.insert(
         "LogStreamItem".to_string(),

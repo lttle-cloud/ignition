@@ -67,6 +67,7 @@ pub struct ApiService {
     pub tag: String,
     pub crate_path: String,
     pub namespaced: bool,
+    pub versioned: bool,
     pub methods: Vec<ApiMethod>,
 }
 
