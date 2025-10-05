@@ -6,7 +6,6 @@ use crate::resources::{BuildableResource, ResourceBuildInfo, ResourceConfigurati
 use super::{
     cel::build_cel_functions, client::build_rust_api_client, index::build_resource_index,
     repository::build_repository, schema::build_schema, services::build_services,
-    typescript_client::build_typescript_api_client,
 };
 
 pub struct ResourcesBuilder {
@@ -51,7 +50,6 @@ impl ResourcesBuilder {
 
         let api_schema = build_schema(&self.resources, &mut self.schema_generator).await?;
         build_rust_api_client(&api_schema).await?;
-        build_typescript_api_client(&api_schema).await?;
 
         Ok(())
     }
