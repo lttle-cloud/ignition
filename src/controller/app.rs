@@ -294,7 +294,7 @@ fn generate_service_from_expose(
     let service_name = format!("{}-{}", app.name, expose_name);
 
     let service_target = match (expose.internal.clone(), expose.external.clone()) {
-        (Some(_internal), None) => ServiceTarget {
+        (Some(_) | None, None) => ServiceTarget {
             name: app.name.clone(),
             namespace: Some(resolved_namespace.clone()),
             port: expose.port,
@@ -323,6 +323,7 @@ fn generate_service_from_expose(
         (Some(internal), None) => ServiceBind::Internal {
             port: internal.port,
         },
+        (None, None) => ServiceBind::Internal { port: None },
         (None, Some(external)) => {
             let generated_domain = agent.dns().region_domain_for_service(
                 tenant,
