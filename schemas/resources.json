@@ -293,7 +293,6 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "!sdk:skip-formatting",
           "type": [
             "object",
             "null"
@@ -927,7 +926,6 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "!sdk:skip-formatting",
           "type": [
             "object",
             "null"

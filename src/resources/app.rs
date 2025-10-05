@@ -23,7 +23,6 @@ mod app {
         mode: Option<MachineMode>,
         volumes: Option<Vec<MachineVolumeBinding>>,
         command: Option<Vec<String>>,
-        /// !sdk:skip-formatting
         environment: Option<BTreeMap<String, String>>,
         #[serde(rename = "depends-on")]
         depends_on: Option<Vec<MachineDependency>>,

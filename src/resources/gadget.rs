@@ -298,7 +298,6 @@ pub fn gadget_api_service() -> ApiService {
         tag: "gadget".to_string(),
         crate_path: "resources::gadget".to_string(),
         namespaced: false,
-        versioned: false,
         methods: vec![ApiMethod {
             name: "run_init".to_string(),
             path: vec![

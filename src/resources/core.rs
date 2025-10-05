@@ -141,7 +141,6 @@ pub fn core_api_service() -> ApiService {
         tag: "core".to_string(),
         crate_path: "resources::core".to_string(),
         namespaced: false,
-        versioned: false,
         methods: vec![
             ApiMethod {
                 name: "me".to_string(),

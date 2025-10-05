@@ -122,7 +122,6 @@ async fn build_api_schema(
             name: resource.name.to_string(),
             tag: resource.tag.to_string(),
             namespaced: resource.namespaced,
-            versioned: true,
             methods: Vec::new(),
         };
 
