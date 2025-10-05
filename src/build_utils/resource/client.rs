@@ -7,7 +7,7 @@ use crate::{
     },
 };
 
-pub async fn build_rust_api_client(api_schema: &ApiSchema) -> Result<()> {
+pub async fn build_internal_rust_api_client(api_schema: &ApiSchema) -> Result<()> {
     let client_out_path = cargo::build_out_dir_path("api_client.rs");
 
     let mut src = String::new();

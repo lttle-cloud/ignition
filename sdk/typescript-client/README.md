@@ -13,21 +13,21 @@ npm install @lttle/client
 ## Usage
 
 ```typescript
-import { ApiClient } from '@lttle/client';
+import { Client } from '@lttle/client';
 
-const client = new ApiClient({
+const client = new Client({
   baseUrl: 'https://eu.lttle.cloud',
-  token: 'your-api-token',
+  apiToken: 'your-api-token',
 });
 
 // List applications
-const apps = await client.app().list(null);
+const apps = await client.app.list();
 
 // Get a specific machine
-const [machine, status] = await client.machine().get('default', 'my-machine');
+const [machine, status] = await client.machine.get('default', 'my-machine');
 
 // Deploy a new app
-await client.app().apply({
+await client.app.apply({
   'app.v1': {
     name: 'my-app',
     image: 'nginx:alpine',
@@ -41,10 +41,11 @@ await client.app().apply({
 
 ## Configuration
 
-### ApiClientConfig
+### ClientConfig
 
 - `baseUrl`: The base URL of your Ignition server
 - `token`: Your API authentication token
+- `options` (optional): Additional options passed to the fetch implementation
 - `fetch` (optional): Custom fetch implementation (defaults to global `fetch`)
 - `WebSocket` (optional): Custom WebSocket implementation (defaults to global `WebSocket`)
 
@@ -53,9 +54,9 @@ await client.app().apply({
 ```typescript
 import fetch from 'node-fetch';
 
-const client = new ApiClient({
+const client = new Client({
   baseUrl: 'https://eu.lttle.cloud',
-  token: 'your-api-token',
+  apiToken: 'your-api-token',
   fetch,
 });
 ```
@@ -71,7 +72,7 @@ import WebSocket from 'ws';
 
 const client = new ApiClient({
   baseUrl: 'https://eu.lttle.cloud',
-  token: 'your-api-token',
+  apiToken: 'your-api-token',
   WebSocket,
 });
 ```

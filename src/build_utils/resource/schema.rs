@@ -90,10 +90,10 @@ pub async fn build_schema(
     schema_generator: &mut SchemaGenerator,
 ) -> Result<ApiSchema> {
     build_resources_json_schema(resources, schema_generator).await?;
-    build_api_schema(resources, schema_generator).await
+    build_internal_api_schema(resources, schema_generator).await
 }
 
-async fn build_api_schema(
+async fn build_internal_api_schema(
     resources: &[ResourceBuildInfo],
     schema_generator: &mut SchemaGenerator,
 ) -> Result<ApiSchema> {
