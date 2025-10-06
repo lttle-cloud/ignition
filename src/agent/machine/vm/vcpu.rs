@@ -14,7 +14,7 @@ use anyhow::{Result, bail};
 use kvm_bindings::{CpuId, Msrs, kvm_fpu, kvm_regs};
 use kvm_ioctls::{Kvm, KvmRunWrapper, VcpuExit, VcpuFd, VmFd};
 use libc::{SIGRTMAX, c_int, siginfo_t};
-use tracing::warn;
+use tracing::{info, warn};
 use vm_device::{
     bus::{MmioAddress, PioAddress},
     device_manager::{IoManager, MmioManager, PioManager},
@@ -367,12 +367,24 @@ impl Vcpu {
         self.status = VcpuStatus::Running;
 
         if restart {
-            self.vcpu_event_tx
-                .try_broadcast(VcpuEvent {
-                    event_type: VcpuEventType::Restarted,
-                    vcpu_index: self.index,
-                })
-                .ok();
+            info!(
+                "VCPU {} sending Restarted event (resume from suspend)",
+                self.index
+            );
+            match self.vcpu_event_tx.try_broadcast(VcpuEvent {
+                event_type: VcpuEventType::Restarted,
+                vcpu_index: self.index,
+            }) {
+                Ok(receivers) => {
+                    info!("VCPU {} Restarted event sent", self.index);
+                }
+                Err(e) => {
+                    warn!(
+                        "VCPU {} failed to send Restarted event: {:?}",
+                        self.index, e
+                    );
+                }
+            }
         }
 
         'vcpu_loop: loop {

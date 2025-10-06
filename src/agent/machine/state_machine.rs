@@ -319,6 +319,7 @@ impl MachineStateMachine {
     // User transitions
     async fn handle_user_start(&mut self) -> Result<()> {
         let is_first_start = self.current_state == MachineState::Idle;
+        let is_resume_from_suspend = self.current_state == MachineState::Suspended;
 
         // Reset guest manager for non-first starts
         if !is_first_start {
@@ -334,9 +335,28 @@ impl MachineStateMachine {
             MachineState::Idle | MachineState::Suspended => {
                 // Set state to Booting and start VCPUs
                 // For first start: SystemDeviceReady will transition to Ready
-                // For resume from suspend: SystemVcpuRestarted will transition to Ready
+                // For resume from suspend: transition to Ready immediately since guest is already initialized
+                info!(
+                    "Starting machine: is_first_start={}, is_resume_from_suspend={}",
+                    is_first_start, is_resume_from_suspend
+                );
                 self.set_state(MachineState::Booting).await?;
                 self.resources.vcpu_manager.lock().await.start_all().await?;
+
+                // When resuming from suspend, the guest is already in a ready state from the snapshot
+                // Transition to Ready immediately without waiting for events
+                // TODO: Temporarily disabled to observe failure logs
+                if false && is_resume_from_suspend {
+                    info!("Resuming from suspend, transitioning directly to Ready (bypassing event wait)");
+                    self.set_state(MachineState::Ready).await?;
+                } else {
+                    if is_resume_from_suspend {
+                        info!("Resuming from suspend, will wait for SystemVcpuRestarted event (FIX DISABLED FOR TESTING)");
+                    } else {
+                        info!("First start, will wait for SystemDeviceReady event");
+                    }
+                }
+
                 Ok(())
             }
             MachineState::Booting | MachineState::Ready => {
@@ -510,8 +530,18 @@ impl MachineStateMachine {
 
     async fn handle_vcpu_restarted(&mut self) -> Result<()> {
         // VCPU restarted - transition to Ready
+        info!(
+            "handle_vcpu_restarted called, current_state={:?}",
+            self.current_state
+        );
         if self.current_state == MachineState::Booting {
+            info!("Transitioning from Booting to Ready due to VCPU restart");
             self.set_state(MachineState::Ready).await?;
+        } else {
+            info!(
+                "Not transitioning to Ready, current state is {:?}",
+                self.current_state
+            );
         }
         Ok(())
     }

@@ -615,15 +615,18 @@ impl Machine {
                             },
                             VcpuEventType::Stopped => StateCommand::SystemVcpuStopped,
                             VcpuEventType::Suspended => StateCommand::SystemVcpuSuspended,
-                            VcpuEventType::Restarted => StateCommand::SystemVcpuRestarted,
+                            VcpuEventType::Restarted => {
+                                info!("VCPU watcher received Restarted event from VCPU {}, sending SystemVcpuRestarted command", event.vcpu_index);
+                                StateCommand::SystemVcpuRestarted
+                            }
                         };
                         let _ = vcpu_command_tx.send(command);
                     }
                     Err(async_broadcast::RecvError::Closed) => {
                         break;
                     }
-                    Err(async_broadcast::RecvError::Overflowed(_)) => {
-                        // Continue receiving - the channel is still usable after overflow
+                    Err(async_broadcast::RecvError::Overflowed(n)) => {
+                        warn!("VCPU event channel overflowed, {} events lost", n);
                         continue;
                     }
                 }
@@ -786,13 +789,27 @@ impl Machine {
             return Ok(());
         }
 
+        info!(
+            "Machine '{}' waiting for state {:?}, current state: {:?}",
+            self.config.name, state, current_state
+        );
+
         let mut rx = self.state_rx.resubscribe();
         while let Ok(new_state) = rx.recv().await {
+            info!(
+                "Machine '{}' state changed to {:?} while waiting for {:?}",
+                self.config.name, new_state, state
+            );
             if new_state == state {
+                info!("Machine '{}' reached desired state {:?}", self.config.name, state);
                 return Ok(());
             }
         }
 
+        warn!(
+            "Machine '{}' state broadcast channel closed while waiting for {:?}",
+            self.config.name, state
+        );
         Ok(())
     }
 }
