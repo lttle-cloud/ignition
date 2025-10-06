@@ -1198,7 +1198,7 @@ dependencies = [
 [[package]]
 name = "damascus"
 version = "0.1.0"
-source = "git+https://github.com/laurci/damascus?rev=dddfd8af66fe7372724cd76bb523736dd13315ae#dddfd8af66fe7372724cd76bb523736dd13315ae"
+source = "git+https://github.com/laurci/damascus?rev=e4698cc8d419e06caa280ee4917f7497ffc2184e#e4698cc8d419e06caa280ee4917f7497ffc2184e"
 dependencies = [
  "anyhow",
  "damascus-meta",
@@ -1210,7 +1210,7 @@ dependencies = [
 [[package]]
 name = "damascus-meta"
 version = "0.1.0"
-source = "git+https://github.com/laurci/damascus?rev=dddfd8af66fe7372724cd76bb523736dd13315ae#dddfd8af66fe7372724cd76bb523736dd13315ae"
+source = "git+https://github.com/laurci/damascus?rev=e4698cc8d419e06caa280ee4917f7497ffc2184e#e4698cc8d419e06caa280ee4917f7497ffc2184e"
 dependencies = [
  "proc-macro2",
  "quote",

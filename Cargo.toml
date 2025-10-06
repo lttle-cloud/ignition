@@ -155,4 +155,4 @@ schemars = "1.0.4"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 base62 = "2.2.1"
-damascus = { git = "https://github.com/laurci/damascus", rev = "dddfd8af66fe7372724cd76bb523736dd13315ae" }
+damascus = { git = "https://github.com/laurci/damascus", rev = "e4698cc8d419e06caa280ee4917f7497ffc2184e" }
