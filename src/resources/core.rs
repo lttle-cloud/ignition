@@ -368,6 +368,10 @@ pub fn add_core_service_schema_defs(
         schema_for!(DeleteNamespaceResponse).into(),
     );
     defs.insert(
+        "RegistryRobot".to_string(),
+        schema_for!(RegistryRobot).into(),
+    );
+    defs.insert(
         "LogStreamItem".to_string(),
         schema_for!(LogStreamItem).into(),
     );

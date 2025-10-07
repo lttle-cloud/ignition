@@ -33,5 +33,5 @@ service:
         inactivity-timeout: 3
   bind:
     external:
-      host: pgtest.alpha1.ovh-rbx.lttle.host
+      host: pgtest-test_tenant.alpha1.ovh-rbx.lttle.host
       protocol: tls

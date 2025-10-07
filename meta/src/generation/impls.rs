@@ -247,12 +247,22 @@ pub fn generate_build_info_impl(analysis: &ResourceAnalysis) -> proc_macro2::Tok
         }
     };
 
+    let version_enum_variants_with_schema = analysis.versions.iter().map(|version| {
+        let variant_name = version.original_ident.clone().to_string();
+        let variant_value = version.generated_ident.clone();
+        quote! {
+            (#variant_name.to_string(), schemars::schema_for!(#variant_value)),
+        }
+    });
+
     quote! {
         impl super::BuildableResource for #enum_name {
             type SchemaProvider = #schema_provider;
             type StatusSchemaProvider = #status_schema_provider;
 
             fn build_info(configuration: super::ResourceConfiguration, schema: schemars::Schema, status_schema: schemars::Schema) -> super::ResourceBuildInfo {
+                use super::DamascusBuildableResource;
+
                 super::ResourceBuildInfo {
                     name: #enum_name_str,
                     tag: #collection_name,
@@ -264,7 +274,24 @@ pub fn generate_build_info_impl(analysis: &ResourceAnalysis) -> proc_macro2::Tok
                     configuration,
                     schema,
                     status_schema,
+                    d_status_schema:  #enum_name::status_schema(),
+                    d_version_schemas: #enum_name::version_schemas(),
+                    d_root_type_schema: #enum_name::root_type_schema(),
                 }
+            }
+        }
+
+        impl super::DamascusBuildableResource for #enum_name {
+            fn status_schema() -> schemars::Schema {
+                schemars::schema_for!(#status_schema_provider)
+            }
+
+            fn version_schemas() -> std::collections::BTreeMap<String, schemars::Schema> {
+                std::collections::BTreeMap::from_iter([#(#version_enum_variants_with_schema),*])
+            }
+
+            fn root_type_schema() -> schemars::Schema {
+                schemars::schema_for!(#enum_name)
             }
         }
     }

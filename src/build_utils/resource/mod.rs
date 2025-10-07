@@ -1,3 +1,4 @@
+mod api_client;
 mod builder;
 mod cel;
 mod client;

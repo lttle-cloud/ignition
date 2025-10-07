@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::collections::BTreeMap;
+
 use anyhow::Result;
 use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
@@ -80,6 +82,9 @@ pub struct ResourceBuildInfo {
     pub configuration: ResourceConfiguration,
     pub schema: Schema,
     pub status_schema: Schema,
+    pub d_version_schemas: BTreeMap<String, Schema>,
+    pub d_root_type_schema: Schema,
+    pub d_status_schema: Schema,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -161,6 +166,12 @@ pub trait BuildableResource {
         schema: Schema,
         status_schema: Schema,
     ) -> ResourceBuildInfo;
+}
+
+pub trait DamascusBuildableResource {
+    fn status_schema() -> Schema;
+    fn version_schemas() -> BTreeMap<String, Schema>;
+    fn root_type_schema() -> Schema;
 }
 
 pub trait FromResource<T> {

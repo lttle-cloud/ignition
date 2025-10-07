@@ -3711,6 +3711,27 @@
       "title": "QueryResponse",
       "$schema": "https://json-schema.org/draft/2020-12/schema"
     },
+    "RegistryRobot": {
+      "type": "object",
+      "properties": {
+        "registry": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
+        },
+        "pass": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "registry",
+        "user",
+        "pass"
+      ],
+      "title": "RegistryRobot",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
     "Service": {
       "oneOf": [
         {

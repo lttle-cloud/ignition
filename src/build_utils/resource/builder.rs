@@ -1,10 +1,15 @@
 use anyhow::Result;
 use schemars::{JsonSchema, SchemaGenerator, generate::SchemaSettings};
 
-use crate::resources::{BuildableResource, ResourceBuildInfo, ResourceConfiguration};
+use crate::{
+    build_utils::resource::api_client::{build_api_spec, build_ts_client},
+    resources::{
+        BuildableResource, DamascusBuildableResource, ResourceBuildInfo, ResourceConfiguration,
+    },
+};
 
 use super::{
-    cel::build_cel_functions, client::build_rust_api_client, index::build_resource_index,
+    cel::build_cel_functions, client::build_internal_rust_api_client, index::build_resource_index,
     repository::build_repository, schema::build_schema, services::build_services,
 };
 
@@ -22,11 +27,11 @@ impl ResourcesBuilder {
     }
 
     #[allow(dead_code)]
-    pub fn resource<R: BuildableResource>(self) -> Self {
+    pub fn resource<R: BuildableResource + DamascusBuildableResource>(self) -> Self {
         self.resource_with_config::<R>(identity)
     }
 
-    pub fn resource_with_config<R: BuildableResource>(
+    pub fn resource_with_config<R: BuildableResource + DamascusBuildableResource>(
         mut self,
         configure: impl FnOnce(ResourceConfiguration) -> ResourceConfiguration,
     ) -> Self {
@@ -48,8 +53,11 @@ impl ResourcesBuilder {
         build_services(&self.resources).await?;
         build_cel_functions(&self.resources).await?;
 
-        let api_schema = build_schema(&self.resources, &mut self.schema_generator).await?;
-        build_rust_api_client(&api_schema).await?;
+        let internal_api_schema = build_schema(&self.resources, &mut self.schema_generator).await?;
+        build_internal_rust_api_client(&internal_api_schema).await?;
+
+        let api_sepc = build_api_spec(&self.resources).await?;
+        build_ts_client(&api_sepc).await?;
 
         Ok(())
     }
