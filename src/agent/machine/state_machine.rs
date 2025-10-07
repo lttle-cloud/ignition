@@ -44,7 +44,7 @@ pub enum StateCommand {
 
     SystemExitCode { code: i32 },
 
-    SystemSuspendTimeout,
+    SystemSuspendTimeout { generation: u64 },
 
     // Flash events
     SystemFlashLock,
@@ -158,6 +158,8 @@ impl VcpuManager {
 pub struct FlashLockTracker {
     active_count: u32,
     timeout_task: Option<JoinHandle<()>>,
+    timeout_generation: u64,
+    last_unlock_time: Option<Instant>,
 }
 
 impl FlashLockTracker {
@@ -165,19 +167,27 @@ impl FlashLockTracker {
         Self {
             active_count: 0,
             timeout_task: None,
+            timeout_generation: 0,
+            last_unlock_time: None,
         }
     }
 
     pub fn add_flash_lock(&mut self) {
         self.active_count += 1;
         self.cancel_timeout();
+        // Clear last unlock time since we have active connections again
+        self.last_unlock_time = None;
     }
 
     pub fn remove_flash_lock(&mut self) -> bool {
         if self.active_count > 0 {
             self.active_count -= 1;
         }
-        self.active_count == 0
+        let is_last = self.active_count == 0;
+        if is_last {
+            self.last_unlock_time = Some(Instant::now());
+        }
+        is_last
     }
 
     pub fn has_active_locks(&self) -> bool {
@@ -196,13 +206,37 @@ impl FlashLockTracker {
         timeout: Duration,
     ) {
         self.cancel_timeout();
+        self.timeout_generation += 1;
+        let generation = self.timeout_generation;
+
+        info!(
+            "Starting suspend timeout with generation {} for {}s",
+            generation,
+            timeout.as_secs()
+        );
 
         let task = tokio::spawn(async move {
             sleep(timeout).await;
-            let _ = command_tx.send(StateCommand::SystemSuspendTimeout);
+            let _ = command_tx.send(StateCommand::SystemSuspendTimeout { generation });
         });
 
         self.timeout_task = Some(task);
+    }
+
+    pub fn should_suspend(&self, timeout: Duration) -> bool {
+        if self.has_active_locks() {
+            return false;
+        }
+
+        if let Some(last_unlock) = self.last_unlock_time {
+            last_unlock.elapsed() >= timeout
+        } else {
+            false
+        }
+    }
+
+    pub fn current_generation(&self) -> u64 {
+        self.timeout_generation
     }
 }
 
@@ -245,15 +279,29 @@ impl MachineStateMachine {
 
     pub async fn run(mut self) {
         info!("Machine state machine started");
-        while let Some(command) = self.command_rx.recv().await {
-            if let Err(e) = self.handle_command(command).await {
-                warn!("State machine error: {}", e);
-                if let Err(err) = self.transition_to_error(e.to_string()).await {
-                    warn!("Failed to transition to error state: {}", err);
+        let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(1));
+
+        loop {
+            tokio::select! {
+                Some(command) = self.command_rx.recv() => {
+                    if let Err(e) = self.handle_command(command).await {
+                        warn!("State machine error: {}", e);
+                        if let Err(err) = self.transition_to_error(e.to_string()).await {
+                            warn!("Failed to transition to error state: {}", err);
+                        }
+                    }
+                }
+                _ = heartbeat_interval.tick() => {
+                    if let Err(e) = self.check_should_suspend().await {
+                        warn!("Heartbeat check error: {}", e);
+                    }
+                }
+                else => {
+                    info!("Machine state machine stopped");
+                    break;
                 }
             }
         }
-        info!("Machine state machine stopped");
     }
 
     async fn handle_command(&mut self, command: StateCommand) -> Result<()> {
@@ -301,8 +349,8 @@ impl MachineStateMachine {
                 self.handle_exit_code(code).await?;
             }
 
-            StateCommand::SystemSuspendTimeout => {
-                self.handle_suspend_timeout().await?;
+            StateCommand::SystemSuspendTimeout { generation } => {
+                self.handle_suspend_timeout(generation).await?;
             }
 
             StateCommand::SystemFlashLock => {
@@ -599,17 +647,25 @@ impl MachineStateMachine {
         Ok(())
     }
 
-    async fn handle_suspend_timeout(&mut self) -> Result<()> {
-        // Only suspend if no active flash locks
-        let should_suspend = {
+    async fn handle_suspend_timeout(&mut self, generation: u64) -> Result<()> {
+        // Validate generation to prevent stale timeout events
+        let (current_generation, should_suspend) = {
             let tracker = self.resources.flash_lock_tracker.lock().await;
-            !tracker.has_active_locks()
+            (tracker.current_generation(), !tracker.has_active_locks())
         };
+
+        if generation != current_generation {
+            info!(
+                "Ignoring stale suspend timeout (generation {} != current {})",
+                generation, current_generation
+            );
+            return Ok(());
+        }
 
         if should_suspend {
             info!(
-                "Suspend timeout expired for machine '{}', suspending",
-                self.resources.config.name
+                "Suspend timeout expired for machine '{}' (generation {}), suspending",
+                self.resources.config.name, generation
             );
             let _ = self.handle_user_suspend().await;
         } else {
@@ -766,6 +822,34 @@ impl MachineStateMachine {
     // Helper method to get command sender
     async fn get_command_sender(&self) -> Result<mpsc::UnboundedSender<StateCommand>> {
         Ok(self.command_tx.clone())
+    }
+
+    // Periodic heartbeat check to ensure machine suspends even if timeout events are lost
+    async fn check_should_suspend(&mut self) -> Result<()> {
+        // Only check in Ready state for Flash mode
+        if self.current_state != MachineState::Ready {
+            return Ok(());
+        }
+
+        let suspend_timeout = match &self.resources.config.mode {
+            MachineMode::Flash { suspend_timeout, .. } => *suspend_timeout,
+            MachineMode::Regular => return Ok(()),
+        };
+
+        let should_suspend = {
+            let tracker = self.resources.flash_lock_tracker.lock().await;
+            tracker.should_suspend(suspend_timeout)
+        };
+
+        if should_suspend {
+            info!(
+                "Heartbeat detected machine '{}' should be suspended (no locks, timeout expired)",
+                self.resources.config.name
+            );
+            let _ = self.handle_user_suspend().await;
+        }
+
+        Ok(())
     }
 
     // Method to get current state

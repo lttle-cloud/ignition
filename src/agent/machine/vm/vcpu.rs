@@ -375,7 +375,7 @@ impl Vcpu {
                 event_type: VcpuEventType::Restarted,
                 vcpu_index: self.index,
             }) {
-                Ok(receivers) => {
+                Ok(_) => {
                     info!("VCPU {} Restarted event sent", self.index);
                 }
                 Err(e) => {
