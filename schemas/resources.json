@@ -627,6 +627,15 @@
             "null"
           ]
         },
+        "envs": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "image": {
           "type": [
             "string",

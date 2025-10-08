@@ -382,6 +382,7 @@ export interface MachineBuildOptions {
   tag?: string;
   image?: string;
   dir?: string;
+  envs?: { [key: string]: string };
 }
 
 
@@ -1936,6 +1937,7 @@ export function serializeMachineBuildOptions(value: MachineBuildOptions): any {
     "tag": value.tag,
     "image": value.image,
     "dir": value.dir,
+    "envs": value.envs,
   };
 }
 
@@ -1945,6 +1947,7 @@ export function deserializeMachineBuildOptions(value: any): MachineBuildOptions 
     tag: value["tag"],
     image: value["image"],
     dir: value["dir"],
+    envs: value["envs"],
   };
 }
 

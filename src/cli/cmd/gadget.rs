@@ -161,7 +161,7 @@ pub async fn run_gadget_init(config: &Config, cmd: GadgetInitArgs) -> Result<()>
                         (Some(name), None) => Some(format!("lttle machine get {}", name)),
                         (None, _) => None,
                     };
-                    
+
                     match machine_get_cmd {
                         Some(cmd) => eprintln!("  → Check on your machine with `{}`", cmd),
                         None => eprintln!("  → Check on your machines with `lttle machine ls -a`"),
@@ -455,6 +455,7 @@ async fn write_config_to_disk(
                             name: None,
                             tag: None,
                             image: None,
+                            envs: None,
                         }));
                     }
                 }

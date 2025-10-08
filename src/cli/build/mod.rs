@@ -155,6 +155,7 @@ async fn remote_build_and_push_image(
                     image: None,
                     tag: None,
                     name: None,
+                    envs: None,
                 },
                 auth.clone(),
                 debug,
@@ -399,6 +400,7 @@ async fn local_build_image(
                     image: None,
                     tag: None,
                     name: None,
+                    envs: None,
                 },
                 auth,
                 debug,
@@ -445,7 +447,9 @@ async fn build_image_nixpacks(
         message_detail(format!("Generated image reference: {}", image));
     }
 
-    let envs = std::env::vars()
+    let envs = options
+        .envs
+        .unwrap_or_default()
         .into_iter()
         .map(|(k, v)| format!("{}={}", k, v))
         .collect::<Vec<String>>();

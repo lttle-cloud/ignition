@@ -38,6 +38,7 @@ mod machine {
         tag: Option<String>,
         image: Option<String>,
         dir: Option<String>,
+        envs: Option<BTreeMap<String, String>>,
     }
 
     #[schema]

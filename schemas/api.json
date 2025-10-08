@@ -3164,6 +3164,15 @@
             "string",
             "null"
           ]
+        },
+        "envs": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       }
     },
