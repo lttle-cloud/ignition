@@ -239,13 +239,17 @@ async fn takeoff() -> Result<()> {
 
     info!("uid: {:?}; gid: {:?}", uid, gid);
 
-    // Set HOME environment variable when running as non-root user (like Docker does)
+    // Set HOME environment variable (like Docker does)
     let mut envs = envs.clone();
-    if uid != 0 && !envs.contains_key("HOME") {
-        // Try to get home directory from passwd entry, fallback to working_dir
+    if !envs.contains_key("HOME") {
+        // Try to get home directory from passwd entry
         let home_dir = if let Ok(Some(user)) = User::from_name(&specified_user) {
             user.dir.to_string_lossy().to_string()
+        } else if uid == 0 {
+            // Fallback for root
+            "/root".to_string()
         } else {
+            // Fallback for other users
             working_dir.clone()
         };
 
