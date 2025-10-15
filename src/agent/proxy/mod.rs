@@ -676,7 +676,7 @@ async fn handle_https_connection(
             let original_host = req.uri().host();
             let original_port = req.uri().port();
 
-            let target_host = match original_host {
+            let target_host = match original_host.clone() {
                 Some(host) => match original_port {
                     Some(port) => {
                         if port == 80 || port == 443 {
@@ -744,7 +744,8 @@ async fn handle_https_connection(
 
             if let Ok(host) = HeaderValue::from_str(&target_host) {
                 headers.remove("host");
-                headers.append("host", host);
+                headers.append("host", host.clone());
+                headers.append("x-forwarded-host", host);
             }
 
             if let Some(client_ip) =
