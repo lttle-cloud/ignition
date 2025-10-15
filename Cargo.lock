@@ -2988,7 +2988,7 @@ dependencies = [
 [[package]]
 name = "nixpacks"
 version = "1.40.0"
-source = "git+https://github.com/lttle-cloud/nixpacks?rev=f2ac2b18d6be79ad815c714c894ea776245a031e#f2ac2b18d6be79ad815c714c894ea776245a031e"
+source = "git+https://github.com/lttle-cloud/nixpacks?rev=30e5c096d856f3d36a5df82e8c0ad4509cb4fc7e#30e5c096d856f3d36a5df82e8c0ad4509cb4fc7e"
 dependencies = [
  "actix-web",
  "anyhow",
