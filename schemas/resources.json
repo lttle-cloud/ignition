@@ -621,6 +621,12 @@
     },
     "MachineBuildOptions": {
       "properties": {
+        "build-image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "dir": {
           "type": [
             "string",
@@ -648,7 +654,183 @@
             "null"
           ]
         },
+        "phases": {
+          "additionalProperties": {
+            "$ref": "#/$defs/MachineBuildPlanPhase"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "providers": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "start": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineBuildPlanStartPhase"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "static-assets": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variables": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "MachineBuildPlanPhase": {
+      "properties": {
+        "apt-pkgs": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "cache-directories": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "cmds": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "depends-on": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "nix-libs": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "nix-overlays": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "nix-pkgs": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "nixpkgs-archive": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "only-include-files": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "MachineBuildPlanStartPhase": {
+      "properties": {
+        "cmd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "only-include-files": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "run-image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "user": {
           "type": [
             "string",
             "null"

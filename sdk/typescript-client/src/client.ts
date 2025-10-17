@@ -383,6 +383,35 @@ export interface MachineBuildOptions {
   image?: string;
   dir?: string;
   envs?: { [key: string]: string };
+  providers?: string[];
+  buildImage?: string;
+  variables?: { [key: string]: string };
+  staticAssets?: { [key: string]: string };
+  phases?: { [key: string]: MachineBuildPlanPhase };
+  start?: MachineBuildPlanStartPhase;
+}
+
+
+export interface MachineBuildPlanPhase {
+  name?: string;
+  dependsOn?: string[];
+  nixPkgs?: string[];
+  nixLibs?: string[];
+  nixOverlays?: string[];
+  nixpkgsArchive?: string;
+  aptPkgs?: string[];
+  cmds?: string[];
+  onlyIncludeFiles?: string[];
+  cacheDirectories?: string[];
+  paths?: string[];
+}
+
+
+export interface MachineBuildPlanStartPhase {
+  cmd?: string;
+  runImage?: string;
+  onlyIncludeFiles?: string[];
+  user?: string;
 }
 
 
@@ -1938,6 +1967,12 @@ export function serializeMachineBuildOptions(value: MachineBuildOptions): any {
     "image": value.image,
     "dir": value.dir,
     "envs": value.envs,
+    "providers": value.providers,
+    "build-image": value.buildImage,
+    "variables": value.variables,
+    "static-assets": value.staticAssets,
+    "phases": value.phases,
+    "start": value.start !== undefined ? serializeMachineBuildPlanStartPhase(value.start) : undefined,
   };
 }
 
@@ -1948,6 +1983,62 @@ export function deserializeMachineBuildOptions(value: any): MachineBuildOptions 
     image: value["image"],
     dir: value["dir"],
     envs: value["envs"],
+    providers: value["providers"],
+    buildImage: value["build-image"],
+    variables: value["variables"],
+    staticAssets: value["static-assets"],
+    phases: value["phases"],
+    start: value["start"] !== undefined && value["start"] !== null ? deserializeMachineBuildPlanStartPhase(value["start"]) : undefined,
+  };
+}
+
+export function serializeMachineBuildPlanPhase(value: MachineBuildPlanPhase): any {
+  return {
+    "name": value.name,
+    "depends-on": value.dependsOn,
+    "nix-pkgs": value.nixPkgs,
+    "nix-libs": value.nixLibs,
+    "nix-overlays": value.nixOverlays,
+    "nixpkgs-archive": value.nixpkgsArchive,
+    "apt-pkgs": value.aptPkgs,
+    "cmds": value.cmds,
+    "only-include-files": value.onlyIncludeFiles,
+    "cache-directories": value.cacheDirectories,
+    "paths": value.paths,
+  };
+}
+
+export function deserializeMachineBuildPlanPhase(value: any): MachineBuildPlanPhase {
+  return {
+    name: value["name"],
+    dependsOn: value["depends-on"],
+    nixPkgs: value["nix-pkgs"],
+    nixLibs: value["nix-libs"],
+    nixOverlays: value["nix-overlays"],
+    nixpkgsArchive: value["nixpkgs-archive"],
+    aptPkgs: value["apt-pkgs"],
+    cmds: value["cmds"],
+    onlyIncludeFiles: value["only-include-files"],
+    cacheDirectories: value["cache-directories"],
+    paths: value["paths"],
+  };
+}
+
+export function serializeMachineBuildPlanStartPhase(value: MachineBuildPlanStartPhase): any {
+  return {
+    "cmd": value.cmd,
+    "run-image": value.runImage,
+    "only-include-files": value.onlyIncludeFiles,
+    "user": value.user,
+  };
+}
+
+export function deserializeMachineBuildPlanStartPhase(value: any): MachineBuildPlanStartPhase {
+  return {
+    cmd: value["cmd"],
+    runImage: value["run-image"],
+    onlyIncludeFiles: value["only-include-files"],
+    user: value["user"],
   };
 }
 

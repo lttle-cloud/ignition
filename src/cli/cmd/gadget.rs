@@ -456,6 +456,12 @@ async fn write_config_to_disk(
                             tag: None,
                             image: None,
                             envs: None,
+                            providers: None,
+                            build_image: None,
+                            variables: None,
+                            static_assets: None,
+                            phases: None,
+                            start_phase: None,
                         }));
                     }
                 }

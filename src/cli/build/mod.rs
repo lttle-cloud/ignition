@@ -10,11 +10,18 @@ use std::{
 use anyhow::{Result, bail};
 use ignition::{
     api_client::ApiClient,
-    resources::machine::{MachineBuild, MachineBuildOptions, MachineDockerOptions},
+    resources::machine::{
+        MachineBuild, MachineBuildOptions, MachineBuildPlanPhase, MachineBuildPlanStartPhase,
+        MachineDockerOptions,
+    },
 };
 use nixpacks::nixpacks::{
     builder::docker::DockerBuilderOptions,
-    plan::{BuildPlan, generator::GeneratePlanOptions},
+    plan::{
+        BuildPlan,
+        generator::GeneratePlanOptions,
+        phase::{Phase, StartPhase},
+    },
 };
 use tempfile::TempDir;
 use tokio::{fs::create_dir_all, process::Command};
@@ -156,6 +163,12 @@ async fn remote_build_and_push_image(
                     tag: None,
                     name: None,
                     envs: None,
+                    providers: None,
+                    build_image: None,
+                    variables: None,
+                    static_assets: None,
+                    phases: None,
+                    start_phase: None,
                 },
                 auth.clone(),
                 debug,
@@ -401,6 +414,12 @@ async fn local_build_image(
                     tag: None,
                     name: None,
                     envs: None,
+                    providers: None,
+                    build_image: None,
+                    variables: None,
+                    static_assets: None,
+                    phases: None,
+                    start_phase: None,
                 },
                 auth,
                 debug,
@@ -430,6 +449,8 @@ async fn build_image_nixpacks(
     if debug {
         message_detail("Building image with nixpacks");
     }
+
+    let options_build_plan = options.to_build_plan();
 
     let image = options.image.unwrap_or_else(|| {
         let id = uuid::Uuid::new_v4().to_string();
@@ -487,6 +508,8 @@ async fn build_image_nixpacks(
         plan_options.config_file = Some(nixpacks_toml.to_str().unwrap().to_string());
     };
 
+    plan_options.plan = Some(options_build_plan);
+
     let providers = nixpacks::get_plan_providers(&path, envs.clone(), &plan_options)?;
     if providers.is_empty() {
         bail!(
@@ -523,6 +546,14 @@ async fn build_image_nixpacks(
             clip_value: true,
         });
         build_summary.print();
+    }
+
+    let start_cmd = plan
+        .start_phase
+        .and_then(|start_phase| start_phase.cmd.clone());
+
+    if matches!(start_cmd, None) || matches!(start_cmd, Some(cmd) if cmd.is_empty()) {
+        bail!("No start command found in build plan");
     }
 
     let mut build_options = DockerBuilderOptions::default();
@@ -702,4 +733,72 @@ pub async fn push_image(image: impl AsRef<str>, auth: DockerAuthConfig) -> Resul
     };
 
     Ok(())
+}
+
+trait ToBuildPlan {
+    fn to_build_plan(&self) -> BuildPlan;
+}
+
+trait ToBuildPlanPhase {
+    fn to_build_plan_phase(&self) -> Phase;
+}
+
+trait ToBuildPlanStartPhase {
+    fn to_build_plan_start_phase(&self) -> StartPhase;
+}
+
+impl ToBuildPlan for MachineBuildOptions {
+    fn to_build_plan(&self) -> BuildPlan {
+        let mut plan = BuildPlan {
+            providers: self.providers.clone(),
+            build_image: self.build_image.clone(),
+            variables: self.variables.clone(),
+            static_assets: self.static_assets.clone(),
+            phases: None,
+            start_phase: None,
+        };
+
+        if let Some(phases) = &self.phases {
+            let mut build_phases: BTreeMap<String, Phase> = BTreeMap::new();
+            for (name, phase) in phases {
+                build_phases.insert(name.clone(), phase.to_build_plan_phase());
+            }
+            plan.phases = Some(build_phases);
+        }
+
+        if let Some(start_phase) = &self.start_phase {
+            plan.start_phase = Some(start_phase.to_build_plan_start_phase());
+        }
+
+        plan
+    }
+}
+
+impl ToBuildPlanPhase for MachineBuildPlanPhase {
+    fn to_build_plan_phase(&self) -> Phase {
+        Phase {
+            name: self.name.clone(),
+            depends_on: self.depends_on.clone(),
+            nix_pkgs: self.nix_pkgs.clone(),
+            nix_libs: self.nix_libs.clone(),
+            nix_overlays: self.nix_overlays.clone(),
+            nixpkgs_archive: self.nixpkgs_archive.clone(),
+            apt_pkgs: self.apt_pkgs.clone(),
+            cmds: self.cmds.clone(),
+            only_include_files: self.only_include_files.clone(),
+            cache_directories: self.cache_directories.clone(),
+            paths: self.paths.clone(),
+        }
+    }
+}
+
+impl ToBuildPlanStartPhase for MachineBuildPlanStartPhase {
+    fn to_build_plan_start_phase(&self) -> StartPhase {
+        StartPhase {
+            cmd: self.cmd.clone(),
+            run_image: self.run_image.clone(),
+            only_include_files: self.only_include_files.clone(),
+            user: self.user.clone(),
+        }
+    }
 }

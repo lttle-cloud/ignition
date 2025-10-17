@@ -39,6 +39,50 @@ mod machine {
         image: Option<String>,
         dir: Option<String>,
         envs: Option<BTreeMap<String, String>>,
+        providers: Option<Vec<String>>,
+        #[serde(rename = "build-image")]
+        build_image: Option<String>,
+        variables: Option<BTreeMap<String, String>>,
+        #[serde(rename = "static-assets")]
+        static_assets: Option<BTreeMap<String, String>>,
+        phases: Option<BTreeMap<String, MachineBuildPlanPhase>>,
+        #[serde(rename = "start")]
+        start_phase: Option<MachineBuildPlanStartPhase>,
+    }
+
+    #[schema]
+    struct MachineBuildPlanPhase {
+        name: Option<String>,
+        #[serde(rename = "depends-on")]
+        depends_on: Option<Vec<String>>,
+        #[serde(rename = "nix-pkgs")]
+        nix_pkgs: Option<Vec<String>>,
+        #[serde(rename = "nix-libs")]
+        nix_libs: Option<Vec<String>>,
+        #[serde(rename = "nix-overlays")]
+        nix_overlays: Option<Vec<String>>,
+        #[serde(rename = "nixpkgs-archive")]
+        nixpkgs_archive: Option<String>,
+        #[serde(rename = "apt-pkgs")]
+        apt_pkgs: Option<Vec<String>>,
+        #[serde(rename = "cmds")]
+        cmds: Option<Vec<String>>,
+        #[serde(rename = "only-include-files")]
+        only_include_files: Option<Vec<String>>,
+        #[serde(rename = "cache-directories")]
+        cache_directories: Option<Vec<String>>,
+        #[serde(rename = "paths")]
+        paths: Option<Vec<String>>,
+    }
+
+    #[schema]
+    struct MachineBuildPlanStartPhase {
+        cmd: Option<String>,
+        #[serde(rename = "run-image")]
+        run_image: Option<String>,
+        #[serde(rename = "only-include-files")]
+        only_include_files: Option<Vec<String>>,
+        user: Option<String>,
     }
 
     #[schema]
