@@ -297,15 +297,32 @@ impl GuestManagerDevice {
     }
 
     fn process_args_write(&mut self, data: &[u8]) -> bool {
-        let ptr = u64::from_le_bytes([
+        let encoded_request = u64::from_le_bytes([
             data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
         ]);
 
-        if let Err(e) = self
-            .memory
-            .write_slice(&self.takeoff_args, GuestAddress(ptr))
-        {
-            warn!("Failed to write hello world! to ptr {}: {:?}", ptr, e);
+        // Decode: upper 32 bits = offset, lower 32 bits = physical address
+        let offset = (encoded_request >> 32) as usize;
+        let ptr = encoded_request & 0xFFFFFFFF;
+
+        // Calculate the chunk to write
+        let chunk_size = std::cmp::min(1024, self.takeoff_args.len().saturating_sub(offset));
+        if chunk_size == 0 {
+            warn!(
+                "Requested offset {} beyond data length {}",
+                offset,
+                self.takeoff_args.len()
+            );
+            return false;
+        }
+
+        let chunk_data = &self.takeoff_args[offset..offset + chunk_size];
+
+        if let Err(e) = self.memory.write_slice(chunk_data, GuestAddress(ptr)) {
+            warn!(
+                "Failed to write chunk at offset {} to ptr {}: {:?}",
+                offset, ptr, e
+            );
         }
 
         return false;

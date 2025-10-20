@@ -77,18 +77,51 @@ impl GuestManager {
 
         info!("takeoff args len: {}", len);
 
-        let buffer = [0u8; 1024 * 10];
-        let val = self.virt_to_phys(buffer.as_ptr() as u64)?;
+        // Read data in 1024-byte chunks to avoid physical memory contiguity issues
+        let chunk_size = 1024;
+        let mut full_data = Vec::new();
+        let mut offset = 0;
 
-        info!("alloc ptr: {:x}", val);
-        unsafe {
-            let ptr: *mut u64 = self.map_base.as_ptr().add(16) as *mut u64;
-            ptr.write_volatile(val);
+        while offset < len as usize {
+            let remaining = len as usize - offset;
+            let current_chunk_size = std::cmp::min(chunk_size, remaining);
+
+            let chunk_buffer = [0u8; 1024];
+            let val = self.virt_to_phys(chunk_buffer.as_ptr() as u64)?;
+
+            info!(
+                "Reading chunk at offset {}, size {}, ptr: {:x}",
+                offset, current_chunk_size, val
+            );
+
+            unsafe {
+                let ptr: *mut u64 = self.map_base.as_ptr().add(16) as *mut u64;
+                // Encode: upper 32 bits = offset, lower 32 bits = physical address
+                let encoded_request = ((offset as u64) << 32) | (val & 0xFFFFFFFF);
+                ptr.write_volatile(encoded_request);
+
+                // Read back to ensure MMIO write has completed
+                let _readback = ptr.read_volatile();
+            }
+
+            full_data.extend_from_slice(&chunk_buffer[..current_chunk_size]);
+
+            offset += current_chunk_size;
         }
 
-        let str = String::from_utf8_lossy(&buffer[..len as usize]).to_string();
+        let str = String::from_utf8_lossy(&full_data).to_string();
 
         info!("takeoff args str: {}", str);
+
+        // Debug: check for null bytes
+        if let Some(null_pos) = str.find('\0') {
+            info!("Found null byte at position: {}", null_pos);
+            info!(
+                "Hex around null: {:?}",
+                &str.as_bytes()
+                    [null_pos.saturating_sub(10)..std::cmp::min(null_pos + 10, str.len())]
+            );
+        }
 
         TakeoffInitArgs::decode(&str)
     }
