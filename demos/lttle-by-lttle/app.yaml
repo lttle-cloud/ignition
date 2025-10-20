@@ -26,7 +26,7 @@ service:
     protocol: http
   bind:
     external:
-      host: lbl-api.eu.lttle.host
+      host: lbl-api-laurci.eu.lttle.host
       protocol: https
 ---
 service:
@@ -38,5 +38,5 @@ service:
     protocol: http
   bind:
     external:
-      host: lbl-api-device.eu.lttle.host
+      host: lbl-api-device-laurci.eu.lttle.host
       protocol: http
