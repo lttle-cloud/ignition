@@ -16,15 +16,15 @@ use crate::{
 
 #[derive(Args)]
 pub struct QueryArgs {
-    /// Environment file to use for the deployment
+    /// Environment file to use for the query
     #[arg(long = "env")]
     env_file: Option<PathBuf>,
 
-    /// Variables file to use for the deployment
+    /// Variables file to use for the query
     #[arg(long = "vars")]
     var_file: Option<PathBuf>,
 
-    /// Additional variables to use for the deployment
+    /// Additional variables to use for the query
     #[arg(short = 'v', long = "var", value_name = "KEY=VALUE", action = ArgAction::Append)]
     additional_vars: Vec<String>,
 

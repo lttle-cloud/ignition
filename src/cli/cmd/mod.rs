@@ -98,14 +98,14 @@ pub enum Command {
 
 #[derive(Subcommand)]
 pub enum AppCommand {
-    /// List certificates (short: ls)
+    /// List apps (short: ls)
     #[command(alias = "ls")]
     List(ListNamespacedArgs),
 
-    /// Get a certificate
+    /// Get an app
     Get(GetNamespacedArgs),
 
-    /// Delete a certificate (short: rm)
+    /// Delete an app (short: rm)
     #[command(alias = "rm")]
     Delete(DeleteNamespacedArgs),
 }
