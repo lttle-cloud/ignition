@@ -7,7 +7,7 @@ use anyhow::{Result, bail};
 use axum::http::HeaderValue;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
-use hyper::{Method, Request, StatusCode, Uri, Version, service::service_fn};
+use hyper::{Method, Request, StatusCode, Uri, Version, service::service_fn, upgrade::Upgraded};
 use hyper_util::{
     client::legacy::{Client, connect::HttpConnector},
     rt::{TokioExecutor, TokioIo},
@@ -377,6 +377,42 @@ impl ProxyAgent {
     }
 }
 
+async fn proxy_websocket_upgrade(
+    client_upgrade: Result<Upgraded, hyper::Error>,
+    upstream_upgrade: Result<Upgraded, hyper::Error>,
+) -> Result<()> {
+    let mut client = match client_upgrade {
+        Ok(upgraded) => TokioIo::new(upgraded),
+        Err(e) => {
+            warn!("Failed to upgrade client connection: {}", e);
+            bail!("Failed to upgrade client connection");
+        }
+    };
+
+    let mut upstream = match upstream_upgrade {
+        Ok(upgraded) => TokioIo::new(upgraded),
+        Err(e) => {
+            warn!("Failed to upgrade upstream connection: {}", e);
+            bail!("Failed to upgrade upstream connection");
+        }
+    };
+
+    // Bidirectionally copy data between client and upstream
+    match tokio::io::copy_bidirectional(&mut client, &mut upstream).await {
+        Ok((client_to_upstream, upstream_to_client)) => {
+            info!(
+                "WebSocket connection closed. Bytes transferred - client->upstream: {}, upstream->client: {}",
+                client_to_upstream, upstream_to_client
+            );
+        }
+        Err(e) => {
+            warn!("Error during WebSocket proxying: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
 async fn external_listener(
     addr: String,
     machine_agent: Arc<MachineAgent>,
@@ -478,6 +514,20 @@ async fn handle_http_connection(
         let client = Client::builder(TokioExecutor::new()).build(base);
 
         async move {
+            // Check if this is a WebSocket upgrade request
+            let is_websocket_upgrade = req
+                .headers()
+                .get("upgrade")
+                .and_then(|v| v.to_str().ok())
+                .map(|v| v.eq_ignore_ascii_case("websocket"))
+                .unwrap_or(false);
+
+            // Get the upgrade future before consuming the request
+            let client_upgrade = if is_websocket_upgrade {
+                Some(hyper::upgrade::on(&mut req))
+            } else {
+                None
+            };
             // Extract host from request headers
             let target_host = req
                 .headers()
@@ -618,12 +668,29 @@ async fn handle_http_connection(
                 );
             }
 
+            // Handle WebSocket upgrade if this was an upgrade request
+            if let Some(client_upgrade) = client_upgrade {
+                if response.status() == StatusCode::SWITCHING_PROTOCOLS {
+                    info!("WebSocket upgrade successful, proxying WebSocket connection");
+
+                    // Get the upstream upgrade future
+                    let upstream_upgrade = hyper::upgrade::on(&mut response);
+
+                    // Spawn a task to handle the WebSocket proxying
+                    spawn(async move {
+                        if let Err(e) = proxy_websocket_upgrade(client_upgrade.await, upstream_upgrade.await).await {
+                            warn!("Error proxying WebSocket: {}", e);
+                        }
+                    });
+                }
+            }
+
             Ok(response.map(|b| b.boxed()))
         }
     });
 
     if let Err(e) = Builder::new(TokioExecutor::new())
-        .serve_connection(io, svc)
+        .serve_connection_with_upgrades(io, svc)
         .await
     {
         warn!("Error proxying HTTP connection: {e}");
@@ -673,6 +740,20 @@ async fn handle_https_connection(
         let client = Client::builder(TokioExecutor::new()).build(base);
 
         async move {
+            // Check if this is a WebSocket upgrade request
+            let is_websocket_upgrade = req
+                .headers()
+                .get("upgrade")
+                .and_then(|v| v.to_str().ok())
+                .map(|v| v.eq_ignore_ascii_case("websocket"))
+                .unwrap_or(false);
+
+            // Get the upgrade future before consuming the request
+            let client_upgrade = if is_websocket_upgrade {
+                Some(hyper::upgrade::on(&mut req))
+            } else {
+                None
+            };
             let original_host = req.uri().host();
             let original_port = req.uri().port();
 
@@ -780,12 +861,29 @@ async fn handle_https_connection(
                 );
             }
 
+            // Handle WebSocket upgrade if this was an upgrade request
+            if let Some(client_upgrade) = client_upgrade {
+                if response.status() == StatusCode::SWITCHING_PROTOCOLS {
+                    info!("WebSocket upgrade successful over TLS, proxying WebSocket connection");
+
+                    // Get the upstream upgrade future
+                    let upstream_upgrade = hyper::upgrade::on(&mut response);
+
+                    // Spawn a task to handle the WebSocket proxying
+                    spawn(async move {
+                        if let Err(e) = proxy_websocket_upgrade(client_upgrade.await, upstream_upgrade.await).await {
+                            warn!("Error proxying WebSocket over TLS: {}", e);
+                        }
+                    });
+                }
+            }
+
             Ok(response)
         }
     });
 
     if let Err(e) = Builder::new(TokioExecutor::new())
-        .serve_connection(io, svc)
+        .serve_connection_with_upgrades(io, svc)
         .await
     {
         warn!("Error proxying HTTPS connection: {e}");
