@@ -7,15 +7,14 @@ volume:
 app:
   name: n8n
   namespace: n8n
-  image: docker.n8n.io/n8nio/n8n
+  image: ghcr.io/lttle-cloud/n8n:latest
   resources:
     cpu: 1
     memory: 512
   restart-policy: never
   mode:
     flash:
-      strategy:
-        listen-on-port: 5678
+      strategy: manual
       timeout: 5
   environment:
     GENERIC_TIMEZONE: Europe/Berlin

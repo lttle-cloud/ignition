@@ -1,0 +1,2 @@
+build-image:
+    docker build -t ghcr.io/lttle-cloud/n8n:latest . --push
