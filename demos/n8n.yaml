@@ -1,0 +1,38 @@
+volume:
+  name: n8n-data
+  namespace: n8n
+  mode: writeable
+  size: 5GB
+---
+app:
+  name: n8n
+  namespace: n8n
+  image: docker.n8n.io/n8nio/n8n
+  resources:
+    cpu: 1
+    memory: 512
+  restart-policy: never
+  mode:
+    flash:
+      strategy:
+        listen-on-port: 5678
+      timeout: 5
+  environment:
+    GENERIC_TIMEZONE: Europe/Berlin
+    TZ: Europe/Berlin
+    N8N_RUNNERS_ENABLED: "true"
+    N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "false"
+    N8N_LISTEN_ADDRESS: "0.0.0.0"
+    N8N_HOST: n8n-${{ lttle.tenant }}.eu.lttle.host
+    N8N_EDITOR_BASE_URL: "https://n8n-${{ lttle.tenant }}.eu.lttle.host"
+    WEBHOOK_URL: https://n8n-${{ lttle.tenant }}.eu.lttle.host
+    N8N_PROXY_HOPS: "1"
+  expose:
+    public:
+      port: 5678
+      external:
+        protocol: https
+        host: n8n-${{ lttle.tenant }}.eu.lttle.host
+  volumes:
+    - name: n8n-data
+      path: /home/node/.n8n
