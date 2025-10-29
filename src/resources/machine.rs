@@ -171,6 +171,7 @@ mod machine {
         first_boot_time_us: Option<u64>,
         last_restarting_time_us: Option<u64>,
         last_exit_code: Option<i32>,
+        restart_count: Option<u64>,
     }
 
     #[schema]
@@ -247,6 +248,7 @@ impl FromResource<Machine> for MachineStatus {
             first_boot_time_us: None,
             last_restarting_time_us: None,
             last_exit_code: None,
+            restart_count: Some(0),
         })
     }
 }

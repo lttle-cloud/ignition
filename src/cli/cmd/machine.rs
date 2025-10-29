@@ -173,6 +173,9 @@ pub struct MachineSummary {
     #[field(name = "last restarting time")]
     last_restarting_time: Option<String>,
 
+    #[field(name = "restart count")]
+    restart_count: Option<String>,
+
     #[field(name = "machine id (internal)")]
     hypervisor_machine_id: Option<String>,
 
@@ -316,6 +319,7 @@ impl From<(MachineLatest, MachineStatus)> for MachineSummary {
                 duration.to_string()
             }),
             last_restarting_time,
+            restart_count: status.restart_count.map(|c| c.to_string()),
             last_exit_code: status.last_exit_code.map(|c| c.to_string()),
         }
     }

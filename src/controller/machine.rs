@@ -32,6 +32,10 @@ use crate::{
     },
 };
 
+// Restart policy constants
+const MAX_RESTART_COUNT: u64 = 3;
+const BASE_RESTART_BACKOFF_SECS: u64 = 2;
+
 pub struct MachineController;
 
 impl MachineController {
@@ -50,6 +54,13 @@ fn image_is_latest_available_job_key(reference: &Reference) -> String {
 
 pub fn machine_name_from_key(key: &ControllerKey) -> String {
     format!("{}-{}", key.tenant, key.metadata().to_string())
+}
+
+fn calculate_restart_backoff(restart_count: u64) -> Duration {
+    // Exponential backoff: 2^restart_count * BASE_RESTART_BACKOFF_SECS seconds
+    // restart_count=0: 2s, restart_count=1: 4s, restart_count=2: 8s, restart_count=3: 16s
+    let backoff_multiplier = 2u64.saturating_pow(restart_count as u32);
+    Duration::from_secs(BASE_RESTART_BACKOFF_SECS * backoff_multiplier)
 }
 
 #[async_trait]
@@ -286,6 +297,10 @@ impl Controller for MachineController {
                                     if let Some(last_exit_code) = last_exit_code {
                                         status.last_exit_code = Some(last_exit_code);
                                     }
+                                    // Reset restart counter when machine successfully reaches Ready state
+                                    if matches!(new_phase, MachinePhase::Ready) {
+                                        status.restart_count = Some(0);
+                                    }
                                 })
                                 .await?;
                             Some((stored_machine, new_status))
@@ -399,6 +414,8 @@ impl Controller for MachineController {
                 .patch_status(key.metadata(), |status| {
                     status.phase = MachinePhase::Restarting;
                     status.last_restarting_time_us = Some(Utc::now().timestamp_millis() as u64);
+                    // Reset restart counter for manual restarts
+                    status.restart_count = Some(0);
                 })
                 .await?;
 
@@ -413,6 +430,8 @@ impl Controller for MachineController {
                     status.hash = hash;
                     status.phase = MachinePhase::Restarting;
                     status.last_restarting_time_us = Some(Utc::now().timestamp_millis() as u64);
+                    // Reset restart counter for spec changes
+                    status.restart_count = Some(0);
                 })
                 .await?;
 
@@ -433,6 +452,8 @@ impl Controller for MachineController {
                 .patch_status(key.metadata(), |status| {
                     status.phase = MachinePhase::Restarting;
                     status.last_restarting_time_us = Some(Utc::now().timestamp_millis() as u64);
+                    // Reset restart counter for image updates
+                    status.restart_count = Some(0);
                 })
                 .await?;
 
@@ -846,7 +867,12 @@ impl Controller for MachineController {
                         resources::machine::MachineRestartPolicy::Remove => {
                             let metadata = key.metadata();
                             let namespace = Namespace::from_value_or_default(metadata.namespace);
-                            if let Err(e) = ctx.repository.machine(ctx.tenant.clone()).delete(namespace, metadata.name).await {
+                            if let Err(e) = ctx
+                                .repository
+                                .machine(ctx.tenant.clone())
+                                .delete(namespace, metadata.name)
+                                .await
+                            {
                                 warn!("restart-policy remove failed to delete machine {}", e);
                             };
 
@@ -855,6 +881,27 @@ impl Controller for MachineController {
                     };
 
                     if !should_restart {
+                        break 'phase_match;
+                    }
+
+                    // Check if we've exceeded max restart count
+                    let restart_count = status.restart_count.unwrap_or(0);
+                    if restart_count >= MAX_RESTART_COUNT {
+                        warn!(
+                            "Machine {} exceeded max restart count ({}/{}), entering error state",
+                            machine_name, restart_count, MAX_RESTART_COUNT
+                        );
+                        ctx.repository
+                            .machine(ctx.tenant.clone())
+                            .patch_status(key.metadata(), |status| {
+                                status.phase = MachinePhase::Error {
+                                    message: format!(
+                                        "Max restart count exceeded ({}/{})",
+                                        restart_count, MAX_RESTART_COUNT
+                                    ),
+                                };
+                            })
+                            .await?;
                         break 'phase_match;
                     }
 
@@ -875,16 +922,28 @@ impl Controller for MachineController {
                         let duration =
                             Duration::from_millis((now - last_restarting_time_us) as u64);
 
-                        // wait at least 1 second before restarting
-                        if duration < Duration::from_secs(1) {
-                            return Ok(ReconcileNext::after(Duration::from_millis(500)));
+                        // Calculate exponential backoff based on restart count
+                        let restart_count = status.restart_count.unwrap_or(0);
+                        let required_backoff = calculate_restart_backoff(restart_count);
+
+                        if duration < required_backoff {
+                            let remaining = required_backoff - duration;
+                            info!(
+                                "Machine {} waiting for restart backoff: {:?} remaining (restart attempt {})",
+                                machine_name,
+                                remaining,
+                                restart_count + 1
+                            );
+                            return Ok(ReconcileNext::after(remaining));
                         }
                     }
 
+                    let restart_count = status.restart_count.unwrap_or(0);
                     ctx.repository
                         .machine(ctx.tenant.clone())
                         .patch_status(key.metadata(), |status| {
                             status.phase = MachinePhase::Idle;
+                            status.restart_count = Some(restart_count + 1);
                         })
                         .await?;
 
@@ -894,6 +953,28 @@ impl Controller for MachineController {
                 MachinePhase::Error { message } => {
                     // Check if this is a VCPU timeout error requiring immediate cleanup
                     if message.contains("VCPU timeout") || message.contains("timed out") {
+                        let restart_count = status.restart_count.unwrap_or(0);
+                        // Check if we've exceeded max restart count
+                        if restart_count >= MAX_RESTART_COUNT {
+                            warn!(
+                                "Machine {} has VCPU timeout error but exceeded max restart count ({}/{}), staying in error state: {}",
+                                machine_name, restart_count, MAX_RESTART_COUNT, message
+                            );
+                            // Update the error message to indicate max restarts exceeded
+                            ctx.repository
+                                .machine(ctx.tenant.clone())
+                                .patch_status(key.metadata(), |status| {
+                                    status.phase = MachinePhase::Error {
+                                        message: format!(
+                                            "VCPU timeout - Max restart count exceeded ({}/{}). Original error: {}",
+                                            restart_count, MAX_RESTART_COUNT, message
+                                        ),
+                                    };
+                                })
+                                .await?;
+                            break 'phase_match;
+                        }
+
                         warn!(
                             "Machine {} has VCPU timeout error, transitioning to restarting for cleanup: {}",
                             machine_name, message

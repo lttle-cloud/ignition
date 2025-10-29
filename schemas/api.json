@@ -3645,6 +3645,14 @@
             "null"
           ],
           "format": "int32"
+        },
+        "restart_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
         }
       },
       "required": [

@@ -485,6 +485,7 @@ export interface MachineStatus {
   firstBootTimeUs?: number;
   lastRestartingTimeUs?: number;
   lastExitCode?: number;
+  restartCount?: number;
 }
 
 
@@ -2258,6 +2259,7 @@ export function serializeMachineStatus(value: MachineStatus): any {
     "first_boot_time_us": value.firstBootTimeUs,
     "last_restarting_time_us": value.lastRestartingTimeUs,
     "last_exit_code": value.lastExitCode,
+    "restart_count": value.restartCount,
   };
 }
 
@@ -2275,6 +2277,7 @@ export function deserializeMachineStatus(value: any): MachineStatus {
     firstBootTimeUs: value["first_boot_time_us"],
     lastRestartingTimeUs: value["last_restarting_time_us"],
     lastExitCode: value["last_exit_code"],
+    restartCount: value["restart_count"],
   };
 }
 
