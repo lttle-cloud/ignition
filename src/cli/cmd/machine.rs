@@ -41,6 +41,7 @@ pub struct MachineLogsArgs {
     #[arg(long = "timestamps", short = 't')]
     show_timestamps: bool,
 
+    /// Show elapsed time since log entry
     #[arg(long = "elapsed", short = 'e')]
     show_elapsed: bool,
 
