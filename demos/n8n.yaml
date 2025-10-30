@@ -11,7 +11,7 @@ app:
   resources:
     cpu: 1
     memory: 512
-  restart-policy: never
+  restart-policy: on-failure
   mode:
     flash:
       strategy: manual
