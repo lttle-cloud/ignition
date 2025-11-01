@@ -1,0 +1,35 @@
+volume:
+  name: mc-data
+  namespace: mc
+  mode: writeable
+  size: 5GB
+---
+machine:
+  name: mc
+  namespace: mc
+  image: itzg/minecraft-server
+  restart-policy: on-failure
+  resources:
+    cpu: 2
+    memory: 1536
+  mode:
+    flash:
+      strategy:
+        listen-on-port: 25575
+      timeout: 10
+  environment:
+    EULA: "TRUE"
+    CREATE_CONSOLE_IN_PIPE: "true"
+    ONLINE_MODE: "false"
+  volumes:
+    - name: mc-data
+      path: /data
+---
+service:
+  name: mc
+  namespace: mc
+  target:
+    name: mc
+    port: 25565
+    protocol: tcp
+  bind: tcp
