@@ -8,6 +8,7 @@ pub mod logs;
 pub mod machine;
 pub mod net;
 pub mod openai;
+pub mod port_allocator;
 pub mod proxy;
 pub mod tracker;
 pub mod volume;
@@ -27,6 +28,7 @@ use crate::{
         machine::{MachineAgent, MachineAgentConfig},
         net::{NetAgent, NetAgentConfig},
         openai::{OpenAIAgent, OpenAIAgentConfig},
+        port_allocator::{PortAllocator, TcpPortRange},
         proxy::{ProxyAgent, ProxyAgentConfig},
         tracker::TrackerAgent,
         volume::{VolumeAgent, VolumeAgentConfig},
@@ -50,6 +52,7 @@ pub struct AgentConfig {
     pub logs_config: LogsAgentConfig,
     pub openai_config: Option<OpenAIAgentConfig>,
     pub build_config: Option<BuildAgentConfig>,
+    pub tcp_port_range: Option<TcpPortRange>,
 }
 
 pub struct Agent {
@@ -63,6 +66,7 @@ pub struct Agent {
     certificate: Arc<CertificateAgent>,
     logs: Arc<LogsAgent>,
     tracker: Arc<TrackerAgent>,
+    port_allocator: Arc<PortAllocator>,
     openai: Option<Arc<OpenAIAgent>>,
     build: Option<Arc<BuildAgent>>,
 }
@@ -106,6 +110,12 @@ impl Agent {
 
         let tracker = Arc::new(TrackerAgent::new(store.clone()));
 
+        let port_allocator = Arc::new(PortAllocator::new(
+            store.clone(),
+            tracker.clone(),
+            config.tcp_port_range.clone(),
+        ));
+
         let build = match config.build_config {
             Some(config) => Some(Arc::new(BuildAgent::new(config)?)),
             None => None,
@@ -125,6 +135,7 @@ impl Agent {
             certificate,
             logs,
             tracker,
+            port_allocator,
             openai: config
                 .openai_config
                 .map(|config| Arc::new(OpenAIAgent::new(config))),
@@ -170,6 +181,10 @@ impl Agent {
 
     pub fn tracker(&self) -> Arc<TrackerAgent> {
         self.tracker.clone()
+    }
+
+    pub fn port_allocator(&self) -> Arc<PortAllocator> {
+        self.port_allocator.clone()
     }
 
     pub fn openai(&self) -> Result<Arc<OpenAIAgent>> {

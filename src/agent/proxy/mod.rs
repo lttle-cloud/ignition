@@ -98,6 +98,9 @@ pub enum ExternalBindingRouting {
         host: String,
         nested_protocol: ExternnalBindingRoutingTlsNestedProtocol,
     },
+    TcpDirect {
+        port: u16,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -122,6 +125,9 @@ impl ProxyBinding {
             BindingMode::External { routing, port } => match routing {
                 ExternalBindingRouting::HttpHostHeader { host } => Some((host.clone(), *port)),
                 ExternalBindingRouting::TlsSni { host, .. } => Some((host.clone(), *port)),
+                ExternalBindingRouting::TcpDirect { port } => {
+                    Some((format!("tcp:{}", port), *port))
+                }
             },
             _ => None,
         };
@@ -351,19 +357,43 @@ impl ProxyAgent {
 
                 Ok(())
             }),
-            ProxyServerMode::External => spawn(async move {
-                external_listener(
-                    format!("{}:{}", task_server_key.0, task_server_key.1),
-                    task_machine_agent,
-                    task_bindings,
-                    task_blacklisted_seo_domain,
-                    task_tls_acceptor,
-                    task_certificate_agent,
-                )
-                .await?;
+            ProxyServerMode::External => {
+                // Check if this is a TCP direct binding
+                let is_tcp_direct = matches!(
+                    task_binding.mode,
+                    BindingMode::External {
+                        routing: ExternalBindingRouting::TcpDirect { .. },
+                        ..
+                    }
+                );
 
-                Ok(())
-            }),
+                if is_tcp_direct {
+                    spawn(async move {
+                        tcp_listener(
+                            format!("{}:{}", task_server_key.0, task_server_key.1),
+                            task_machine_agent,
+                            task_binding,
+                        )
+                        .await?;
+
+                        Ok(())
+                    })
+                } else {
+                    spawn(async move {
+                        external_listener(
+                            format!("{}:{}", task_server_key.0, task_server_key.1),
+                            task_machine_agent,
+                            task_bindings,
+                            task_blacklisted_seo_domain,
+                            task_tls_acceptor,
+                            task_certificate_agent,
+                        )
+                        .await?;
+
+                        Ok(())
+                    })
+                }
+            }
         };
 
         let server = ProxyServer {
@@ -678,7 +708,10 @@ async fn handle_http_connection(
 
                     // Spawn a task to handle the WebSocket proxying
                     spawn(async move {
-                        if let Err(e) = proxy_websocket_upgrade(client_upgrade.await, upstream_upgrade.await).await {
+                        if let Err(e) =
+                            proxy_websocket_upgrade(client_upgrade.await, upstream_upgrade.await)
+                                .await
+                        {
                             warn!("Error proxying WebSocket: {}", e);
                         }
                     });
@@ -871,7 +904,10 @@ async fn handle_https_connection(
 
                     // Spawn a task to handle the WebSocket proxying
                     spawn(async move {
-                        if let Err(e) = proxy_websocket_upgrade(client_upgrade.await, upstream_upgrade.await).await {
+                        if let Err(e) =
+                            proxy_websocket_upgrade(client_upgrade.await, upstream_upgrade.await)
+                                .await
+                        {
                             warn!("Error proxying WebSocket over TLS: {}", e);
                         }
                     });
@@ -1055,4 +1091,53 @@ async fn internal_listener(
             Ok(())
         });
     }
+}
+
+async fn tcp_listener(
+    bind_address: String,
+    machine_agent: Arc<MachineAgent>,
+    binding: ProxyBinding,
+) -> Result<Infallible> {
+    use tokio::net::TcpListener;
+
+    info!("Starting TCP listener on {}", bind_address);
+
+    let listener = TcpListener::bind(&bind_address).await?;
+
+    loop {
+        let (client_stream, client_addr) = listener.accept().await?;
+        info!("TCP connection from {}", client_addr);
+
+        let machine_agent = machine_agent.clone();
+        let binding = binding.clone();
+
+        spawn(async move {
+            if let Err(e) = handle_tcp_connection(client_stream, machine_agent, binding).await {
+                warn!("TCP connection error: {}", e);
+            }
+        });
+    }
+}
+
+async fn handle_tcp_connection(
+    client_stream: TcpStream,
+    machine_agent: Arc<MachineAgent>,
+    binding: ProxyBinding,
+) -> Result<()> {
+    // Find the target machine
+    let machine = find_machine(&machine_agent, &binding.target_network_tag).await?;
+
+    // Get machine connection
+    let mut machine_connection =
+        get_machine_connection(&machine, binding.target_port, binding.inactivity_timeout).await?;
+
+    info!(
+        "Proxying TCP connection to machine on port {}",
+        binding.target_port
+    );
+
+    // Use the machine connection's proxy method for TCP
+    machine_connection.proxy_from_client(client_stream).await?;
+
+    Ok(())
 }

@@ -1209,6 +1209,12 @@
     "ServiceBind": {
       "oneOf": [
         {
+          "enum": [
+            "tcp"
+          ],
+          "type": "string"
+        },
+        {
           "additionalProperties": false,
           "properties": {
             "internal": {
@@ -1286,7 +1292,8 @@
       "enum": [
         "http",
         "https",
-        "tls"
+        "tls",
+        "tcp"
       ],
       "type": "string"
     },

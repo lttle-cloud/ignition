@@ -7,6 +7,7 @@ pub enum Collections {
     AcmeAccount,
     AcmeChallenge,
     TrackedResourceOwner,
+    TcpPortAllocation,
 }
 
 impl AsRef<str> for Collections {
@@ -20,6 +21,7 @@ impl AsRef<str> for Collections {
             Collections::AcmeAccount => "acme_accounts",
             Collections::AcmeChallenge => "acme_challenges",
             Collections::TrackedResourceOwner => "tracked_resource_owners",
+            Collections::TcpPortAllocation => "tcp_port_allocations",
         }
     }
 }

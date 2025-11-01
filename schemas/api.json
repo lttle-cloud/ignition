@@ -3962,6 +3962,12 @@
     "ServiceBind": {
       "oneOf": [
         {
+          "type": "string",
+          "enum": [
+            "tcp"
+          ]
+        },
+        {
           "type": "object",
           "properties": {
             "internal": {
@@ -4026,7 +4032,8 @@
       "enum": [
         "http",
         "https",
-        "tls"
+        "tls",
+        "tcp"
       ]
     },
     "ServiceStatus": {
@@ -4043,6 +4050,15 @@
             "string",
             "null"
           ]
+        },
+        "allocated_tcp_port": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
         }
       }
     },

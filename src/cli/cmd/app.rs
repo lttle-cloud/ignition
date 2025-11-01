@@ -216,32 +216,54 @@ impl From<(AppLatest, AppStatus)> for AppSummary {
                         ServiceBindExternalProtocol::Http => None,
                         ServiceBindExternalProtocol::Https => None,
                         ServiceBindExternalProtocol::Tls => Some(service.port),
+                        ServiceBindExternalProtocol::Tcp => None, // TCP uses dynamic allocation
                     });
 
                     let protocol = match external.protocol {
                         ServiceBindExternalProtocol::Http => "http",
                         ServiceBindExternalProtocol::Https => "https",
                         ServiceBindExternalProtocol::Tls => "tls",
+                        ServiceBindExternalProtocol::Tcp => "tcp",
                     };
-                    let host = external.host.or(allocated.and_then(|a| a.domain.clone()));
-                    if let Some(host) = host {
-                        if let Some(output_port) = output_port {
+
+                    // Handle TCP services specially
+                    if external.protocol == ServiceBindExternalProtocol::Tcp {
+                        // For TCP services, show dynamic port allocation info
+                        if allocated.is_some() {
                             services.push(format!(
-                                "{}: {}://{}:{} → :{}",
+                                "{}: tcp://*:<dynamic> → :{}  (see 'ignition service list' for allocated port)",
                                 service_name_sytle.paint(service_name),
-                                protocol,
-                                host,
-                                output_port,
                                 service.port
                             ));
                         } else {
                             services.push(format!(
-                                "{}: {}://{} → :{}",
+                                "{}: tcp://*:<pending> → :{}  (port allocation pending)",
                                 service_name_sytle.paint(service_name),
-                                protocol,
-                                host,
                                 service.port
                             ));
+                        }
+                    } else {
+                        // Handle HTTP/HTTPS/TLS services as before
+                        let host = external.host.or(allocated.and_then(|a| a.domain.clone()));
+                        if let Some(host) = host {
+                            if let Some(output_port) = output_port {
+                                services.push(format!(
+                                    "{}: {}://{}:{} → :{}",
+                                    service_name_sytle.paint(service_name),
+                                    protocol,
+                                    host,
+                                    output_port,
+                                    service.port
+                                ));
+                            } else {
+                                services.push(format!(
+                                    "{}: {}://{} → :{}",
+                                    service_name_sytle.paint(service_name),
+                                    protocol,
+                                    host,
+                                    service.port
+                                ));
+                            }
                         }
                     }
                 }

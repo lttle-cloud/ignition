@@ -176,6 +176,7 @@ async fn main() -> Result<()> {
                                 remote_build_ca_key_path: c.ca_key_path,
                                 builders_pool: c.pool,
                             }),
+                            tcp_port_range: scheduler_config.proxy_config.tcp_port_range.clone(),
                         },
                         agent_scheduler,
                         repository_clone,

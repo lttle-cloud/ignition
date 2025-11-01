@@ -58,6 +58,8 @@ mod service {
             port: Option<u16>,
             protocol: ServiceBindExternalProtocol,
         },
+        #[serde(rename = "tcp")]
+        Tcp,
     }
 
     #[schema]
@@ -68,12 +70,15 @@ mod service {
         Https,
         #[serde(rename = "tls")]
         Tls,
+        #[serde(rename = "tcp")]
+        Tcp,
     }
 
     #[status]
     struct Status {
         service_ip: Option<String>,
         internal_dns_hostname: Option<String>,
+        allocated_tcp_port: Option<u16>,
     }
 }
 
@@ -82,6 +87,7 @@ impl FromResource<Service> for ServiceStatus {
         Ok(ServiceStatus {
             service_ip: None,
             internal_dns_hostname: None,
+            allocated_tcp_port: None,
         })
     }
 }
@@ -92,6 +98,7 @@ impl ServiceBindExternalProtocol {
             ServiceBindExternalProtocol::Http => 80,
             ServiceBindExternalProtocol::Https => 443,
             ServiceBindExternalProtocol::Tls => target.port,
+            ServiceBindExternalProtocol::Tcp => target.port,
         }
     }
 }
@@ -102,6 +109,7 @@ impl ToString for ServiceBindExternalProtocol {
             ServiceBindExternalProtocol::Http => "http".to_string(),
             ServiceBindExternalProtocol::Https => "https".to_string(),
             ServiceBindExternalProtocol::Tls => "tls".to_string(),
+            ServiceBindExternalProtocol::Tcp => "tcp".to_string(),
         }
     }
 }
@@ -120,6 +128,7 @@ impl ToString for ServiceBind {
         match self {
             ServiceBind::Internal { .. } => "internal".to_string(),
             ServiceBind::External { .. } => "external".to_string(),
+            ServiceBind::Tcp { .. } => "tcp".to_string(),
         }
     }
 }

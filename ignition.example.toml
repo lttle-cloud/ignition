@@ -23,6 +23,12 @@ external-bind-address = "<your public ip>" # TODO: autodiscover
 default-tls-cert-path = "./certs/server.cert"
 default-tls-key-path = "./certs/server.key"
 
+# TCP port range for dynamic allocation (optional)
+# When specified, TCP services will automatically get ports allocated from this range
+# HTTP/HTTPS/TLS services cannot use ports in this range
+# Format: [start_port, end_port]
+tcp-port-range = [35000, 40000]
+
 [machine]
 kernel-path = "../linux/vmlinux"
 initrd-path = "./target/takeoff.cpio"

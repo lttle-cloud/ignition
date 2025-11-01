@@ -120,6 +120,14 @@ impl Controller for ServiceController {
                     .ok();
             }
 
+            if let Some(allocated_port) = status.allocated_tcp_port {
+                ctx.agent
+                    .port_allocator()
+                    .deallocate_tcp_port(allocated_port)
+                    .await
+                    .ok();
+            }
+
             ctx.repository
                 .service(ctx.tenant.clone())
                 .delete_status(key.metadata().clone())
@@ -168,6 +176,7 @@ impl Controller for ServiceController {
                 )
             }
             ServiceBind::External { .. } => None,
+            ServiceBind::Tcp => None,
         };
 
         let binding_mode = match service.bind {
@@ -209,6 +218,41 @@ impl Controller for ServiceController {
                     routing: routing,
                 }
             }
+            ServiceBind::Tcp => {
+                // For TCP services, reuse existing allocated port or allocate a new one
+                let port = if let Some(existing_port) = status.allocated_tcp_port {
+                    // Reuse existing allocated port
+                    info!(
+                        "Reusing existing TCP port {} for service {}",
+                        existing_port, service.name
+                    );
+                    existing_port
+                } else {
+                    // Allocate a new dynamic port
+                    let allocated_port = ctx
+                        .agent
+                        .port_allocator()
+                        .allocate_tcp_port(
+                            key.tenant.clone(),
+                            service.name.clone(),
+                            service
+                                .namespace
+                                .clone()
+                                .unwrap_or(DEFAULT_NAMESPACE.to_string()),
+                        )
+                        .await?;
+                    info!(
+                        "Allocated new TCP port {} for service {}",
+                        allocated_port, service.name
+                    );
+                    allocated_port
+                };
+
+                BindingMode::External {
+                    port,
+                    routing: ExternalBindingRouting::TcpDirect { port },
+                }
+            }
         };
 
         let inactivity_timeout = match service.target.connection_tracking {
@@ -217,6 +261,15 @@ impl Controller for ServiceController {
                     inactivity_timeout.unwrap_or(DEFAULT_TRAFFIC_AWARE_INACTIVITY_TIMEOUT_SECS),
                 ))
             }
+            _ => None,
+        };
+
+        // Store allocated TCP port in status for tracking
+        let allocated_tcp_port = match &binding_mode {
+            BindingMode::External { port, routing } => match routing {
+                ExternalBindingRouting::TcpDirect { .. } => Some(*port),
+                _ => None,
+            },
             _ => None,
         };
 
@@ -245,6 +298,7 @@ impl Controller for ServiceController {
             .patch_status(key.metadata().clone(), |status| {
                 status.service_ip = Some(service_ip.clone());
                 status.internal_dns_hostname = internal_dns_hostname.clone();
+                status.allocated_tcp_port = allocated_tcp_port;
             })
             .await?;
 
@@ -279,62 +333,88 @@ impl AdmissionCheckBeforeSet for Service {
     ) -> Result<()> {
         let resource = self.latest();
 
-        let ServiceBind::External {
+        match &resource.bind {
+            ServiceBind::Tcp => {
+                // TCP services don't need additional validation - they use dynamic allocation
+                return Ok(());
+            }
+            ServiceBind::External {
+                host,
+                port,
+                protocol,
+            } => {
+                // For external protocols, validate port range restrictions
+                let port_allocator = agent.port_allocator();
+                let actual_port = port.unwrap_or(protocol.default_port(&resource.target));
+
+                if port_allocator.is_tcp_port_in_range(actual_port) {
+                    bail!(
+                        "Port {} is in the reserved TCP port range and cannot be used for {} services",
+                        actual_port,
+                        protocol.to_string()
+                    );
+                }
+
+                let dns = agent.dns();
+                if dns.is_region_domain(host) && !dns.is_tenant_owned_region_domain(&tenant, host) {
+                    bail!("Your tenant does not own the domain: {}", host);
+                }
+            }
+            ServiceBind::Internal { .. } => {
+                // Internal services don't need port range validation
+            }
+        }
+
+        // Only handle tracking for external services
+        if let ServiceBind::External {
             host,
             port,
             protocol,
         } = &resource.bind
-        else {
-            return Ok(());
-        };
+        {
+            if let Some(before) = before {
+                let before = before.latest();
+                if let ServiceBind::External {
+                    host: before_host,
+                    port: before_port,
+                    protocol: before_protocol,
+                } = &before.bind
+                {
+                    if before_host != host || before_port != port {
+                        let before_port =
+                            before_port.unwrap_or(before_protocol.default_port(&before.target));
 
-        let dns = agent.dns();
-        if dns.is_region_domain(host) && !dns.is_tenant_owned_region_domain(&tenant, host) {
-            bail!("Your tenant does not own the domain: {}", host);
-        }
-
-        if let Some(before) = before {
-            let before = before.latest();
-            if let ServiceBind::External {
-                host: before_host,
-                port: before_port,
-                protocol: before_protocol,
-            } = &before.bind
-            {
-                if before_host != host || before_port != port {
-                    let before_port =
-                        before_port.unwrap_or(before_protocol.default_port(&before.target));
-
-                    let before_kind = TrackedResourceKind::ServiceDomain(format!(
-                        "{}:{}",
-                        before_host, before_port
-                    ));
-                    agent.tracker().untrack_resource_owner(before_kind).await?;
+                        let before_kind = TrackedResourceKind::ServiceDomain(format!(
+                            "{}:{}",
+                            before_host, before_port
+                        ));
+                        agent.tracker().untrack_resource_owner(before_kind).await?;
+                    }
                 }
             }
+
+            let port = port.unwrap_or(protocol.default_port(&resource.target));
+            let kind = TrackedResourceKind::ServiceDomain(format!("{}:{}", host, port));
+
+            let resource_owner = TrackedResourceOwner {
+                kind: kind.clone(),
+                tenant,
+                resource_name: resource.name,
+                resource_namespace: resource.namespace.unwrap_or(DEFAULT_NAMESPACE.to_string()),
+            };
+
+            if let Some(owner) = agent
+                .tracker()
+                .get_tracked_resource_owner(kind.clone())
+                .await?
+            {
+                if owner != resource_owner {
+                    bail!("Service domain and port is already bound to another resource")
+                }
+            };
+
+            agent.tracker().track_resource_owner(resource_owner).await?;
         }
-
-        let port = port.unwrap_or(protocol.default_port(&resource.target));
-        let kind = TrackedResourceKind::ServiceDomain(format!("{}:{}", host, port));
-
-        let resource_owner = TrackedResourceOwner {
-            kind: kind.clone(),
-            tenant,
-            resource_name: resource.name,
-            resource_namespace: resource.namespace.unwrap_or(DEFAULT_NAMESPACE.to_string()),
-        };
-
-        if let Some(owner) = agent
-            .tracker()
-            .get_tracked_resource_owner(kind.clone())
-            .await?
-        {
-            if owner != resource_owner {
-                bail!("Service domain and port is already bound to another resource")
-            }
-        };
-
-        agent.tracker().track_resource_owner(resource_owner).await?;
 
         Ok(())
     }
@@ -351,19 +431,24 @@ impl AdmissionCheckBeforeDelete for Service {
     ) -> Result<()> {
         let resource = self.latest();
 
-        let ServiceBind::External {
-            host,
-            port,
-            protocol,
-        } = &resource.bind
-        else {
-            return Ok(());
-        };
-
-        let port = port.unwrap_or(protocol.default_port(&resource.target));
-        let kind = TrackedResourceKind::ServiceDomain(format!("{}:{}", host, port));
-
-        agent.tracker().untrack_resource_owner(kind).await?;
+        match &resource.bind {
+            ServiceBind::External {
+                host,
+                port,
+                protocol,
+            } => {
+                let port = port.unwrap_or(protocol.default_port(&resource.target));
+                let kind = TrackedResourceKind::ServiceDomain(format!("{}:{}", host, port));
+                agent.tracker().untrack_resource_owner(kind).await?;
+            }
+            ServiceBind::Tcp => {
+                // TCP services don't track domains, only port allocations
+                // Port deallocation is handled in the reconcile method
+            }
+            ServiceBind::Internal { .. } => {
+                // Internal services don't track domains
+            }
+        }
 
         Ok(())
     }

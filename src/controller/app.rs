@@ -309,11 +309,12 @@ fn generate_service_from_expose(
                 ServiceBindExternalProtocol::Http => ServiceTargetProtocol::Http,
                 ServiceBindExternalProtocol::Https => ServiceTargetProtocol::Http,
                 ServiceBindExternalProtocol::Tls => ServiceTargetProtocol::Tcp,
+                ServiceBindExternalProtocol::Tcp => ServiceTargetProtocol::Tcp,
             },
             connection_tracking: expose.connection_tracking.clone(),
         },
         _ => bail!(
-            "invalid expose configuration for app: {} {}",
+            "invalid expose configuration for app: {} {} - only one of internal or external can be specified",
             app.name,
             expose_name
         ),
@@ -325,28 +326,33 @@ fn generate_service_from_expose(
         },
         (None, None) => ServiceBind::Internal { port: None },
         (None, Some(external)) => {
-            let generated_domain = agent.dns().region_domain_for_service(
-                tenant,
-                app.name.as_str(),
-                resolved_namespace.as_str(),
-                expose_name,
-            );
-
-            // if we don't have a host set on external.host and the domain allocated exists and is not a region domain, reset the domain to a generated one
-            let host = if let Some(host) = external.host {
-                host
+            // Check if this is a TCP protocol - convert to ServiceBind::Tcp
+            if external.protocol == ServiceBindExternalProtocol::Tcp {
+                ServiceBind::Tcp
             } else {
-                generated_domain
-            };
+                let generated_domain = agent.dns().region_domain_for_service(
+                    tenant,
+                    app.name.as_str(),
+                    resolved_namespace.as_str(),
+                    expose_name,
+                );
 
-            ServiceBind::External {
-                host,
-                port: external.port,
-                protocol: external.protocol,
+                // if we don't have a host set on external.host and the domain allocated exists and is not a region domain, reset the domain to a generated one
+                let host = if let Some(host) = external.host {
+                    host
+                } else {
+                    generated_domain
+                };
+
+                ServiceBind::External {
+                    host,
+                    port: external.port,
+                    protocol: external.protocol,
+                }
             }
         }
         _ => bail!(
-            "invalid expose configuration for app: {} {}",
+            "invalid expose configuration for app: {} {} - only one of internal or external can be specified",
             app.name,
             expose_name
         ),
@@ -386,7 +392,7 @@ impl AdmissionCheckBeforeSet for App {
         for (expose_name, expose) in resource.expose.clone().unwrap_or_default().iter() {
             if expose.internal.is_some() && expose.external.is_some() {
                 bail!(
-                    "app: {} expose: {} cannot have both internal and external",
+                    "app: {} expose: {} cannot have both internal and external binding",
                     resource.name,
                     expose_name
                 );

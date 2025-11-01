@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::{Result, bail};
 use ignition::agent::certificate::config::CertProvider;
 use ignition::agent::logs::LogsStoreConfig;
+use ignition::agent::port_allocator::TcpPortRange;
 use serde::{Deserialize, Serialize};
 use tokio::fs::read_to_string;
 use tracing::warn;
@@ -66,6 +67,8 @@ pub struct ProxyConfig {
     pub default_tls_cert_path: String,
     #[serde(rename = "default-tls-key-path")]
     pub default_tls_key_path: String,
+    #[serde(rename = "tcp-port-range")]
+    pub tcp_port_range: Option<TcpPortRange>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

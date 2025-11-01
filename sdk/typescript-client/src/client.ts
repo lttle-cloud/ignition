@@ -571,6 +571,7 @@ export type Service =
 
 
 export type ServiceBind =
+  "tcp" |
   { internal: { port?: number } } |
   { external: { host: string, port?: number, protocol: ServiceBindExternalProtocol } };
 
@@ -578,12 +579,14 @@ export type ServiceBind =
 export type ServiceBindExternalProtocol =
   "http" |
   "https" |
-  "tls";
+  "tls" |
+  "tcp";
 
 
 export interface ServiceStatus {
   serviceIp?: string;
   internalDnsHostname?: string;
+  allocatedTcpPort?: number;
 }
 
 
@@ -2484,6 +2487,10 @@ export function deserializeService(value: any): Service {
 }
 
 export function serializeServiceBind(value: ServiceBind): any {
+  // Union serialization: pass through literal values
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
   // Handle object variants
   const result: any = {};
   for (const [key, val] of Object.entries(value)) {
@@ -2516,6 +2523,10 @@ export function serializeServiceBind(value: ServiceBind): any {
 }
 
 export function deserializeServiceBind(value: any): ServiceBind {
+  // Union deserialization: pass through literal values
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value as ServiceBind;
+  }
   // Handle object variants
   const result: any = {};
   for (const [key, val] of Object.entries(value)) {
@@ -2559,6 +2570,7 @@ export function serializeServiceStatus(value: ServiceStatus): any {
   return {
     "service_ip": value.serviceIp,
     "internal_dns_hostname": value.internalDnsHostname,
+    "allocated_tcp_port": value.allocatedTcpPort,
   };
 }
 
@@ -2566,6 +2578,7 @@ export function deserializeServiceStatus(value: any): ServiceStatus {
   return {
     serviceIp: value["service_ip"],
     internalDnsHostname: value["internal_dns_hostname"],
+    allocatedTcpPort: value["allocated_tcp_port"],
   };
 }
 

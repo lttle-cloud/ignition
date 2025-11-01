@@ -77,6 +77,12 @@ impl From<(ServiceLatest, ServiceStatus)> for ServiceTableRow {
                 .internal_dns_hostname
                 .clone()
                 .or(status.service_ip.clone()),
+            ServiceBind::Tcp => Some(
+                status
+                    .allocated_tcp_port
+                    .map(|p| format!("*:{}", p))
+                    .unwrap_or_else(|| "*:pending".to_string()),
+            ),
         };
 
         let target_namespace = service
@@ -108,6 +114,18 @@ impl From<(ServiceLatest, ServiceStatus)> for ServiceTableRow {
                     service.target.protocol.to_string()
                 )
             }
+            ServiceBind::Tcp => {
+                let port = status
+                    .allocated_tcp_port
+                    .map(|p| p.to_string())
+                    .unwrap_or("pending".to_string());
+                format!(
+                    ":{} (tcp) → :{} ({})",
+                    port,
+                    service.target.port,
+                    service.target.protocol.to_string()
+                )
+            }
         };
 
         Self {
@@ -129,6 +147,12 @@ impl From<(ServiceLatest, ServiceStatus)> for ServiceSummary {
                 .internal_dns_hostname
                 .clone()
                 .or(status.service_ip.clone()),
+            ServiceBind::Tcp => Some(
+                status
+                    .allocated_tcp_port
+                    .map(|p| format!("*:{}", p))
+                    .unwrap_or_else(|| "*:pending".to_string()),
+            ),
         };
 
         let target_namespace = service
@@ -156,6 +180,18 @@ impl From<(ServiceLatest, ServiceStatus)> for ServiceSummary {
                     ":{} ({}) → :{} ({})",
                     port,
                     protocol.to_string(),
+                    service.target.port,
+                    service.target.protocol.to_string()
+                )
+            }
+            ServiceBind::Tcp => {
+                let port = status
+                    .allocated_tcp_port
+                    .map(|p| p.to_string())
+                    .unwrap_or("pending".to_string());
+                format!(
+                    ":{} (tcp) → :{} ({})",
+                    port,
                     service.target.port,
                     service.target.protocol.to_string()
                 )
