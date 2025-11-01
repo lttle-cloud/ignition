@@ -86,6 +86,8 @@ impl Controller for MachineController {
                     .patch_status(metadata.clone(), move |status| {
                         status.phase = MachinePhase::Idle;
                         status.last_exit_code = None;
+                        status.restart_count = Some(0);
+                        status.last_restarting_time_us = None;
                     })
                     .await?;
 
@@ -297,10 +299,7 @@ impl Controller for MachineController {
                                     if let Some(last_exit_code) = last_exit_code {
                                         status.last_exit_code = Some(last_exit_code);
                                     }
-                                    // Reset restart counter when machine successfully reaches Ready state
-                                    if matches!(new_phase, MachinePhase::Ready) {
-                                        status.restart_count = Some(0);
-                                    }
+                                    // Don't reset restart counter immediately on Ready - let it reset after stability period
                                 })
                                 .await?;
                             Some((stored_machine, new_status))
@@ -911,6 +910,9 @@ impl Controller for MachineController {
                             status.phase = MachinePhase::Restarting;
                             status.last_restarting_time_us =
                                 Some(Utc::now().timestamp_millis() as u64);
+                            // Set restart count to 1 for failure restarts (vs 0 for intentional restarts)
+                            let current_restart_count = status.restart_count.unwrap_or(0);
+                            status.restart_count = Some(current_restart_count + 1);
                         })
                         .await?;
 
@@ -938,12 +940,11 @@ impl Controller for MachineController {
                         }
                     }
 
-                    let restart_count = status.restart_count.unwrap_or(0);
                     ctx.repository
                         .machine(ctx.tenant.clone())
                         .patch_status(key.metadata(), |status| {
                             status.phase = MachinePhase::Idle;
-                            status.restart_count = Some(restart_count + 1);
+                            // Restart count is already set correctly when entering Restarting phase
                         })
                         .await?;
 
