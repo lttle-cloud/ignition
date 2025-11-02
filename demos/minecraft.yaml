@@ -18,9 +18,13 @@ machine:
         listen-on-port: 25575
       timeout: 10
   environment:
+    MOTD: "World's first §nserverless§r §l§cMinecraft§r instance\nrunning on lttle.cloud"
+    ICON: "https://mc-serverless-resources.s3.eu-central-1.amazonaws.com/lttle-cloud-64px.png"
     EULA: "TRUE"
     CREATE_CONSOLE_IN_PIPE: "true"
+    MAX_TICK_TIME: "-1"
     ONLINE_MODE: "false"
+    MAX_PLAYERS: "25"
   volumes:
     - name: mc-data
       path: /data
